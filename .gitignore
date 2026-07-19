@@ -1,0 +1,29 @@
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+
+# Backend build artifacts
+backend/target/
+backend/.mvn/
+
+# IDE / OS files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment secrets (never commit these)
+.env
+.env.*
+!.env.example
+
+# Gemini Agent artifacts (local only)
+.gemini/

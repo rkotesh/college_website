@@ -1,0 +1,33 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://ciet_db:Ram9182%40@ac-kb7tcsk-shard-00-00.t4fchpc.mongodb.net:27017,ac-kb7tcsk-shard-00-01.t4fchpc.mongodb.net:27017,ac-kb7tcsk-shard-00-02.t4fchpc.mongodb.net:27017/erp_portal?replicaSet=atlas-nq168l-shard-0&ssl=true&authSource=admin&tlsAllowInvalidCertificates=true}
+      database: ${MONGODB_NAME:erp_portal}
+  mail:
+    host: ${EMAIL_HOST:localhost}
+    port: ${EMAIL_PORT:587}
+    username: ${EMAIL_HOST_USER:}
+    password: ${EMAIL_HOST_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: ${EMAIL_USE_TLS:true}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970} # 256-bit hex secret key
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000} # 24 hours
+    refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000} # 7 days
+  director:
+    email: ${DIRECTOR_EMAIL:skillportfolio@chalapathiengg.ac.in}
+    password: ${DIRECTOR_PASSWORD:Ciet@2027}
+  examcell:
+    email: ${EXAMCELL_LOGIN_EMAIL:examcell@ciet.edu.in}
+    password: ${EXAMCELL_LOGIN_PASSWORD:examcell123}
+  mail:
+    from: ${DEFAULT_FROM_EMAIL:support@ciet.edu.in}
