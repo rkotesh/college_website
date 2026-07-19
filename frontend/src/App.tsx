@@ -22,33 +22,40 @@ export default function App() {
 
   useEffect(() => {
     const checkSession = async () => {
+      const savedToken = localStorage.getItem('accessToken');
+      const savedRole  = localStorage.getItem('role');
+      const savedEmail = localStorage.getItem('email');
+      const savedName  = localStorage.getItem('fullName');
+
+      // Nothing stored — go straight to login
+      if (!savedToken || !savedRole || !savedEmail) return;
+
+      // Validate the stored token against the backend before trusting it
       try {
         const res = await fetch(`${API_BASE_URL}/api/v1/auth/session`, {
-          credentials: 'include'
+          credentials: 'include',
+          headers: { 'Authorization': `Bearer ${savedToken}` }
         });
+
         if (res.ok) {
           const data = await res.json();
           if (data.authenticated) {
             setUserSession({
-              role: data.role,
-              email: data.email,
-              fullName: data.fullName,
-              accessToken: localStorage.getItem('accessToken') || ''
+              role: data.role || savedRole,
+              email: data.email || savedEmail,
+              fullName: data.fullName || savedName || undefined,
+              accessToken: savedToken
             });
             return;
           }
         }
+
+        // Token is expired or invalid — clear everything and force fresh login
+        console.warn('Stored token rejected by server (expired/invalid). Clearing session.');
+        localStorage.clear();
       } catch (e) {
-        console.warn("Secure session check failed, using local storage", e);
-      }
-
-      // Fallback to local storage
-      const savedToken = localStorage.getItem('accessToken');
-      const savedRole = localStorage.getItem('role');
-      const savedEmail = localStorage.getItem('email');
-      const savedName = localStorage.getItem('fullName');
-
-      if (savedToken && savedRole && savedEmail) {
+        // Network error — still trust the stored token optimistically
+        console.warn('Session validation network error, restoring from localStorage:', e);
         setUserSession({
           role: savedRole,
           email: savedEmail,
