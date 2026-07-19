@@ -1648,7 +1648,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
                     <div>
                       <h2 className="ds-section-title">Transcript & Progress</h2>
-                      <p className="ds-section-sub">Official examination scores verified by the Exam Cell.</p>
+                      <p className="ds-section-sub">Official examination scores verified by the Academic Office.</p>
                     </div>
 
                     {/* SIGNATURE: CGPA RING */}
@@ -1728,7 +1728,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                       </motion.div>
                     )) : (
                       <div className="ds-card" style={{ padding: '48px', textAlign: 'center' }}>
-                        <p style={{ color: 'var(--ds-text3)', fontSize: '14px' }}>No marks published by the Exam Cell yet.</p>
+                        <p style={{ color: 'var(--ds-text3)', fontSize: '14px' }}>No marks published by the Academic Office yet.</p>
                       </div>
                     )}
                   </div>

@@ -278,7 +278,6 @@ Authorization: Bearer <your_jwt_token>
 | Role | Email | Password |
 |---|---|---|
 | Admin / Director | `skillportfolio@chalapathiengg.ac.in` | `Ciet@2027` |
-| Exam Cell | `examcell@ciet.edu.in` | `examcell123` |
 
 ---
 

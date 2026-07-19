@@ -21,7 +21,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyAuthority('ROLE_Director', 'ROLE_Examcell')")
+@PreAuthorize("hasAuthority('ROLE_Director')")
 public class AdminController {
 
     private final UserRepository userRepository;

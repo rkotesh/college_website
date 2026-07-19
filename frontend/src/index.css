@@ -1265,7 +1265,6 @@ body {
 }
 
 .role-badge.Director  { background: hsla(349,100%,31%,.15); color: hsl(349,90%,72%); }
-.role-badge.Examcell  { background: hsla(217,91%,55%,.15); color: hsl(217,91%,72%); }
 .role-badge.HOD       { background: hsla(280,60%,55%,.15); color: hsl(280,60%,75%); }
 .role-badge.Faculty   { background: hsla(38,95%,50%,.15);  color: hsl(38,95%,72%); }
 .role-badge.Mentor    { background: hsla(142,72%,40%,.15); color: hsl(142,72%,65%); }

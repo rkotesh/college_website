@@ -29,12 +29,6 @@ public class AuthService {
     private final JwtService jwtService;
     private final LoginAttemptService loginAttemptService;
 
-    @Value("${app.examcell.email}")
-    private String examcellEmail;
-
-    @Value("${app.examcell.password}")
-    private String examcellPassword;
-
     public LoginResponse loginPhase1(LoginRequest request, String clientIp) {
         // 1. Check rate limit lockout
         if (loginAttemptService.isBlocked(clientIp)) {
@@ -49,34 +43,15 @@ public class AuthService {
         StudentProfile studentProfile = null;
 
         // 2. Resolve User & StudentProfile based on role
-        if (requestedRole == Role.Examcell) {
-            if (!identifier.equalsIgnoreCase(examcellEmail)) {
-                loginAttemptService.loginFailed(clientIp);
-                throw new RuntimeException("Invalid Exam Cell login ID.");
-            }
-            user = userRepository.findByEmailIgnoreCase(examcellEmail).orElse(null);
-            if (user == null) {
-                // Auto-seed/create the Examcell user if not exists
-                user = User.builder()
-                        .email(examcellEmail.toLowerCase())
-                        .passwordHash(passwordEncoder.encode(examcellPassword))
-                        .fullName("Exam Cell")
-                        .role(Role.Examcell)
-                        .isActive(true)
-                        .build();
-                userRepository.save(user);
-            }
+        // Check if identifier is student roll number
+        studentProfile = studentProfileRepository.findByRollNoIgnoreCase(identifier).orElse(null);
+        if (studentProfile != null) {
+            user = userRepository.findById(studentProfile.getUserId()).orElse(null);
         } else {
-            // Check if identifier is student roll number
-            studentProfile = studentProfileRepository.findByRollNoIgnoreCase(identifier).orElse(null);
-            if (studentProfile != null) {
-                user = userRepository.findById(studentProfile.getUserId()).orElse(null);
-            } else {
-                // Fallback to email search
-                user = userRepository.findByEmailIgnoreCase(identifier).orElse(null);
-                if (user != null && user.getRole() == Role.Student) {
-                    studentProfile = studentProfileRepository.findByUserId(user.getId()).orElse(null);
-                }
+            // Fallback to email search
+            user = userRepository.findByEmailIgnoreCase(identifier).orElse(null);
+            if (user != null && user.getRole() == Role.Student) {
+                studentProfile = studentProfileRepository.findByUserId(user.getId()).orElse(null);
             }
         }
 
@@ -102,9 +77,7 @@ public class AuthService {
 
         // 4. Validate Password
         boolean passwordOk = false;
-        if (requestedRole == Role.Examcell) {
-            passwordOk = password.equals(examcellPassword);
-        } else if (requestedRole == Role.Student || requestedRole == Role.Parent || user.getRole() == Role.Student) {
+        if (requestedRole == Role.Student || requestedRole == Role.Parent || user.getRole() == Role.Student) {
             // Uppercase roll number default check
             boolean rollPasswordOk = studentProfile != null && 
                     password.toUpperCase().equals(studentProfile.getRollNo().toUpperCase().trim());

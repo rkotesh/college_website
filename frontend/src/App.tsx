@@ -105,8 +105,8 @@ export default function App() {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // If user is logged in as Director or Examcell, show the Admin Command Center Dashboard
-  if (userSession.role === 'Director' || userSession.role === 'Examcell') {
+  // If user is logged in as Director, show the Admin Command Center Dashboard
+  if (userSession.role === 'Director') {
     return <AdminDashboard userSession={userSession} handleLogout={handleLogout} />;
   }
 

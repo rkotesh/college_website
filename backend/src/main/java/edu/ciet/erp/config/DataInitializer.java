@@ -74,9 +74,6 @@ public class DataInitializer implements CommandLineRunner {
         // 6. Seed Student & StudentProfile
         seedStudent("student@ciet.edu.in", "22B01A0501", "Ravi Kumar", cseId);
 
-        // 7. Seed Exam Cell
-        seedUser("examcell@ciet.edu.in", "examcell123", "Exam Cell Controller", Role.Examcell, List.of());
-
         log.info("✓ Base development data seeding completed successfully.");
     }
 

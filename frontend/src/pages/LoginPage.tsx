@@ -3,7 +3,7 @@ import { motion, type Variants } from 'framer-motion';
 import LogoHeader from '../components/LogoHeader';
 
 
-type Role = 'Student' | 'Parent' | 'Faculty' | 'Mentor' | 'HOD' | 'Examcell' | 'Director';
+type Role = 'Student' | 'Parent' | 'Faculty' | 'Mentor' | 'HOD' | 'Director';
 
 interface LoginResponse {
   status: string;
@@ -652,7 +652,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                       <option value="Faculty">Faculty Hub</option>
                       <option value="Mentor">Mentoring Portal</option>
                       <option value="HOD">HOD Command Center</option>
-                      <option value="Examcell">Exam Cell</option>
                       <option value="Director">Superuser Admin</option>
                     </select>
                   </div>

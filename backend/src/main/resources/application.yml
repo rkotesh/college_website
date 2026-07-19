@@ -26,8 +26,5 @@ app:
   director:
     email: ${DIRECTOR_EMAIL:skillportfolio@chalapathiengg.ac.in}
     password: ${DIRECTOR_PASSWORD:Ciet@2027}
-  examcell:
-    email: ${EXAMCELL_LOGIN_EMAIL:examcell@ciet.edu.in}
-    password: ${EXAMCELL_LOGIN_PASSWORD:examcell123}
   mail:
     from: ${DEFAULT_FROM_EMAIL:support@ciet.edu.in}

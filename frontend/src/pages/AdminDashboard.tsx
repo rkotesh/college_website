@@ -3,7 +3,7 @@ import { read, utils, write } from 'xlsx';
 import LogoHeader from '../components/LogoHeader';
 
 
-type Role = 'Student' | 'Parent' | 'Faculty' | 'Mentor' | 'HOD' | 'Examcell' | 'Director';
+type Role = 'Student' | 'Parent' | 'Faculty' | 'Mentor' | 'HOD' | 'Director';
 
 interface AdminDashboardProps {
   userSession: {
@@ -1131,7 +1131,6 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
         <div className="admin-topbar-left">
           <div className="topbar-logo">
             <LogoHeader imageStyle={{ height: '36px' }} />
-            <span className="topbar-brand" style={{ marginLeft: '8px' }}>CIET ERP</span>
           </div>
           <div className="topbar-divider" />
           <span className="topbar-breadcrumb">Administrator Console</span>
@@ -1315,7 +1314,6 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                   <option value="Faculty">Faculty</option>
                   <option value="Mentor">Mentor</option>
                   <option value="HOD">HOD</option>
-                  <option value="Examcell">Exam Cell</option>
                   <option value="Director">Director</option>
                 </select>
                 <select className="filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -1337,7 +1335,6 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                 const totalFaculty = usersList.filter((u: any) => u.role === 'Faculty').length;
                 const totalMentors = usersList.filter((u: any) => u.role === 'Mentor').length;
                 const totalHods = usersList.filter((u: any) => u.role === 'HOD').length;
-                const totalExamcells = usersList.filter((u: any) => u.role === 'Examcell').length;
                 const totalDirectors = usersList.filter((u: any) => u.role === 'Director').length;
                 const totalAll = usersList.length;
 
@@ -1346,7 +1343,6 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                     {[
                       { label: 'All Users', value: 'ALL', count: totalAll },
                       { label: 'Directors', value: 'Director', count: totalDirectors },
-                      { label: 'Exam Cells', value: 'Examcell', count: totalExamcells },
                       { label: 'HODs', value: 'HOD', count: totalHods },
                       { label: 'Faculty', value: 'Faculty', count: totalFaculty },
                       { label: 'Mentors', value: 'Mentor', count: totalMentors },
@@ -1952,7 +1948,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                     <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Alert Type</label>
                     <select className="ds-input" value={notifType} onChange={e => setNotifType(e.target.value)} style={{ padding: '10px', fontSize: '13px' }}>
                       <option value="SYSTEM">System Announcement</option>
-                      <option value="ACADEMIC">Academic / Examcell</option>
+                      <option value="ACADEMIC">Academic</option>
                       <option value="PLACEMENT">Placement Training</option>
                       <option value="VERIFICATION">Verification Pending</option>
                     </select>
@@ -2497,7 +2493,6 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                       <option value="Faculty">Faculty</option>
                       <option value="Mentor">Mentor</option>
                       <option value="HOD">HOD</option>
-                      <option value="Examcell">Exam Cell</option>
                       <option value="Director">Director</option>
                     </select>
                   </div>

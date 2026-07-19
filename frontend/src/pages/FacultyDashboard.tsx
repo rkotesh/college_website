@@ -822,7 +822,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
       <header className="ds-topbar" style={{ borderBottom: '1px solid var(--ds-border)', background: 'hsla(210, 8%, 13%, 0.82)', backdropFilter: 'blur(18px)', position: 'relative', zIndex: 1000 }}>
         <div className="ds-topbar-left" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <LogoHeader imageStyle={{ height: '32px' }} />
-          <span className="ds-logo-name" style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', marginLeft: '8px' }}>CIET Portal</span>
           <span className="ds-logo-sep" style={{ width: '1px', height: '16px', background: 'var(--ds-border)' }} />
           <span className="ds-logo-sub" style={{ fontSize: '12.5px', color: 'var(--ds-text3)', fontWeight: 600 }}>Faculty Dashboard</span>
         </div>
@@ -1961,7 +1960,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Alert Category</label>
                           <select className="ds-input" value={hodNotifType} onChange={e => setHodNotifType(e.target.value)} style={{ padding: '10px', fontSize: '13px' }}>
                             <option value="SYSTEM">System Announcement</option>
-                            <option value="ACADEMIC">Academic / Examcell</option>
+                            <option value="ACADEMIC">Academic</option>
                             <option value="PLACEMENT">Placement Training</option>
                             <option value="VERIFICATION">Verification Request</option>
                           </select>
@@ -2709,6 +2708,29 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
           </div>
         </div>
       )}
+
+      {/* MOBILE BOTTOM NAV */}
+      <nav className="ds-bottom-nav">
+        {([
+          { key: 'overview' as Tab, label: 'Home', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
+          { key: 'documents' as Tab, label: 'Docs', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> },
+          { key: 'training' as Tab, label: 'Training', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
+          { key: 'notifications' as Tab, label: 'Alerts', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
+          { key: 'settings' as Tab, label: 'Profile', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg> },
+        ] as { key: Tab; label: string; icon: React.ReactNode }[]).map(item => (
+          <button
+            key={item.key}
+            className={`ds-bottom-nav-item ${activeTab === item.key ? 'active' : ''}`}
+            onClick={() => setActiveTab(item.key)}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+            {item.key === 'notifications' && hodNotifications.filter((n: any) => !n.read).length > 0 && (
+              <span className="ds-bottom-badge">{hodNotifications.filter((n: any) => !n.read).length}</span>
+            )}
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }
