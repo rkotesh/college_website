@@ -295,7 +295,6 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     if (userSession.role === 'Director') {
       fetchOtpRecords();
     }
-    fetchResults();
     if (adminTab === 'certifications') {
       fetchAllStudentCertifications();
     }
@@ -1215,9 +1214,6 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
           <button className={`sidebar-item ${adminTab === 'directory' ? 'active' : ''}`} onClick={() => { setAdminTab('directory'); setErrorMsg(''); setUploadStatus(''); }}>
             User Accounts CRUD
           </button>
-          <button className={`sidebar-item ${adminTab === 'results' ? 'active' : ''}`} onClick={() => { setAdminTab('results'); setErrorMsg(''); setUploadStatus(''); }}>
-            Semester Results
-          </button>
 
           <div className="sidebar-section-label" style={{ marginTop: '8px' }}>Management</div>
           <button className={`sidebar-item ${adminTab === 'departments' ? 'active' : ''}`} onClick={() => { setAdminTab('departments'); setErrorMsg(''); setUploadStatus(''); }}>
@@ -1587,95 +1583,6 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                       <tr>
                         <td colSpan={6} className="text-center" style={{ padding: '25px', color: 'gray' }}>
                           No OTP codes generated recently.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : adminTab === 'results' ? (
-            <div>
-              <div className="admin-view-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h2>Academic Semester Results</h2>
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                  <button 
-                    onClick={() => setAdminTab('uploads')}
-                    className="btn-primary"
-                    style={{ background: 'var(--accent)', color: '#fff', border: 'none', padding: '10px 20px', fontSize: '13.5px', borderRadius: '4px' }}
-                  >
-                    Bulk Uploads
-                  </button>
-                  <button 
-                    onClick={openCreateResultModal}
-                    className="btn-primary"
-                    style={{ background: '#22c55e', color: '#fff', border: 'none', padding: '10px 20px', fontSize: '13.5px', borderRadius: '4px' }}
-                  >
-                    Add Result Manually
-                  </button>
-                </div>
-              </div>
-
-              <div className="data-table-wrapper">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Student Roll No</th>
-                      <th>Semester</th>
-                      <th>Subject Info</th>
-                      <th>Exam Name</th>
-                      <th>Score / Max</th>
-                      <th>Grade</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resultsList.map((r) => (
-                      <tr key={r.id}>
-                        <td style={{ fontWeight: '700', color: 'var(--accent)' }}>{r.rollNo}</td>
-                        <td>{r.semester}</td>
-                        <td>
-                          <div style={{ fontWeight: '600' }}>{r.subjectName}</div>
-                          <div style={{ fontSize: '11px', color: '#6b7280' }}>Code: {r.subjectCode}</div>
-                        </td>
-                        <td>{r.examName}</td>
-                        <td style={{ fontWeight: '600' }}>{r.score} / {r.maxScore}</td>
-                        <td>
-                          <span style={{
-                            padding: '4px 10px',
-                            borderRadius: '6px',
-                            fontSize: '12px',
-                            fontWeight: '700',
-                            background: r.grade === 'O' || r.grade === 'A+' || r.grade === 'A' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                            color: r.grade === 'O' || r.grade === 'A+' || r.grade === 'A' ? '#166534' : '#ef4444'
-                          }}>
-                            {r.grade || 'N/A'}
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
-                              className="btn-table-action"
-                              onClick={() => openEditResultModal(r)}
-                              style={{ background: '#f59e0b', borderColor: '#f59e0b' }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className="btn-table-action"
-                              onClick={() => handleDeleteResult(r.id)}
-                              style={{ background: '#ef4444', borderColor: '#ef4444' }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {resultsList.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="text-center" style={{ padding: '25px', color: 'gray' }}>
-                          No semester results records found in the database.
                         </td>
                       </tr>
                     )}
@@ -2074,20 +1981,6 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                   </label>
                 </div>
 
-                <div className="upload-card">
-                  <h3>Import Semester Academic Results</h3>
-                  <p>Upload a spreadsheet (.xlsx) containing semester marks transcripts.</p>
-                  <label className="file-drop-zone" style={{ display: 'block' }}>
-                    <input
-                      type="file"
-                      accept=".xlsx, .xls"
-                      style={{ display: 'none' }}
-                      onChange={(e) => handleExcelFileChange(e, 'results')}
-                      key={resultsFile ? 'hasFile' : 'empty'}
-                    />
-                    {resultsFile ? `Selected: ${resultsFile.name}` : "Click to select Excel file"}
-                  </label>
-                </div>
               </div>
 
               <div className="admin-view-header" style={{ marginTop: '40px' }}>
@@ -2102,11 +1995,6 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
               <div className="template-row">
                 <p>Staff Ingestion Spreadsheet Template (users_template.xlsx)</p>
                 <button className="btn-row-action" onClick={() => downloadExcelTemplate('users')}>Download Excel</button>
-              </div>
-
-              <div className="template-row" style={{marginBottom: '50px'}}>
-                <p>Semester Marks Ingestion Template (results_template.xlsx)</p>
-                <button className="btn-row-action" onClick={() => downloadExcelTemplate('results')}>Download Excel</button>
               </div>
 
               {uploadErrors.length > 0 && (
@@ -2320,47 +2208,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                   </div>
                 </div>
 
-                {selectedUserForModal.role === 'Student' && selectedUserForModal.rollNo && (
-                  <div style={{ marginTop: '15px', borderTop: '1px solid var(--surface-raised)', paddingTop: '15px' }}>
-                    <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Academic Examinations Marks
-                    </h4>
-                    {(() => {
-                      const studentResults = selectedUserForModal.rollNo
-                        ? resultsList.filter((r: any) => r.rollNo?.toLowerCase() === selectedUserForModal.rollNo.toLowerCase())
-                        : [];
-                      return studentResults.length > 0 ? (
-                        <div style={{ overflowX: 'auto', maxHeight: '200px', border: '1px solid var(--surface-border)', borderRadius: '6px' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
-                            <thead>
-                              <tr style={{ background: 'var(--surface-raised)', borderBottom: '1px solid var(--surface-border)' }}>
-                                <th style={{ padding: '8px 10px', color: 'var(--text-secondary)', fontWeight: '700' }}>Semester</th>
-                                <th style={{ padding: '8px 10px', color: 'var(--text-secondary)', fontWeight: '700' }}>Subject</th>
-                                <th style={{ padding: '8px 10px', color: 'var(--text-secondary)', fontWeight: '700' }}>Marks</th>
-                                <th style={{ padding: '8px 10px', color: 'var(--text-secondary)', fontWeight: '700' }}>Grade</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {studentResults.map((res: any, idx: number) => (
-                                <tr key={idx} style={{ borderBottom: '1px solid var(--surface-border)' }}>
-                                  <td style={{ padding: '8px 10px', fontWeight: '600' }}>Sem {res.semester}</td>
-                                  <td style={{ padding: '8px 10px' }}>
-                                    <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{res.subjectName}</div>
-                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{res.subjectCode}</div>
-                                  </td>
-                                  <td style={{ padding: '8px 10px', fontWeight: '700' }}>{res.score} / {res.maxScore}</td>
-                                  <td style={{ padding: '8px 10px', fontWeight: '800', color: 'var(--accent)' }}>{res.grade || 'N/A'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', margin: 0 }}>No semester exam records found for this student.</p>
-                      );
-                    })()}
-                  </div>
-                )}
+
 
                 {/* ── CERTIFICATIONS ── */}
                 {selectedUserForModal.role === 'Student' && (
@@ -2656,7 +2504,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
         </div>
       )}
 
-      {/* Results CRUD Modals */}
+
       {activeResultModal && (
         <div style={{
           position: 'fixed',

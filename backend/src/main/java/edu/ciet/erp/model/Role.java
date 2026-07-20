@@ -6,5 +6,6 @@ public enum Role {
     Mentor,
     Faculty,
     Student,
-    Parent
+    Parent,
+    Examcell
 }
