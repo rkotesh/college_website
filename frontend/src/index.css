@@ -915,6 +915,8 @@ body {
   flex: 1;
   padding: 32px 36px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Page header */
@@ -3230,11 +3232,10 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
 .ds-main {
   flex: 1; overflow-y: auto; overflow-x: hidden;
   scrollbar-width: thin; scrollbar-color: var(--ds-border) transparent;
-  padding-bottom: 72px; /* room for mobile bottom nav */
+  /* No padding-bottom here — footer handles the bottom spacing on mobile */
   display: flex;
   flex-direction: column;
 }
-@media (min-width: 1024px) { .ds-main { padding-bottom: 0; } }
 
 .ds-page { padding: 24px 20px; width: 100%; box-sizing: border-box; flex: 1; display: flex; flex-direction: column; }
 @media (min-width: 768px) { .ds-page { padding: 28px 28px; } }
@@ -3529,6 +3530,17 @@ cursor: default;
   width: 320px; background: var(--ds-surface); border: 1px solid var(--ds-border);
   border-radius: 12px; box-shadow: var(--ds-s3); overflow: hidden; z-index: 200;
 }
+@media (max-width: 640px) {
+  .ds-notif-dropdown {
+    position: fixed !important;
+    top: 60px !important;
+    left: 12px !important;
+    right: 12px !important;
+    width: auto !important;
+    max-width: calc(100vw - 24px) !important;
+    z-index: 999999 !important;
+  }
+}
 .ds-notif-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--ds-border); }
 .ds-notif-head span { font-size: 13px; font-weight: 800; color: var(--ds-text1); }
 .ds-notif-head button { font-size: 11px; color: var(--ds-jade); background: none; border: none; cursor: pointer; font-weight: 700; font-family: var(--ds-font-body); }
@@ -3595,8 +3607,21 @@ cursor: default;
    FOOTER
 ───────────────────────────────────────────────────────────────*/
 .ds-footer {
-  margin-top: auto; padding: 36px 20px 24px; border-top: 1px solid var(--ds-border);
+  margin-top: auto;
+  /* Mobile: pad bottom enough to clear the fixed bottom-nav (≈68px) + device safe area */
+  padding: 36px 20px calc(72px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--ds-border);
   background: var(--ds-surface);
+  /* Ensure no transparent bleed shows through */
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+/* On desktop the bottom-nav is hidden — restore normal footer padding */
+@media (min-width: 1024px) {
+  .ds-footer {
+    padding: 36px 20px 24px;
+  }
 }
 .ds-footer-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
 .ds-footer-logo { width: 36px; height: 36px; object-fit: contain; background: #fff; border-radius: 4px; }

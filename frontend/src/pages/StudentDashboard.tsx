@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 import LogoHeader from '../components/LogoHeader';
 
+// Use VITE_APP_URL (set in production .env) so shared links use the real deployed domain
+export const APP_ORIGIN = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '') || window.location.origin;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ANIMATED PARTICLE BACKGROUND — 150 particles, 3 tiers, glow + mouse
@@ -203,6 +205,14 @@ function SettingsTab({ profile, user, userSession, fetchDashboardData, API_BASE_
   const [formData, setFormData] = useState({ ...profile, slug: user?.fullName || '' });
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copyPortfolioLink = (slug: string) => {
+    const url = `${APP_ORIGIN}/portfolio/${slug}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   
@@ -424,10 +434,10 @@ function SettingsTab({ profile, user, userSession, fetchDashboardData, API_BASE_
           </div>
           {formData.isPublic && (
             <div style={{ display: 'flex', gap: '8px' }}>
-              <input readOnly value={`${window.location.origin}/portfolio/${profile.slug || profile.rollNo}`} className="ds-input" style={{ flex: 1, fontSize: '11px', color: 'var(--ds-text3)' }} />
+              <input readOnly value={`${APP_ORIGIN}/portfolio/${profile.slug || profile.rollNo}`} className="ds-input" style={{ flex: 1, fontSize: '11px', color: 'var(--ds-text3)' }} />
               <button type="button" className="ds-btn ds-btn-secondary" style={{ fontSize: '11px', whiteSpace: 'nowrap' }}
-                onClick={() => navigator.clipboard.writeText(`${window.location.origin}/portfolio/${profile.slug || profile.rollNo}`).then(() => alert('Copied!'))}>
-                Copy
+                onClick={() => copyPortfolioLink(profile.slug || profile.rollNo)}>
+                {copied ? 'Copied!' : 'Copy'}
               </button>
             </div>
           )}
@@ -620,7 +630,75 @@ const pageVariants = {
 const pageTransition = { duration: 0.22, ease: [0.16, 1, 0.3, 1] as const };
 
 export default function StudentDashboard({ userSession, handleLogout }: StudentDashboardProps) {
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const getInitialTab = (): Tab => {
+    const parts = window.location.pathname.split('/');
+    const tabFromUrl = parts[parts.length - 1];
+    const validTabs: Tab[] = [
+      'overview', 'academics', 'education', 'projects', 'certifications', 
+      'internships', 'skills', 'research', 'events', 'courses', 
+      'notifications', 'messages', 'settings', 'escalation', 'broadcasts'
+    ];
+    if (validTabs.includes(tabFromUrl as Tab)) {
+      return tabFromUrl as Tab;
+    }
+    return 'overview';
+  };
+
+  const [activeTab, setActiveTab] = useState<Tab>(getInitialTab());
+
+  // Whenever activeTab changes, update history URL and title
+  useEffect(() => {
+    let tabLabel = '';
+    switch (activeTab) {
+      case 'overview': tabLabel = 'Dashboard'; break;
+      case 'academics': tabLabel = 'Grades'; break;
+      case 'projects': tabLabel = 'Portfolio'; break;
+      case 'education': tabLabel = 'Education'; break;
+      case 'skills': tabLabel = 'Skills'; break;
+      case 'certifications': tabLabel = 'Certifications'; break;
+      case 'internships': tabLabel = 'Internships'; break;
+      case 'research': tabLabel = 'Research'; break;
+      case 'events': tabLabel = 'Events'; break;
+      case 'courses': tabLabel = 'Courses'; break;
+      case 'notifications': tabLabel = 'Alerts'; break;
+      case 'messages': tabLabel = 'Messages'; break;
+      case 'settings': tabLabel = 'Settings'; break;
+      case 'escalation': tabLabel = 'Intervention Room'; break;
+      case 'broadcasts': tabLabel = 'Broadcasts'; break;
+      default: {
+        const tabStr = activeTab as string;
+        tabLabel = tabStr.charAt(0).toUpperCase() + tabStr.slice(1);
+      }
+    }
+    
+    document.title = `${tabLabel} | Student Dashboard | CIET ERP`;
+    
+    const newPath = activeTab === 'overview' ? '/student-dashboard' : `/student-dashboard/${activeTab}`;
+    if (window.location.pathname !== newPath) {
+      window.history.pushState(null, '', newPath);
+    }
+  }, [activeTab]);
+
+  // Sync activeTab when the back/forward button is clicked
+  useEffect(() => {
+    const handlePopState = () => {
+      const parts = window.location.pathname.split('/');
+      const tabFromUrl = parts[parts.length - 1];
+      const validTabs: Tab[] = [
+        'overview', 'academics', 'education', 'projects', 'certifications', 
+        'internships', 'skills', 'research', 'events', 'courses', 
+        'notifications', 'messages', 'settings', 'escalation', 'broadcasts'
+      ];
+      if (validTabs.includes(tabFromUrl as Tab)) {
+        setActiveTab(tabFromUrl as Tab);
+      } else {
+        setActiveTab('overview');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -665,7 +743,16 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
   }, [studentEscalations]);
 
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+
+  const [linkCopied, setLinkCopied] = useState(false);
+  const copyPortfolioLink = (slug: string) => {
+    const url = `${APP_ORIGIN}/portfolio/${slug}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    });
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -675,10 +762,11 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
 
       const [dashRes, annRes, trRes, escRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/v1/portal/student/dashboard`, { credentials: 'include', headers }),
-        fetch(`${API_BASE_URL}/api/v1/portal/student/announcements`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/portal/student/trainings`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/portal/student/escalations`, { headers })
+        fetch(`${API_BASE_URL}/api/v1/portal/student/announcements`, { credentials: 'include', headers }),
+        fetch(`${API_BASE_URL}/api/v1/portal/student/trainings`, { credentials: 'include', headers }),
+        fetch(`${API_BASE_URL}/api/v1/portal/student/escalations`, { credentials: 'include', headers })
       ]);
+
 
       if (!dashRes.ok) throw new Error('Failed to load dashboard.');
       setDashboardData(await dashRes.json());
@@ -1084,11 +1172,28 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                         </div>
                       </div>
                       <div className="ds-hero-right">
+                        {/* Share Portfolio Link */}
+                        {profile?.isPublic && (profile?.slug || profile?.rollNo) && (
+                          <button
+                            type="button"
+                            onClick={() => copyPortfolioLink(profile.slug || profile.rollNo)}
+                            className="ds-resume-btn"
+                            style={{ cursor: 'pointer', border: 'none', background: linkCopied ? 'var(--ds-jade-hi)' : 'var(--ds-jade)' }}
+                            title={`${APP_ORIGIN}/portfolio/${profile.slug || profile.rollNo}`}
+                          >
+                            {linkCopied ? (
+                              <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied!</>
+                            ) : (
+                              <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Share Portfolio</>
+                            )}
+                          </button>
+                        )}
                         {profile?.resumeUrl && (
                           <a
                             href={profile.resumeUrl.startsWith('http') || profile.resumeUrl.startsWith('data:') ? profile.resumeUrl : `https://${profile.resumeUrl}`}
                             target="_blank" rel="noopener noreferrer"
                             className="ds-resume-btn"
+                            style={{ background: 'var(--ds-surface2)', color: 'var(--ds-text1)', border: '1px solid var(--ds-border)' }}
                           >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                             View Resume
@@ -2151,15 +2256,15 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                                   padding: '12px',
                                   border: 'none',
                                   borderRadius: '10px',
-                                  background: isSelected ? 'rgba(21, 128, 61, 0.08)' : 'transparent',
+                                  background: isSelected ? 'var(--ds-jade-sub)' : 'transparent',
                                   textAlign: 'left',
                                   cursor: 'pointer',
                                   width: '100%',
                                   transition: 'all 0.2s ease',
-                                  borderLeft: isSelected ? '3px solid #15803d' : '3px solid transparent'
+                                  borderLeft: isSelected ? '3px solid var(--ds-jade)' : '3px solid transparent'
                                 }}
                               >
-                                <div style={{ fontWeight: 700, fontSize: '13.5px', color: isSelected ? '#15803d' : 'var(--ds-text1)' }}>
+                                <div style={{ fontWeight: 700, fontSize: '13.5px', color: isSelected ? 'var(--ds-jade)' : 'var(--ds-text1)' }}>
                                   {c.fullName}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -2221,7 +2326,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                                       gap: '3px'
                                     }}>
                                       <div style={{
-                                        background: isOutgoing ? '#15803d' : 'var(--ds-surface3)',
+                                        background: isOutgoing ? 'var(--ds-jade)' : 'var(--ds-surface3)',
                                         color: isOutgoing ? '#fff' : 'var(--ds-text1)',
                                         borderRadius: isOutgoing ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
                                         padding: '10px 14px',
@@ -2255,7 +2360,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                               type="submit"
                               className="ds-btn ds-btn-primary"
                               disabled={!msgInput.trim()}
-                              style={{ padding: '10px 20px', background: '#15803d', border: 'none', color: '#fff', fontWeight: 700 }}
+                              style={{ padding: '10px 20px', background: 'var(--ds-jade)', border: 'none', color: '#fff', fontWeight: 700 }}
                             >
                               Send
                             </button>
@@ -2396,17 +2501,17 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                       {/* Announcements Panel */}
                       {announcements.length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                          <h3 style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', margin: 0, textTransform: 'uppercase', letterSpacing: '0.8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#15803d' }}></span>
+                          <h3 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--ds-jade)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: 'var(--ds-jade)' }}></span>
                             Recent Published Announcements
                           </h3>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {announcements.map((ann) => (
-                              <div key={ann.id} style={{ background: 'var(--ds-surface)', border: '1px solid rgba(21, 128, 61, 0.15)', borderLeft: '4px solid #15803d', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                              <div key={ann.id} style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-jade-glow)', borderLeft: '4px solid var(--ds-jade)', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                                 <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--ds-text1)' }}>{ann.title}</div>
                                 <p style={{ fontSize: '13px', color: 'var(--ds-text2)', margin: '8px 0 0', lineHeight: '1.5' }}>{ann.content}</p>
                                 {ann.resourceUrl && (
-                                  <a href={ann.resourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#16a34a', textDecoration: 'none', fontWeight: 700, display: 'inline-block', marginTop: '10px' }}>
+                                  <a href={ann.resourceUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: 'var(--ds-jade-hi)', textDecoration: 'none', fontWeight: 700, display: 'inline-block', marginTop: '10px' }}>
                                     View Reference Link →
                                   </a>
                                 )}
@@ -2419,13 +2524,13 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                       {/* Trainings Panel */}
                       {trainings.length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '12px' }}>
-                          <h3 style={{ fontSize: '13px', fontWeight: 800, color: '#15803d', margin: 0, textTransform: 'uppercase', letterSpacing: '0.8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#15803d' }}></span>
+                          <h3 style={{ fontSize: '13px', fontWeight: 800, color: 'var(--ds-jade)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: 'var(--ds-jade)' }}></span>
                             Active Skill Trainings
                           </h3>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {trainings.map((tr) => (
-                              <div key={tr.id} style={{ background: 'var(--ds-surface)', border: '1px solid rgba(21, 128, 61, 0.15)', borderLeft: '4px solid #16a34a', borderRadius: '12px', padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                              <div key={tr.id} style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-jade-glow)', borderLeft: '4px solid var(--ds-jade)', borderRadius: '12px', padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                   <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--ds-text1)' }}>{tr.title}</div>
                                   <div style={{ fontSize: '12.5px', color: 'var(--ds-text2)' }}>
@@ -2433,14 +2538,14 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                                     {tr.registrationUrl && (
                                       <>
                                         <span style={{ margin: '0 8px', color: 'var(--ds-text3)' }}>|</span>
-                                        <a href={tr.registrationUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#16a34a', textDecoration: 'none', fontWeight: 800 }}>
+                                        <a href={tr.registrationUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ds-jade)', textDecoration: 'none', fontWeight: 800 }}>
                                           Portal Register ↗
                                         </a>
                                       </>
                                     )}
                                   </div>
                                 </div>
-                                <span style={{ background: 'rgba(21, 128, 61, 0.1)', color: '#15803d', fontSize: '10px', fontWeight: 800, padding: '4px 10px', borderRadius: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                <span style={{ background: 'var(--ds-jade-sub)', color: 'var(--ds-jade)', fontSize: '10px', fontWeight: 800, padding: '4px 10px', borderRadius: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                   {tr.category || 'Technical'}
                                 </span>
                               </div>

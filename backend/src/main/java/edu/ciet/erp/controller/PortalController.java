@@ -1159,22 +1159,73 @@ public class PortalController {
 
     @GetMapping("/parent/dashboard")
     @PreAuthorize("hasAnyAuthority('ROLE_Parent')")
-    public ResponseEntity<?> getParentDashboard(@RequestParam(required = false) String rollNo) {
-        if (rollNo == null || rollNo.isBlank()) {
-            return ResponseEntity.ok(Map.of("message", "Enter roll number to view child profile"));
+    public ResponseEntity<?> getParentDashboard(Authentication authentication, @RequestParam(required = false) String rollNo) {
+        String targetRollNo = rollNo;
+        boolean lookupByAuth = (targetRollNo == null || targetRollNo.isBlank());
+        
+        if (!lookupByAuth) {
+            // Check if profile exists with this roll number
+            if (!studentProfileRepository.existsByRollNoIgnoreCase(targetRollNo.trim())) {
+                lookupByAuth = true;
+            }
         }
-        Optional<StudentProfile> profileOpt = studentProfileRepository.findByRollNoIgnoreCase(rollNo.trim());
+
+        Optional<StudentProfile> profileOpt = Optional.empty();
+        if (lookupByAuth && authentication != null) {
+            String email = authentication.getName();
+            Optional<User> userOpt = userRepository.findByEmailIgnoreCase(email);
+            if (userOpt.isPresent()) {
+                profileOpt = studentProfileRepository.findByUserId(userOpt.get().getId());
+            }
+        } else if (targetRollNo != null) {
+            profileOpt = studentProfileRepository.findByRollNoIgnoreCase(targetRollNo.trim());
+        }
+
         if (profileOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student profile with roll number " + rollNo + " not found"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Student profile not found. Please verify the roll number."));
         }
+
         StudentProfile profile = profileOpt.get();
         Optional<User> studentUserOpt = userRepository.findById(profile.getUserId());
-        List<SemesterResult> results = semesterResultRepository.findAllByRollNoIgnoreCase(profile.getRollNo());
+        String rollNoTrim = profile.getRollNo();
+
+        List<SemesterResult> results = semesterResultRepository.findAllByRollNoIgnoreCase(rollNoTrim);
+        List<EducationBackground> education = educationBackgroundRepository.findAllByRollNoIgnoreCase(rollNoTrim);
+        List<Certification> certifications = certificationRepository.findAllByRollNoIgnoreCase(rollNoTrim);
+        List<Project> projects = projectRepository.findAllByRollNoIgnoreCase(rollNoTrim);
+        List<Internship> internships = internshipRepository.findAllByRollNoIgnoreCase(rollNoTrim);
+        List<Research> research = researchRepository.findAllByRollNoIgnoreCase(rollNoTrim);
+        List<Event> events = eventRepository.findAllByRollNoIgnoreCase(rollNoTrim);
+        List<Course> courses = courseRepository.findAllByRollNoIgnoreCase(rollNoTrim);
+        List<Skill> skills = skillRepository.findAllByRollNoIgnoreCase(rollNoTrim);
 
         Map<String, Object> data = new HashMap<>();
         data.put("profile", profile);
         studentUserOpt.ifPresent(u -> data.put("studentUser", u));
         data.put("results", results);
+        data.put("education", education);
+        data.put("certifications", certifications);
+        data.put("projects", projects);
+        data.put("internships", internships);
+        data.put("research", research);
+        data.put("events", events);
+        data.put("courses", courses);
+        data.put("skills", skills);
+
+        // Fetch Mentor
+        Optional<MentorshipAssignment> assignmentOpt = mentorshipAssignmentRepository.findByRollNoIgnoreCase(rollNoTrim);
+        if (assignmentOpt.isPresent()) {
+            String mentorId = assignmentOpt.get().getMentorUserId();
+            Optional<User> mentorOpt = userRepository.findById(mentorId);
+            mentorOpt.ifPresent(m -> {
+                Map<String, Object> mInfo = new HashMap<>();
+                mInfo.put("fullName", m.getFullName());
+                mInfo.put("email", m.getEmail());
+                mInfo.put("phone", m.getPhone());
+                data.put("mentor", mInfo);
+            });
+        }
+
         return ResponseEntity.ok(data);
     }
 

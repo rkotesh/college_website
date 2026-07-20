@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface PublicPortfolioProps {
   slug: string;
@@ -61,6 +61,7 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
         const json = await res.json();
         setData(json);
         const name = json?.user?.fullName || 'the student';
+        document.title = `${name} | Public Portfolio`;
         setMsgs([{ sender: 'assistant', text: `Hi there! 👋 I'm ${name.split(' ')[0]}'s AI avatar. I can tell you about my skills, projects, experience, and how to contact me. How can I help?` }]);
         setChips(["Tell me about yourself 👨‍💻", "Show your projects 🚀", "What are your skills? 🧠", "Get contact info 📞"]);
       } catch { setError('Unable to load. Please try again later.'); }

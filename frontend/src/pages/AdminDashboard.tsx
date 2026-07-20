@@ -16,7 +16,58 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({ userSession, handleLogout }: AdminDashboardProps) {
-  const [adminTab, setAdminTab] = useState<'uploads' | 'directory' | 'otp' | 'results' | 'departments' | 'certifications' | 'notifications'>('directory');
+  const getInitialTab = (): 'uploads' | 'directory' | 'otp' | 'results' | 'departments' | 'certifications' | 'notifications' => {
+    const parts = window.location.pathname.split('/');
+    const tabFromUrl = parts[parts.length - 1];
+    const validTabs = ['uploads', 'directory', 'otp', 'results', 'departments', 'certifications', 'notifications'];
+    if (validTabs.includes(tabFromUrl)) {
+      return tabFromUrl as any;
+    }
+    return 'directory';
+  };
+
+  const [adminTab, setAdminTab] = useState<'uploads' | 'directory' | 'otp' | 'results' | 'departments' | 'certifications' | 'notifications'>(getInitialTab());
+
+  // Whenever adminTab changes, update history URL and title
+  useEffect(() => {
+    let tabLabel = '';
+    switch (adminTab) {
+      case 'directory': tabLabel = 'User Directory'; break;
+      case 'uploads': tabLabel = 'Bulk Data Import'; break;
+      case 'otp': tabLabel = 'OTP Audit Logs'; break;
+      case 'results': tabLabel = 'Semester Exams Results'; break;
+      case 'departments': tabLabel = 'Academic Departments'; break;
+      case 'certifications': tabLabel = 'External Certifications'; break;
+      case 'notifications': tabLabel = 'Broadcast Notifications'; break;
+      default: {
+        const tabStr = adminTab as string;
+        tabLabel = tabStr.charAt(0).toUpperCase() + tabStr.slice(1);
+      }
+    }
+    
+    document.title = `${tabLabel} | Admin Dashboard | CIET ERP`;
+    
+    const newPath = adminTab === 'directory' ? '/admin-dashboard' : `/admin-dashboard/${adminTab}`;
+    if (window.location.pathname !== newPath) {
+      window.history.pushState(null, '', newPath);
+    }
+  }, [adminTab]);
+
+  // Sync adminTab when the back/forward button is clicked
+  useEffect(() => {
+    const handlePopState = () => {
+      const parts = window.location.pathname.split('/');
+      const tabFromUrl = parts[parts.length - 1];
+      const validTabs = ['uploads', 'directory', 'otp', 'results', 'departments', 'certifications', 'notifications'];
+      if (validTabs.includes(tabFromUrl)) {
+        setAdminTab(tabFromUrl as any);
+      } else {
+        setAdminTab('directory');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [departments, setDepartments] = useState<{code: string, name: string, sections: string[]}[]>([]);
 
   // Notifications manual broadcast states
@@ -111,7 +162,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
   const [studentDataLoading, setStudentDataLoading] = useState(false);
   const [certTypeFilter, setCertTypeFilter] = useState<string>('All');
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
   const fetchStudentDashboardData = async (userId: string) => {
     setStudentDataLoading(true);
@@ -2079,9 +2130,11 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
             background: 'var(--surface-overlay)',
             borderTop: '1px solid var(--surface-border)',
             width: '100%',
+            boxSizing: 'border-box',
             display: 'flex',
             flexDirection: 'column',
-            gap: '24px'
+            gap: '24px',
+            flexShrink: 0
           }}>
             <div style={{
               display: 'flex',

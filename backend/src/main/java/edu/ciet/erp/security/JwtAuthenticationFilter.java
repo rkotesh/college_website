@@ -1,5 +1,6 @@
 package edu.ciet.erp.security;
 
+import lombok.extern.slf4j.Slf4j;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,9 +17,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Collections;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
 
     private final JwtService jwtService;
 
@@ -28,43 +31,43 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-        String jwt = null;
+        
+        String headerJwt = null;
+        final String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            headerJwt = authHeader.substring(7);
+        }
 
-        // 1. Try extracting JWT token from HttpOnly cookies
+        String cookieJwt = null;
         if (request.getCookies() != null) {
             for (jakarta.servlet.http.Cookie cookie : request.getCookies()) {
                 if ("accessToken".equals(cookie.getName())) {
-                    jwt = cookie.getValue();
+                    cookieJwt = cookie.getValue();
                     break;
                 }
             }
         }
 
-        // 2. Fall back to standard Authorization header
-        if (jwt == null) {
-            final String authHeader = request.getHeader("Authorization");
-            if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                jwt = authHeader.substring(7);
-            }
+        boolean authenticated = false;
+        if (headerJwt != null) {
+            authenticated = tryAuthenticate(headerJwt, request);
+        }
+        if (!authenticated && cookieJwt != null) {
+            authenticated = tryAuthenticate(cookieJwt, request);
         }
 
-        if (jwt == null) {
-            filterChain.doFilter(request, response);
-            return;
-        }
+        filterChain.doFilter(request, response);
+    }
 
-        final String finalJwt = jwt;
-        final String userEmail;
-        final String role;
+    private boolean tryAuthenticate(String jwt, HttpServletRequest request) {
         try {
-            userEmail = jwtService.extractUsername(finalJwt);
-            role = jwtService.extractRole(finalJwt);
-            String type = jwtService.extractType(finalJwt);
+            String userEmail = jwtService.extractUsername(jwt);
+            String role = jwtService.extractRole(jwt);
+            String type = jwtService.extractType(jwt);
 
-            // Skip authentication if it is a temporary OTP token
             if ("temp_otp".equals(type)) {
-                filterChain.doFilter(request, response);
-                return;
+                log.info("Temporary OTP token detected, skipping authentication");
+                return false;
             }
 
             if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
@@ -77,12 +80,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     );
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
+                    log.info("Successfully authenticated user {} with role {}", userEmail, role);
+                    return true;
                 }
             }
         } catch (Exception e) {
-            // Token is invalid/expired, let filter chain proceed (requests will be blocked by Spring Security configuration)
+            log.debug("Token validation failed: {}", e.getMessage());
         }
-
-        filterChain.doFilter(request, response);
+        return false;
     }
 }

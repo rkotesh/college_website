@@ -8,9 +8,10 @@ import MentorDashboard from './pages/MentorDashboard';
 import FacultyDashboard from './pages/FacultyDashboard';
 import LandingPage from './pages/LandingPage';
 import LogoHeader from './components/LogoHeader';
+import ParentDashboard from './pages/ParentDashboard';
 
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 export default function App() {
   const [userSession, setUserSession] = useState<{
@@ -20,6 +21,18 @@ export default function App() {
     accessToken: string;
   } | null>(null);
 
+  const [initializing, setInitializing] = useState(true);
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+
+  // Listen to popstate event (browser back/forward navigation)
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   useEffect(() => {
     const checkSession = async () => {
       const savedToken = localStorage.getItem('accessToken');
@@ -27,10 +40,11 @@ export default function App() {
       const savedEmail = localStorage.getItem('email');
       const savedName  = localStorage.getItem('fullName');
 
-      // Nothing stored — go straight to login
-      if (!savedToken || !savedRole || !savedEmail) return;
+      if (!savedToken || !savedRole || !savedEmail) {
+        setInitializing(false);
+        return;
+      }
 
-      // Validate the stored token against the backend before trusting it
       try {
         const res = await fetch(`${API_BASE_URL}/api/v1/auth/session`, {
           credentials: 'include',
@@ -50,11 +64,9 @@ export default function App() {
           }
         }
 
-        // Token is expired or invalid — clear everything and force fresh login
         console.warn('Stored token rejected by server (expired/invalid). Clearing session.');
         localStorage.clear();
       } catch (e) {
-        // Network error — still trust the stored token optimistically
         console.warn('Session validation network error, restoring from localStorage:', e);
         setUserSession({
           role: savedRole,
@@ -62,10 +74,75 @@ export default function App() {
           fullName: savedName || undefined,
           accessToken: savedToken
         });
+      } finally {
+        setInitializing(false);
       }
     };
     checkSession();
   }, []);
+
+  // Sync URL & Document Title based on userSession & currentPath
+  useEffect(() => {
+    if (initializing) return;
+
+    const portfolioMatch = currentPath.match(/^\/portfolio\/(.+)/);
+    if (portfolioMatch) {
+      return;
+    }
+
+    if (!userSession) {
+      if (currentPath === '/') {
+        document.title = "CIET - Chalapathi Institute of Engineering and Technology";
+      } else if (currentPath === '/login') {
+        document.title = "Login | CIET ERP";
+      } else {
+        window.history.replaceState(null, '', '/login');
+        setCurrentPath('/login');
+        document.title = "Login | CIET ERP";
+      }
+    } else {
+      let basePath = '';
+      let title = '';
+
+      switch (userSession.role) {
+        case 'Director':
+          basePath = '/admin-dashboard';
+          title = "Admin Dashboard | CIET ERP";
+          break;
+        case 'HOD':
+          basePath = '/hod-dashboard';
+          title = "HOD Dashboard | CIET ERP";
+          break;
+        case 'Mentor':
+          basePath = '/mentor-dashboard';
+          title = "Mentor Dashboard | CIET ERP";
+          break;
+        case 'Faculty':
+          basePath = '/faculty-dashboard';
+          title = "Faculty Dashboard | CIET ERP";
+          break;
+        case 'Student':
+          basePath = '/student-dashboard';
+          title = "Student Dashboard | CIET ERP";
+          break;
+        case 'Parent':
+          basePath = '/parent-dashboard';
+          title = "Parent Dashboard | CIET ERP";
+          break;
+        default:
+          basePath = '/account';
+          title = "Account | CIET ERP";
+      }
+
+      if (!currentPath.startsWith(basePath)) {
+        window.history.replaceState(null, '', basePath);
+        setCurrentPath(basePath);
+      }
+      if (currentPath === basePath) {
+        document.title = title;
+      }
+    }
+  }, [userSession, currentPath, initializing]);
 
   const handleLoginSuccess = (session: {
     role: string;
@@ -87,16 +164,27 @@ export default function App() {
     }
     localStorage.clear();
     setUserSession(null);
+    window.history.pushState(null, '', '/login');
+    setCurrentPath('/login');
   };
 
+  if (initializing) {
+    return (
+      <div className="ds-loader">
+        <div className="ds-loader-ring" />
+        <div className="ds-loader-text">Loading secure session...</div>
+      </div>
+    );
+  }
+
   // Public portfolio route — no auth needed, accessible by HR/recruiters
-  const portfolioMatch = window.location.pathname.match(/^\/portfolio\/(.+)/);
+  const portfolioMatch = currentPath.match(/^\/portfolio\/(.+)/);
   if (portfolioMatch) {
     return <PublicPortfolio slug={portfolioMatch[1]} API_BASE_URL={API_BASE_URL} />;
   }
 
   // Render landing page for root path before login
-  if (window.location.pathname === '/' && !userSession) {
+  if (currentPath === '/' && !userSession) {
     return <LandingPage />;
   }
 
@@ -106,27 +194,32 @@ export default function App() {
   }
 
   // If user is logged in as Director, show the Admin Command Center Dashboard
-  if (userSession.role === 'Director') {
+  if (userSession.role === 'Director' && currentPath.startsWith('/admin-dashboard')) {
     return <AdminDashboard userSession={userSession} handleLogout={handleLogout} />;
   }
 
   // Route each role to its dedicated dashboard page
-  if (userSession.role === 'HOD') {
+  if (userSession.role === 'HOD' && currentPath.startsWith('/hod-dashboard')) {
     return <HODDashboard userSession={userSession} handleLogout={handleLogout} />;
   }
-  if (userSession.role === 'Mentor') {
+  if (userSession.role === 'Mentor' && currentPath.startsWith('/mentor-dashboard')) {
     return <MentorDashboard userSession={userSession} handleLogout={handleLogout} />;
   }
-  if (userSession.role === 'Faculty') {
+  if (userSession.role === 'Faculty' && currentPath.startsWith('/faculty-dashboard')) {
     return <FacultyDashboard userSession={userSession} handleLogout={handleLogout} />;
   }
 
   // If user is logged in as Student, show the Student Dashboard
-  if (userSession.role === 'Student') {
+  if (userSession.role === 'Student' && currentPath.startsWith('/student-dashboard')) {
     return <StudentDashboard userSession={userSession} handleLogout={handleLogout} />;
   }
 
-  // Fallback for other logged in roles (e.g. Faculty, Parent, Mentor, HOD)
+  // If user is logged in as Parent, show the Parent Dashboard
+  if (userSession.role === 'Parent' && currentPath.startsWith('/parent-dashboard')) {
+    return <ParentDashboard userSession={userSession} handleLogout={handleLogout} />;
+  }
+
+  // Fallback for other logged in roles
   return (
     <div className="login-page-wrapper">
       <div className="login-left-panel">

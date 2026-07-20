@@ -45,20 +45,25 @@ public class AuthController {
             LoginResponse loginResponse = authService.loginPhase2(verifyRequest, clientIp);
             
             if ("SUCCESS".equals(loginResponse.getStatus())) {
+                // Only set the Secure flag when actually running over HTTPS
+                // (i.e., in production). On plain HTTP localhost, Secure=true
+                // causes browsers to silently drop the cookie, causing 403s.
+                boolean isSecure = request.isSecure();
+
                 // Set HttpOnly access token cookie
                 Cookie accessCookie = new Cookie("accessToken", loginResponse.getAccessToken());
                 accessCookie.setHttpOnly(true);
-                accessCookie.setSecure(true); // secure: browser will only send this cookie over HTTPS
-                accessCookie.setAttribute("SameSite", "Strict");
+                accessCookie.setSecure(isSecure);
+                accessCookie.setAttribute("SameSite", isSecure ? "Strict" : "Lax");
                 accessCookie.setPath("/");
-                accessCookie.setMaxAge(3600); // 1 hour
+                accessCookie.setMaxAge(86400); // 24 hours
                 response.addCookie(accessCookie);
 
                 // Set HttpOnly refresh token cookie
                 Cookie refreshCookie = new Cookie("refreshToken", loginResponse.getRefreshToken());
                 refreshCookie.setHttpOnly(true);
-                refreshCookie.setSecure(true);
-                refreshCookie.setAttribute("SameSite", "Strict");
+                refreshCookie.setSecure(isSecure);
+                refreshCookie.setAttribute("SameSite", isSecure ? "Strict" : "Lax");
                 refreshCookie.setPath("/");
                 refreshCookie.setMaxAge(7 * 24 * 3600); // 7 days
                 response.addCookie(refreshCookie);
@@ -83,21 +88,28 @@ public class AuthController {
         }
         
         User user = userOpt.get();
+        String sessionRole = authentication.getAuthorities().stream()
+                .map(a -> a.getAuthority().replace("ROLE_", ""))
+                .findFirst()
+                .orElse(user.getRole().name());
+                
         return ResponseEntity.ok(Map.of(
             "authenticated", true,
             "email", user.getEmail(),
-            "role", user.getRole().name(),
+            "role", sessionRole,
             "fullName", user.getFullName()
         ));
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(HttpServletResponse response) {
+    public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
+        boolean isSecure = request.isSecure();
+
         // Clear accessToken cookie
         Cookie accessCookie = new Cookie("accessToken", "");
         accessCookie.setHttpOnly(true);
-        accessCookie.setSecure(true);
-        accessCookie.setAttribute("SameSite", "Strict");
+        accessCookie.setSecure(isSecure);
+        accessCookie.setAttribute("SameSite", isSecure ? "Strict" : "Lax");
         accessCookie.setPath("/");
         accessCookie.setMaxAge(0); // delete cookie instantly
         response.addCookie(accessCookie);
@@ -105,8 +117,8 @@ public class AuthController {
         // Clear refreshToken cookie
         Cookie refreshCookie = new Cookie("refreshToken", "");
         refreshCookie.setHttpOnly(true);
-        refreshCookie.setSecure(true);
-        refreshCookie.setAttribute("SameSite", "Strict");
+        refreshCookie.setSecure(isSecure);
+        refreshCookie.setAttribute("SameSite", isSecure ? "Strict" : "Lax");
         refreshCookie.setPath("/");
         refreshCookie.setMaxAge(0);
         response.addCookie(refreshCookie);

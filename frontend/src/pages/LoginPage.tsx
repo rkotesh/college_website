@@ -25,6 +25,19 @@ interface LoginPageProps {
   }) => void;
 }
 
+const readApiJson = async <T,>(response: Response): Promise<T> => {
+  const text = await response.text();
+  if (!text) {
+    throw new Error(response.ok ? 'Server returned an empty response.' : 'Backend server is unavailable. Please make sure it is running.');
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(response.ok ? 'Server returned an invalid response.' : 'Backend server is unavailable. Please make sure it is running.');
+  }
+};
+
 // framer-motion stagger variants for form card entrance
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -204,7 +217,7 @@ function InteractiveCanvas() {
 }
 
 export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
   const [phase, setPhase] = useState<1 | 2>(1);
   const [identifier, setIdentifier] = useState('');
@@ -265,7 +278,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         credentials: 'include',
         body: JSON.stringify({ email: emailToUse, purpose }),
       });
-      const data = await response.json();
+      const data = await readApiJson<{ error?: string }>(response);
       if (!response.ok) {
         throw new Error(data.error || 'Failed to resend verification code.');
       }
@@ -293,7 +306,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         credentials: 'include',
         body: JSON.stringify({ identifier, password, role }),
       });
-      const data: LoginResponse = await response.json();
+      const data = await readApiJson<LoginResponse>(response);
       if (!response.ok) {
         throw new Error(data.error || 'Login failed. Please check credentials.');
       }
@@ -328,7 +341,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         credentials: 'include',
         body: JSON.stringify({ tempToken, otpCode }),
       });
-      const data: LoginResponse = await response.json();
+      const data = await readApiJson<LoginResponse>(response);
       if (!response.ok) {
         throw new Error(data.error || 'Verification failed. Try again.');
       }
@@ -389,7 +402,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         credentials: 'include',
         body: JSON.stringify({ email: forgotEmail }),
       });
-      const data = await response.json();
+      const data = await readApiJson<{ error?: string }>(response);
       if (!response.ok) {
         throw new Error(data.error || 'Failed to initiate password reset.');
       }
@@ -437,7 +450,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           newPassword: forgotNewPassword
         }),
       });
-      const data = await response.json();
+      const data = await readApiJson<{ error?: string }>(response);
       if (!response.ok) {
         throw new Error(data.error || 'Failed to reset password.');
       }
@@ -703,4 +716,3 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     </div>
   );
 }
-

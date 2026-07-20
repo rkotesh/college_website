@@ -25,9 +25,68 @@ type Tab =
   | 'messages';
 
 export default function MentorDashboard({ userSession, handleLogout }: MentorDashboardProps) {
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
   
-  const [activeTab, setActiveTab] = useState<Tab>('overview');
+  const getInitialTab = (): Tab => {
+    const parts = window.location.pathname.split('/');
+    const tabFromUrl = parts[parts.length - 1];
+    const validTabs: Tab[] = [
+      'overview', 'faculty', 'mentorship', 'documents', 'training', 
+      'escalations', 'notifications', 'settings', 'messages'
+    ];
+    if (validTabs.includes(tabFromUrl as Tab)) {
+      return tabFromUrl as Tab;
+    }
+    return 'overview';
+  };
+
+  const [activeTab, setActiveTab] = useState<Tab>(getInitialTab());
+
+  // Whenever activeTab changes, update history URL and title
+  useEffect(() => {
+    let tabLabel = '';
+    switch (activeTab) {
+      case 'overview': tabLabel = 'Overview'; break;
+      case 'faculty': tabLabel = 'Faculty Members'; break;
+      case 'mentorship': tabLabel = 'Mentorship'; break;
+      case 'documents': tabLabel = 'Documents'; break;
+      case 'training': tabLabel = 'Professional Training'; break;
+      case 'escalations': tabLabel = 'Escalation Center'; break;
+      case 'notifications': tabLabel = 'Notifications'; break;
+      case 'settings': tabLabel = 'Settings'; break;
+      case 'messages': tabLabel = 'Staff Messages'; break;
+      default: {
+        const tabStr = activeTab as string;
+        tabLabel = tabStr.charAt(0).toUpperCase() + tabStr.slice(1);
+      }
+    }
+    
+    document.title = `${tabLabel} | Mentor Dashboard | CIET ERP`;
+    
+    const newPath = activeTab === 'overview' ? '/mentor-dashboard' : `/mentor-dashboard/${activeTab}`;
+    if (window.location.pathname !== newPath) {
+      window.history.pushState(null, '', newPath);
+    }
+  }, [activeTab]);
+
+  // Sync activeTab when the back/forward button is clicked
+  useEffect(() => {
+    const handlePopState = () => {
+      const parts = window.location.pathname.split('/');
+      const tabFromUrl = parts[parts.length - 1];
+      const validTabs: Tab[] = [
+        'overview', 'faculty', 'mentorship', 'documents', 'training', 
+        'escalations', 'notifications', 'settings', 'messages'
+      ];
+      if (validTabs.includes(tabFromUrl as Tab)) {
+        setActiveTab(tabFromUrl as Tab);
+      } else {
+        setActiveTab('overview');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [department, setDepartment] = useState<any>(null);
   const [facultyList, setFacultyList] = useState<any[]>([]);
   const [studentsList, setStudentsList] = useState<any[]>([]);
