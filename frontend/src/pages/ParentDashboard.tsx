@@ -184,12 +184,7 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
         </form>
 
         <div className="ds-topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
-            className="ds-btn ds-btn-ghost" style={{ padding: '6px 8px' }} title="Toggle theme">
-            {theme === 'dark'
-              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
-          </button>
+          
           
           {/* Sign Out Button in Top Navigation Bar */}
           <button
@@ -318,6 +313,43 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
                     </div>
                   </div>
                 </motion.div>
+
+                    {/* 4. SUMMARY METRIC CHIPS */}
+                <div className="ds-metrics" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', margin: 0 }}>
+                  {[
+                    {
+                      label: 'Projects',
+                      value: projects.length,
+                      sub: projects.length === 0 ? 'No projects yet' : `${collegeProjects} College · ${personalProjects} Personal`
+                    },
+                    {
+                      label: 'Certificates',
+                      value: certifications.length,
+                      sub: certifications.length === 0 ? 'No certificates yet' : `${certifications.filter((c: any) => c.isFeatured).length} Featured`
+                    },
+                    {
+                      label: 'Internships',
+                      value: internships.length,
+                      sub: internships.length === 0 ? 'No internships yet' : `${internships.filter((i: any) => i.internshipType === 'Online').length} Remote · ${internships.filter((i: any) => i.internshipType !== 'Online').length} Office`
+                    },
+                    {
+                      label: 'Activities',
+                      value: courses.length + events.length,
+                      sub: (courses.length + events.length) === 0 ? 'No activities yet' : `${courses.length} Courses · ${events.length} Events`
+                    },
+                  ].map((m, i) => (
+                    <motion.div key={m.label} className="ds-metric-chip"
+                      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.25 + i * 0.04, duration: 0.3 }}
+                      style={{ padding: '14px 16px' }}>
+                      <div className="ds-metric-val ds-mono" style={{ fontSize: '24px' }}>{m.value}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
+                        <div className="ds-metric-label" style={{ fontSize: '11px' }}>{m.label}</div>
+                        <div className="ds-metric-sub" style={{ fontSize: '10px' }}>{m.sub}</div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
 
                 {/* 2. DEVELOPER PROFILES */}
                 <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
@@ -473,42 +505,7 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
 
                 </div>
 
-                {/* 4. SUMMARY METRIC CHIPS */}
-                <div className="ds-metrics" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', margin: 0 }}>
-                  {[
-                    {
-                      label: 'Projects',
-                      value: projects.length,
-                      sub: projects.length === 0 ? 'No projects yet' : `${collegeProjects} College · ${personalProjects} Personal`
-                    },
-                    {
-                      label: 'Certificates',
-                      value: certifications.length,
-                      sub: certifications.length === 0 ? 'No certificates yet' : `${certifications.filter((c: any) => c.isFeatured).length} Featured`
-                    },
-                    {
-                      label: 'Internships',
-                      value: internships.length,
-                      sub: internships.length === 0 ? 'No internships yet' : `${internships.filter((i: any) => i.internshipType === 'Online').length} Remote · ${internships.filter((i: any) => i.internshipType !== 'Online').length} Office`
-                    },
-                    {
-                      label: 'Activities',
-                      value: courses.length + events.length,
-                      sub: (courses.length + events.length) === 0 ? 'No activities yet' : `${courses.length} Courses · ${events.length} Events`
-                    },
-                  ].map((m, i) => (
-                    <motion.div key={m.label} className="ds-metric-chip"
-                      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.25 + i * 0.04, duration: 0.3 }}
-                      style={{ padding: '14px 16px' }}>
-                      <div className="ds-metric-val ds-mono" style={{ fontSize: '24px' }}>{m.value}</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
-                        <div className="ds-metric-label" style={{ fontSize: '11px' }}>{m.label}</div>
-                        <div className="ds-metric-sub" style={{ fontSize: '10px' }}>{m.sub}</div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
+                
 
                 {/* 5. SIDE-BY-SIDE GRID: PROJECTS (LEFT) & INTERNSHIPS (RIGHT) */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', alignItems: 'stretch' }}>
