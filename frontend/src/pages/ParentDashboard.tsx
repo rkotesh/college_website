@@ -22,7 +22,7 @@ function CgpaRing({ cgpa }: { cgpa: number }) {
     gsap.to(obj, { val: cgpa, duration: 1.4, ease: 'power2.out',
       onUpdate: () => { if (numRef.current) numRef.current.textContent = obj.val.toFixed(2); }
     });
-  }, [cgpa]);
+  }, [cgpa, circ, pct]);
 
   return (
     <div style={{ position: 'relative', width: 90, height: 90, flexShrink: 0 }}>
@@ -42,7 +42,7 @@ function CgpaRing({ cgpa }: { cgpa: number }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ANIMATED BAR — simple inline progress
+// ANIMATED BAR — inline progress bar
 // ─────────────────────────────────────────────────────────────────────────────
 function AnimBar({ pct, color }: { pct: number; color: string }) {
   return (
@@ -55,37 +55,7 @@ function AnimBar({ pct, color }: { pct: number; color: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SIMPLE DONUT CHART (SVG, no lib)
-// ─────────────────────────────────────────────────────────────────────────────
-function Donut({ segments, size = 80, stroke = 10 }: {
-  segments: { value: number; color: string; label: string }[];
-  size?: number;
-  stroke?: number;
-}) {
-  const R = (size - stroke) / 2;
-  const circ = 2 * Math.PI * R;
-  const total = segments.reduce((s, x) => s + x.value, 0) || 1;
-  let offset = 0;
-  const arcs = segments.map(seg => {
-    const dash = (seg.value / total) * circ;
-    const arc = { dash, offset: circ - offset, color: seg.color };
-    offset += dash;
-    return arc;
-  });
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
-      <circle cx={size/2} cy={size/2} r={R} fill="none" stroke="var(--ds-surface3)" strokeWidth={stroke} />
-      {arcs.map((a, i) => (
-        <circle key={i} cx={size/2} cy={size/2} r={R} fill="none" stroke={a.color}
-          strokeWidth={stroke} strokeDasharray={`${a.dash} ${circ - a.dash}`}
-          strokeDashoffset={a.offset} strokeLinecap="butt" />
-      ))}
-    </svg>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PARENT DASHBOARD
+// PARENT DASHBOARD MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 interface ParentDashboardProps {
   userSession: { role: string; email: string; fullName?: string; accessToken: string; };
@@ -98,12 +68,13 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
     (localStorage.getItem('ds-theme') as any) || 'dark'
   );
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+  const APP_ORIGIN = window.location.origin;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -138,7 +109,14 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
     if (searchVal.trim()) fetchData(searchVal);
   };
 
-  // ── Destructure all student data ──
+  const copyPortfolioLink = (slugOrRoll: string) => {
+    const url = `${APP_ORIGIN}/portfolio/${slugOrRoll}`;
+    navigator.clipboard.writeText(url);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2500);
+  };
+
+  // Destructure student data
   const profile       = data?.profile;
   const studentUser   = data?.studentUser;
   const education     = data?.education     || [];
@@ -151,12 +129,7 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
   const skills        = data?.skills        || [];
   const mentor        = data?.mentor;
 
-  const attendedClasses = profile?.attendedClasses || 0;
-  const totalClasses    = profile?.totalClasses    || 0;
-  const attendancePct   = totalClasses > 0 ? (attendedClasses / totalClasses) * 100 : 0;
-  const attendanceOk    = attendancePct >= 75;
-
-  // Placement weightage (same formula as student)
+  // Placement readiness weightage calculation
   const cgpaVal        = profile?.cgpa || 0;
   const cgpaScore      = (cgpaVal / 10) * 40;
   const projectScore   = projects.length >= 3 ? 25 : projects.length * 8.33;
@@ -168,33 +141,22 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
   if (weightageTotal >= 80) { eligLabel = 'HIGH'; eligColor = '#10b981'; }
   else if (weightageTotal >= 60) { eligLabel = 'MEDIUM'; eligColor = '#f59e0b'; }
 
-  // Skill categories for donut
-  const skillGroups: Record<string, number> = skills.reduce((acc: any, s: any) => {
-    acc[s.category || 'Others'] = (acc[s.category || 'Others'] || 0) + 1;
-    return acc;
-  }, {});
-  const skillColors = ['#10b981','#6366f1','#f59e0b','#ec4899','#3b82f6'];
-  const skillSegs = Object.entries(skillGroups).map(([label, value], i) => ({
-    label, value, color: skillColors[i % skillColors.length]
-  }));
-
-  // Certifications by type for donut
-  const certGroups: Record<string, number> = certifications.reduce((acc: any, c: any) => {
-    acc[c.certType || 'Other'] = (acc[c.certType || 'Other'] || 0) + 1;
-    return acc;
-  }, {});
-  const certColors = ['#10b981','#6366f1','#f59e0b','#ec4899','#3b82f6'];
-  const certSegs = Object.entries(certGroups).map(([label, value], i) => ({
-    label, value, color: certColors[i % certColors.length]
-  }));
-
-  // Project type split
   const collegeProjects  = projects.filter((p: any) => p.projectType === 'college').length;
   const personalProjects = projects.length - collegeProjects;
 
+  // Skill category grouping
+  const allCats = ['Languages', 'Web Frameworks', 'Tools', 'Others'];
+  const skillGroups: Record<string, string[]> = skills.reduce((acc: any, s: any) => {
+    const cat = s.category || 'Others';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(s.name);
+    return acc;
+  }, {});
+  const activeCats = allCats.filter(c => (skillGroups[c] || []).length > 0);
+
   return (
     <div className="ds-shell">
-      {/* ══════════════════════════════════════════ HEADER ══════════════════════════════════════════ */}
+      {/* ════════════════════ HEADER ════════════════════ */}
       <header className="ds-topbar">
         <div className="ds-topbar-left">
           <LogoHeader imageStyle={{ height: '32px' }} />
@@ -222,7 +184,6 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
         </form>
 
         <div className="ds-topbar-right">
-          {/* Theme toggle */}
           <button onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
             className="ds-btn ds-btn-ghost" style={{ padding: '6px 8px' }} title="Toggle theme">
             {theme === 'dark'
@@ -233,9 +194,9 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
         </div>
       </header>
 
-      {/* ══════════════════════════════════════════ BODY ══════════════════════════════════════════ */}
+      {/* ════════════════════ BODY ════════════════════ */}
       <div className="ds-body">
-        {/* ── SIDEBAR ── */}
+        {/* ── SIDEBAR (Clean navigation without student info box) ── */}
         <aside className="ds-sidebar">
           <nav className="ds-nav">
             <div className="ds-nav-section">Navigation</div>
@@ -249,59 +210,11 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
               <span className="ds-nav-label">Child Overview</span>
             </button>
           </nav>
-
-          {/* Sidebar Student Card */}
-          {profile && (
-            <div style={{
-              margin: '16px 12px 0', padding: '14px',
-              background: 'var(--ds-surface2)', borderRadius: '10px',
-              border: '1px solid var(--ds-border)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                <div style={{
-                  width: 36, height: 36, borderRadius: '50%',
-                  background: 'linear-gradient(135deg, var(--ds-jade), #6366f1)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '14px', fontWeight: 800, color: '#fff', flexShrink: 0
-                }}>
-                  {profile.photoUrl
-                    ? <img src={profile.photoUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                    : (studentUser?.fullName?.charAt(0) || 'S')}
-                </div>
-                <div style={{ overflow: 'hidden' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ds-text1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {studentUser?.fullName || 'Student'}
-                  </div>
-                  <div style={{ fontSize: '10px', color: 'var(--ds-text3)', fontFamily: 'var(--ds-font-mono)' }}>
-                    {profile.rollNo}
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                  <span style={{ color: 'var(--ds-text3)' }}>Department</span>
-                  <span style={{ color: 'var(--ds-text1)', fontWeight: 600, fontSize: '10px' }}>{profile.departmentId || '—'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                  <span style={{ color: 'var(--ds-text3)' }}>Batch</span>
-                  <span style={{ color: 'var(--ds-text1)', fontWeight: 600 }}>{profile.batch || '—'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                  <span style={{ color: 'var(--ds-text3)' }}>Section</span>
-                  <span style={{ color: 'var(--ds-text1)', fontWeight: 600 }}>{profile.sectionId || '—'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                  <span style={{ color: 'var(--ds-text3)' }}>Semester</span>
-                  <span style={{ color: 'var(--ds-text1)', fontWeight: 600 }}>{profile.currentSemester || '—'}</span>
-                </div>
-              </div>
-            </div>
-          )}
         </aside>
 
-        {/* ── MAIN CONTENT ── */}
+        {/* ── MAIN CONTENT AREA ── */}
         <main className="ds-main">
-          {/* Loading */}
+          {/* Loading state */}
           {loading && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: '16px' }}>
               <div style={{ width: 40, height: 40, border: '3px solid var(--ds-border)', borderTop: '3px solid var(--ds-jade)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -309,7 +222,7 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
             </div>
           )}
 
-          {/* Error */}
+          {/* Error state */}
           {!loading && error && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
               style={{ margin: '40px auto', maxWidth: 480, textAlign: 'center' }}>
@@ -328,375 +241,414 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
           )}
 
           {/* ════════════════════ OVERVIEW CONTENT ════════════════════ */}
-          {!loading && !error && data && (() => {
-            return (
-              <div className="ds-overview">
+          {!loading && !error && data && (
+            <div className="ds-overview" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-                {/* ── HERO CARD ── */}
-                <motion.div className="ds-card ds-hero-card"
-                  initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
-                  <div className="ds-hero-avatar-wrap">
-                    <div className="ds-hero-avatar">
-                      {profile?.photoUrl
-                        ? <img src={profile.photoUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                        : (studentUser?.fullName?.slice(0, 1)?.toUpperCase() || 'S')}
-                    </div>
+              {/* 1. HERO PROFILE CARD */}
+              <motion.div className="ds-card ds-hero-card"
+                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
+                <div className="ds-hero-avatar-wrap">
+                  <div className="ds-hero-avatar">
+                    {profile?.photoUrl
+                      ? <img src={profile.photoUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                      : (studentUser?.fullName?.slice(0, 1)?.toUpperCase() || 'S')}
                   </div>
-                  <div className="ds-hero-info">
-                    <div className="ds-hero-tag">Your Child · {profile?.departmentId || 'Department'}</div>
-                    <h1 className="ds-hero-name">{studentUser?.fullName || 'Student Name'}</h1>
-                    <p className="ds-hero-meta">
-                      <span className="ds-mono">{profile?.rollNo}</span>
-                      {profile?.batch && ` · ${profile.batch}`}
-                      {profile?.sectionId && ` · ${profile.sectionId}`}
-                    </p>
-                    {profile?.profileSummary && (
-                      <p className="ds-hero-bio">{profile.profileSummary}</p>
-                    )}
-                    {/* Social links (read-only for parent) */}
-                    <div className="ds-hero-links">
-                      {profile?.linkedinUrl && <a href={profile.linkedinUrl} target="_blank" rel="noopener noreferrer" className="ds-social-link">LinkedIn</a>}
-                      {profile?.githubUrl && <a href={profile.githubUrl} target="_blank" rel="noopener noreferrer" className="ds-social-link">GitHub</a>}
-                      {profile?.resumeUrl && <a href={profile.resumeUrl} target="_blank" rel="noopener noreferrer" className="ds-social-link">Resume</a>}
-                    </div>
-                  </div>
-                  <div className="ds-hero-right">
-                    {/* CGPA Ring */}
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-                      <CgpaRing cgpa={profile?.cgpa || 0} />
-                      <span style={{ fontSize: '10px', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>/ 10.0 Scale</span>
-                    </div>
-                  </div>
-                </motion.div>
+                </div>
 
-                {/* ── METRICS ROW ── (same 4 chips as student overview) */}
-                <div className="ds-metrics">
+                <div className="ds-hero-info">
+                  <div className="ds-hero-tag">Your Child · {profile?.departmentId || 'Department'}</div>
+                  <h1 className="ds-hero-name">{studentUser?.fullName || 'Student Name'}</h1>
+                  <p className="ds-hero-meta">
+                    <span className="ds-mono">{profile?.rollNo}</span>
+                    {profile?.batch && ` · ${profile.batch}`}
+                    {profile?.sectionId && ` · Section ${profile.sectionId}`}
+                  </p>
+                  {profile?.profileSummary && (
+                    <p className="ds-hero-bio">{profile.profileSummary}</p>
+                  )}
+                  <div className="ds-hero-links">
+                    {profile?.linkedinUrl && <a href={profile.linkedinUrl} target="_blank" rel="noopener noreferrer" className="ds-social-link">LinkedIn</a>}
+                    {profile?.githubUrl && <a href={profile.githubUrl} target="_blank" rel="noopener noreferrer" className="ds-social-link">GitHub</a>}
+                    {profile?.resumeUrl && <a href={profile.resumeUrl} target="_blank" rel="noopener noreferrer" className="ds-social-link">Resume</a>}
+                  </div>
+                </div>
+
+                <div className="ds-hero-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '12px' }}>
+                  {/* Share / View Public Portfolio Link */}
+                  {(profile?.slug || profile?.rollNo) && (
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <a
+                        href={`${APP_ORIGIN}/portfolio/${profile.slug || profile.rollNo}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ds-resume-btn"
+                        style={{ background: 'var(--ds-jade)', color: '#fff', textDecoration: 'none', border: 'none' }}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        View Public Portfolio
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => copyPortfolioLink(profile.slug || profile.rollNo)}
+                        className="ds-resume-btn"
+                        style={{ cursor: 'pointer', border: '1px solid var(--ds-border)', background: linkCopied ? 'var(--ds-surface3)' : 'var(--ds-surface2)', color: 'var(--ds-text1)' }}
+                      >
+                        {linkCopied ? '✓ Copied!' : 'Copy Link'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* CGPA Ring */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--ds-surface2)', padding: '10px 16px', borderRadius: '12px', border: '1px solid var(--ds-border)' }}>
+                    <CgpaRing cgpa={profile?.cgpa || 0} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--ds-text1)' }}>{profile?.cgpa ? profile.cgpa.toFixed(2) : '—'}</span>
+                      <span style={{ fontSize: '10px', color: 'var(--ds-text3)', textTransform: 'uppercase' }}>Academic CGPA</span>
+                      <span style={{ fontSize: '9px', color: 'var(--ds-jade)', fontWeight: 600 }}>10.0 Scale</span>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* 2. DEVELOPER PROFILES (POSITIONED RIGHT AFTER PROFILE CARD) */}
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <h2 className="ds-section-title" style={{ margin: 0 }}>Developer Profiles</h2>
+                  <span style={{ fontSize: '11px', color: 'var(--ds-text3)' }}>Technical Coding & Professional Accounts</span>
+                </div>
+                <div className="ds-platforms">
+                  {[
+                    { key: 'leetcodeUrl', label: 'LeetCode', desc: 'Solved problems & coding skills',
+                      stat: profile ? `Solved: ${(profile.leetcodeEasySolved || 0) + (profile.leetcodeMediumSolved || 0) + (profile.leetcodeHardSolved || 0)} (${profile.leetcodeEasySolved || 0}E · ${profile.leetcodeMediumSolved || 0}M · ${profile.leetcodeHardSolved || 0}H)` : '' },
+                    { key: 'githubUrl', label: 'GitHub', desc: 'Repositories & open-source contributions',
+                      stat: profile ? `Repos: ${profile.githubReposCount || 0} · Commits: ${profile.githubCommitsCount || 0}` : '' },
+                    { key: 'hackerrankUrl', label: 'HackerRank', desc: 'Verified badges & certifications',
+                      stat: profile ? `Badges: ${profile.hackerrankBadges || 0} verified` : '' },
+                    { key: 'linkedinUrl', label: 'LinkedIn', desc: 'Professional network & profile',
+                      stat: 'Professional Connection Verified' },
+                    { key: 'codechefUrl', label: 'CodeChef', desc: 'Competitive programming & ratings',
+                      stat: profile ? `Rating: ${profile.codechefRating || 0} · Stars: ${profile.codechefStars || '1★'}` : '' },
+                    { key: 'spokenTutorialUrl', label: 'Spoken Tutorial', desc: 'IIT Bombay spoken tutorial certifications',
+                      stat: 'IIT Bombay Tutorial Synced' },
+                    { key: 'prepinstaUrl', label: 'PrepInsta', desc: 'Placement preparation & resources',
+                      stat: 'PrepInsta Prime Profile Synced' },
+                  ].map(plat => {
+                    const connected = !!(profile?.[plat.key]);
+                    return (
+                      <div key={plat.key} className={`ds-platform-card ${connected ? 'connected' : ''}`}>
+                        <div className="ds-platform-top">
+                          <span className="ds-platform-name" style={{ marginLeft: 0 }}>{plat.label}</span>
+                          <span className={`ds-badge ${connected ? 'ds-badge-success' : 'ds-badge-pending'}`}>
+                            {connected ? 'Connected' : 'Not Linked'}
+                          </span>
+                        </div>
+                        <p className="ds-platform-desc">{plat.desc}</p>
+                        {connected && (
+                          <div style={{ fontSize: '11px', color: 'var(--ds-text1)', fontWeight: 600, margin: '4px 0 6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '10px' }}>⚡</span>{plat.stat}
+                          </div>
+                        )}
+                        {connected
+                          ? <a href={profile[plat.key]} target="_blank" rel="noopener noreferrer" className="ds-link" style={{ fontSize: '12px' }}>View Profile →</a>
+                          : <span style={{ fontSize: '11px', color: 'var(--ds-text3)', fontStyle: 'italic' }}>Not yet linked</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+
+              {/* 3. METRICS ROW & PLACEMENT READINESS INDEX */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '16px', alignItems: 'stretch' }}>
+                {/* 4 Summary Metric Chips */}
+                <div className="ds-metrics" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', margin: 0 }}>
                   {[
                     {
                       label: 'Projects',
                       value: projects.length,
-                      sub: projects.length === 0
-                        ? 'No projects yet'
-                        : `${collegeProjects} College · ${personalProjects} Personal`
+                      sub: projects.length === 0 ? 'No projects yet' : `${collegeProjects} College · ${personalProjects} Personal`
                     },
                     {
                       label: 'Certificates',
                       value: certifications.length,
-                      sub: certifications.length === 0
-                        ? 'No certificates yet'
-                        : `${certifications.filter((c: any) => c.isFeatured).length} Featured`
+                      sub: certifications.length === 0 ? 'No certificates yet' : `${certifications.filter((c: any) => c.isFeatured).length} Featured · ${certifications.length - certifications.filter((c: any) => c.isFeatured).length} General`
                     },
                     {
                       label: 'Internships',
                       value: internships.length,
-                      sub: internships.length === 0
-                        ? 'No internships yet'
-                        : `${internships.filter((i: any) => i.internshipType === 'Online').length} Remote · ${internships.filter((i: any) => i.internshipType !== 'Online').length} Office`
+                      sub: internships.length === 0 ? 'No internships yet' : `${internships.filter((i: any) => i.internshipType === 'Online').length} Remote · ${internships.filter((i: any) => i.internshipType !== 'Online').length} Office`
                     },
                     {
                       label: 'Activities',
                       value: courses.length + events.length,
-                      sub: (courses.length + events.length) === 0
-                        ? 'No activities yet'
-                        : `${courses.length} Courses · ${events.length} Events`
+                      sub: (courses.length + events.length) === 0 ? 'No activities yet' : `${courses.length} Courses · ${events.length} Events`
                     },
                   ].map((m, i) => (
                     <motion.div key={m.label} className="ds-metric-chip"
                       initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.1 + i * 0.06, duration: 0.3, ease: [0.16, 1, 0.3, 1] }}>
-                      <div className="ds-metric-val ds-mono">{m.value}</div>
+                      transition={{ delay: 0.2 + i * 0.05, duration: 0.3 }}
+                      style={{ padding: '16px 20px' }}>
+                      <div className="ds-metric-val ds-mono" style={{ fontSize: '28px' }}>{m.value}</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
-                        <div className="ds-metric-label">{m.label}</div>
-                        <div className="ds-metric-sub" title={m.sub}>{m.sub}</div>
+                        <div className="ds-metric-label" style={{ fontSize: '13px' }}>{m.label}</div>
+                        <div className="ds-metric-sub" style={{ fontSize: '11px' }}>{m.sub}</div>
                       </div>
                     </motion.div>
                   ))}
                 </div>
 
-                {/* ── ATTENDANCE + PLACEMENT WEIGHTAGE (side by side) ── */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                {/* Placement Readiness Breakdown */}
+                <motion.div className="ds-card ds-weightage-card"
+                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+                  style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div className="ds-card-label" style={{ margin: 0, color: 'var(--ds-jade)', fontWeight: 800, fontSize: '11px' }}>PLACEMENT READINESS</div>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: eligColor, background: `${eligColor}18`, padding: '2px 8px', borderRadius: '8px' }}>
+                      {eligLabel}
+                    </span>
+                  </div>
 
-                  {/* Attendance Card */}
-                  <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                      <div className="ds-card-label" style={{ margin: 0, color: 'var(--ds-jade)', fontWeight: 800, letterSpacing: '0.8px', fontSize: '11px' }}>ATTENDANCE</div>
-                      <span className="ds-badge" style={{ background: attendanceOk ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: attendanceOk ? '#10b981' : '#ef4444', fontSize: '10px' }}>
-                        {attendanceOk ? '✓ Healthy' : '⚠ Low'}
-                      </span>
+                  <div className="ds-weightage-score-row" style={{ marginBottom: '12px' }}>
+                    <div className="ds-weightage-ring-wrap">
+                      <svg width="56" height="56" viewBox="0 0 60 60" style={{ position: 'absolute' }}>
+                        <circle cx="30" cy="30" r="24" fill="none" stroke="var(--ds-border)" strokeWidth="4" />
+                        <circle cx="30" cy="30" r="24" fill="none" stroke={eligColor} strokeWidth="4"
+                          strokeDasharray="150.79" strokeDashoffset={150.79 * (1 - weightageTotal / 100)}
+                          transform="rotate(-90 30 30)" strokeLinecap="round" />
+                      </svg>
+                      <span className="ds-weightage-ring-score" style={{ fontSize: '14px' }}>{weightageTotal}%</span>
                     </div>
-
-                    {/* Big percentage display */}
-                    <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                      <div style={{ fontSize: '48px', fontWeight: 900, color: attendanceOk ? '#10b981' : '#ef4444', fontFamily: 'var(--ds-font-mono)', lineHeight: 1 }}>
-                        {attendancePct.toFixed(0)}%
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--ds-text3)', marginTop: '4px' }}>
-                        {attendedClasses} attended / {totalClasses} total classes
+                    <div className="ds-weightage-status-info">
+                      <div className="ds-weightage-status-title" style={{ fontSize: '12px' }}>Eligibility Index</div>
+                      <div className="ds-weightage-status-desc" style={{ fontSize: '10px', lineHeight: 1.3 }}>
+                        {weightageTotal >= 80 ? 'Excellent readiness for campus placements.' : weightageTotal >= 60 ? 'Good readiness. Keep building projects.' : 'Build portfolio to boost score.'}
                       </div>
                     </div>
+                  </div>
 
-                    {/* Progress bar */}
-                    <AnimBar pct={attendancePct} color={attendanceOk ? '#10b981' : '#ef4444'} />
-
-                    {/* 75% marker label */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--ds-text3)', marginTop: '6px' }}>
-                      <span>0%</span>
-                      <span style={{ color: '#f59e0b', fontWeight: 600 }}>Min: 75%</span>
-                      <span>100%</span>
-                    </div>
-
-                    {!attendanceOk && (
-                      <div style={{ marginTop: '12px', padding: '10px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', fontSize: '11px', color: '#ef4444' }}>
-                        ⚠️ Below 75% minimum — contact college for medical leave or late attendance approval.
-                      </div>
-                    )}
-                  </motion.div>
-
-                  {/* Placement Weightage Card */}
-                  <motion.div className="ds-card ds-weightage-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                      <div className="ds-card-label" style={{ margin: 0, color: 'var(--ds-jade)', fontWeight: 800, letterSpacing: '0.8px', fontSize: '11px' }}>PLACEMENT READINESS</div>
-                      <span style={{ fontSize: '10px', fontWeight: 700, color: eligColor, background: `${eligColor}18`, padding: '2px 8px', borderRadius: '8px' }}>
-                        {eligLabel}
-                      </span>
-                    </div>
-
-                    <div className="ds-weightage-score-row">
-                      <div className="ds-weightage-ring-wrap">
-                        <svg width="60" height="60" viewBox="0 0 60 60" style={{ position: 'absolute' }}>
-                          <circle cx="30" cy="30" r="24" fill="none" stroke="var(--ds-border)" strokeWidth="4" />
-                          <circle cx="30" cy="30" r="24" fill="none" stroke={eligColor} strokeWidth="4"
-                            strokeDasharray="150.79" strokeDashoffset={150.79 * (1 - weightageTotal / 100)}
-                            transform="rotate(-90 30 30)" strokeLinecap="round" />
-                        </svg>
-                        <span className="ds-weightage-ring-score">{weightageTotal}%</span>
-                      </div>
-                      <div className="ds-weightage-status-info">
-                        <div className="ds-weightage-status-title">Eligibility: {eligLabel}</div>
-                        <div className="ds-weightage-status-desc" style={{ fontSize: '10px', lineHeight: 1.4 }}>
-                          {weightageTotal >= 80
-                            ? 'Excellent profile for campus placements.'
-                            : weightageTotal >= 60
-                            ? 'Good progress. More projects or internships will help.'
-                            : 'Build portfolio to qualify for premium placements.'}
+                  <div className="ds-weightage-items" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {[
+                      { name: 'CGPA (40%)', val: cgpaScore, max: 40, color: '#10b981' },
+                      { name: 'Projects (25%)', val: projectScore, max: 25, color: '#6366f1' },
+                      { name: 'Internships (15%)', val: internScore, max: 15, color: '#f59e0b' },
+                      { name: 'Certificates (20%)', val: certsScore, max: 20, color: '#ec4899' },
+                    ].map(item => (
+                      <div key={item.name} className="ds-weightage-item">
+                        <div className="ds-weightage-item-header" style={{ marginBottom: '2px' }}>
+                          <div className="ds-weightage-item-name" style={{ fontSize: '10.5px' }}>{item.name}</div>
+                          <div className="ds-weightage-item-val" style={{ fontSize: '10.5px' }}>{Math.round(item.val)}%</div>
                         </div>
+                        <AnimBar pct={(item.val / item.max) * 100} color={item.color} />
                       </div>
-                    </div>
+                    ))}
+                  </div>
+                </motion.div>
+              </div>
 
-                    <div className="ds-weightage-items" style={{ marginTop: '12px' }}>
-                      {[
-                        { name: 'CGPA (40%)', val: cgpaScore, max: 40, color: '#10b981' },
-                        { name: 'Projects (25%)', val: projectScore, max: 25, color: '#6366f1' },
-                        { name: 'Internships (15%)', val: internScore, max: 15, color: '#f59e0b' },
-                        { name: 'Certificates (20%)', val: certsScore, max: 20, color: '#ec4899' },
-                      ].map(item => (
-                        <div key={item.name} className="ds-weightage-item">
-                          <div className="ds-weightage-item-header">
-                            <div className="ds-weightage-item-name">{item.name}</div>
-                            <div className="ds-weightage-item-val">{Math.round(item.val)}%</div>
-                          </div>
-                          <AnimBar pct={(item.val / item.max) * 100} color={item.color} />
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
+              {/* 4. PROJECTS SECTION (PORTFOLIO STYLE CARDS) */}
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <h2 className="ds-section-title" style={{ margin: 0 }}>Projects & Works ({projects.length})</h2>
+                  <span style={{ fontSize: '11px', color: 'var(--ds-text3)' }}>{collegeProjects} College · {personalProjects} Personal</span>
                 </div>
 
-                {/* ── BENTO ROW: Charts + recent items ── */}
-                <div className="ds-bento-row">
-
-                  {/* Projects */}
-                  {projects.length > 0 && (
-                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}
-                      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexShrink: 0 }}>
-                        <div className="ds-card-label" style={{ margin: 0, color: 'var(--ds-jade)', fontWeight: 800, fontSize: '11px' }}>PROJECTS</div>
-                        <span style={{ fontSize: '10.5px', color: 'var(--ds-text3)', fontWeight: 600 }}>({projects.length} Total)</span>
-                      </div>
-                      {/* Mini chart: college vs personal */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '14px' }}>
-                        <Donut size={70} stroke={9}
-                          segments={[
-                            { value: collegeProjects, color: '#10b981', label: 'College' },
-                            { value: personalProjects, color: '#6366f1', label: 'Personal' },
-                          ]} />
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-                            <span style={{ color: 'var(--ds-text2)' }}>College: <strong style={{ color: 'var(--ds-text1)' }}>{collegeProjects}</strong></span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366f1', display: 'inline-block' }} />
-                            <span style={{ color: 'var(--ds-text2)' }}>Personal: <strong style={{ color: 'var(--ds-text1)' }}>{personalProjects}</strong></span>
-                          </div>
-                        </div>
-                      </div>
-                      {/* Latest project */}
-                      {(() => {
-                        const proj = projects.find((p: any) => p.isFeatured) || projects[0];
-                        return (
-                          <div style={{ padding: '10px', background: 'var(--ds-surface3)', borderRadius: '8px', marginTop: 'auto' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ds-text1)', marginBottom: '3px' }}>{proj.title}</div>
-                            <p style={{ fontSize: '11px', color: 'var(--ds-text2)', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                              {proj.description || 'No description.'}
-                            </p>
-                            {proj.techStack && <div style={{ fontSize: '10px', color: 'var(--ds-text3)', marginTop: '4px' }}>{proj.techStack.split(',').slice(0, 3).join(' · ')}</div>}
-                          </div>
-                        );
-                      })()}
-                    </motion.div>
-                  )}
-
-                  {/* Certifications with donut */}
-                  {certifications.length > 0 && (
-                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.32 }}
-                      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexShrink: 0 }}>
-                        <div className="ds-card-label" style={{ margin: 0, color: 'var(--ds-jade)', fontWeight: 800, fontSize: '11px' }}>CERTIFICATIONS</div>
-                        <span style={{ fontSize: '10.5px', color: 'var(--ds-text3)', fontWeight: 600 }}>({certifications.length} Total)</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '14px' }}>
-                        <Donut size={70} stroke={9} segments={certSegs.length ? certSegs : [{ value: 1, color: '#10b981', label: 'Certs' }]} />
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                          {certSegs.map((s, i) => (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
-                              <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, display: 'inline-block' }} />
-                              <span style={{ color: 'var(--ds-text2)' }}>{s.label}: <strong style={{ color: 'var(--ds-text1)' }}>{s.value}</strong></span>
+                {projects.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                    {projects.map((proj: any, idx: number) => (
+                      <div key={proj._id || idx} className="ds-card" style={{ display: 'flex', flexDirection: 'column', gap: '12px', height: '100%' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--ds-text1)', margin: 0 }}>{proj.title}</h3>
+                              {proj.isFeatured && <span style={{ color: 'var(--ds-amber)', fontSize: '14px' }} title="Featured Project">★</span>}
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                      {/* Latest cert */}
-                      {(() => {
-                        const cert = certifications.find((c: any) => c.isFeatured) || certifications[0];
-                        return (
-                          <div style={{ padding: '10px', background: 'var(--ds-surface3)', borderRadius: '8px', marginTop: 'auto' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ds-text1)', marginBottom: '3px' }}>{cert.title}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--ds-text2)' }}>{cert.issuingOrganization}</div>
-                            <div style={{ fontSize: '10px', color: 'var(--ds-text3)', marginTop: '3px' }}>Issued: {cert.issueDate}</div>
+                            <span className="ds-badge ds-badge-success" style={{ fontSize: '9px', padding: '2px 8px', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.4px', display: 'inline-block' }}>
+                              {proj.projectType === 'college' ? 'College Project' : 'Personal Project'}
+                            </span>
                           </div>
-                        );
-                      })()}
-                    </motion.div>
-                  )}
-
-                  {/* Skills Donut */}
-                  {skills.length > 0 && (
-                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.34 }}
-                      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexShrink: 0 }}>
-                        <div className="ds-card-label" style={{ margin: 0, color: 'var(--ds-jade)', fontWeight: 800, fontSize: '11px' }}>SKILLS</div>
-                        <span style={{ fontSize: '10.5px', color: 'var(--ds-text3)', fontWeight: 600 }}>({skills.length} Total)</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '14px' }}>
-                        <Donut size={70} stroke={9} segments={skillSegs.length ? skillSegs : [{ value: 1, color: '#10b981', label: 'Skills' }]} />
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                          {skillSegs.map((s, i) => (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
-                              <span style={{ width: 8, height: 8, borderRadius: '50%', background: s.color, display: 'inline-block' }} />
-                              <span style={{ color: 'var(--ds-text2)' }}>{s.label}: <strong style={{ color: 'var(--ds-text1)' }}>{s.value}</strong></span>
-                            </div>
-                          ))}
                         </div>
+
+                        <p style={{ fontSize: '12px', color: 'var(--ds-text2)', lineHeight: 1.5, margin: 0, flex: 1 }}>
+                          {proj.description || 'No description provided.'}
+                        </p>
+
+                        {proj.techStack && (
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            {proj.techStack.split(',').map((t: string, i: number) => (
+                              <span key={i} style={{ fontSize: '10px', padding: '3px 8px', background: 'var(--ds-surface3)', borderRadius: '4px', color: 'var(--ds-text2)', border: '1px solid var(--ds-border)', fontWeight: 500 }}>
+                                {t.trim()}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {proj.repoUrl && (
+                          <div style={{ paddingTop: '10px', borderTop: '1px solid var(--ds-border)', marginTop: 'auto' }}>
+                            <a href={proj.repoUrl} target="_blank" rel="noopener noreferrer" className="ds-link" style={{ fontSize: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+                              View Code Repository →
+                            </a>
+                          </div>
+                        )}
                       </div>
-                      {/* Skill tags */}
-                      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: 'auto' }}>
-                        {skills.slice(0, 8).map((s: any, i: number) => (
-                          <span key={i} style={{ fontSize: '10px', padding: '3px 8px', background: 'var(--ds-surface3)', borderRadius: '6px', color: 'var(--ds-text2)', border: '1px solid var(--ds-border)' }}>
-                            {s.name}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="ds-card" style={{ padding: '24px', textAlign: 'center', color: 'var(--ds-text3)', fontSize: '13px' }}>
+                    No technical projects added yet.
+                  </div>
+                )}
+              </motion.div>
+
+              {/* 5. INTERNSHIPS & EXPERIENCE SECTION */}
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <h2 className="ds-section-title" style={{ margin: 0 }}>Internships & Experience ({internships.length})</h2>
+                  <span style={{ fontSize: '11px', color: 'var(--ds-text3)' }}>Industry Exposure</span>
+                </div>
+
+                {internships.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                    {internships.map((intern: any, idx: number) => (
+                      <div key={intern._id || idx} className="ds-card" style={{ display: 'flex', flexDirection: 'column', gap: '10px', height: '100%' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--ds-text1)', margin: 0 }}>{intern.role}</h3>
+                              {intern.isFeatured && <span style={{ color: 'var(--ds-amber)', fontSize: '14px' }}>★</span>}
+                            </div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ds-jade)', marginTop: '2px' }}>
+                              {intern.organization}
+                            </div>
+                          </div>
+                          <span className="ds-badge ds-badge-success" style={{ fontSize: '9px', padding: '2px 8px', textTransform: 'uppercase' }}>
+                            {intern.internshipType || 'Online'}
                           </span>
-                        ))}
-                        {skills.length > 8 && <span style={{ fontSize: '10px', color: 'var(--ds-text3)', padding: '3px' }}>+{skills.length - 8} more</span>}
-                      </div>
-                    </motion.div>
-                  )}
+                        </div>
 
-                  {/* Internships */}
-                  {internships.length > 0 && (
-                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.36 }}
-                      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexShrink: 0 }}>
-                        <div className="ds-card-label" style={{ margin: 0, color: 'var(--ds-jade)', fontWeight: 800, fontSize: '11px' }}>INTERNSHIPS</div>
-                        <span style={{ fontSize: '10.5px', color: 'var(--ds-text3)', fontWeight: 600 }}>({internships.length} Total)</span>
+                        <p style={{ fontSize: '12px', color: 'var(--ds-text2)', lineHeight: 1.5, margin: 0, flex: 1 }}>
+                          {intern.description || 'No description provided.'}
+                        </p>
+
+                        <div style={{ fontSize: '11px', color: 'var(--ds-text3)', fontFamily: 'var(--ds-font-mono)' }}>
+                          🗓️ {intern.startDate || ''} {intern.endDate ? `→ ${intern.endDate}` : '→ Present'}
+                        </div>
+
+                        {intern.certificateUrl && (
+                          <div style={{ paddingTop: '10px', borderTop: '1px solid var(--ds-border)', marginTop: 'auto' }}>
+                            <a href={intern.certificateUrl} target="_blank" rel="noopener noreferrer" className="ds-link" style={{ fontSize: '12px', fontWeight: 600 }}>
+                              View Internship Certificate →
+                            </a>
+                          </div>
+                        )}
                       </div>
-                      {/* Bar chart: online vs offline */}
-                      {(() => {
-                        const online = internships.filter((i: any) => i.internshipType === 'Online').length;
-                        const offline = internships.length - online;
-                        return (
-                          <div style={{ marginBottom: '14px' }}>
-                            <div style={{ marginBottom: '8px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
-                                <span style={{ color: 'var(--ds-text2)' }}>🌐 Remote</span>
-                                <span style={{ color: 'var(--ds-text1)', fontWeight: 700 }}>{online}</span>
-                              </div>
-                              <AnimBar pct={internships.length > 0 ? (online / internships.length) * 100 : 0} color="#10b981" />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="ds-card" style={{ padding: '24px', textAlign: 'center', color: 'var(--ds-text3)', fontSize: '13px' }}>
+                    No internship experience records added yet.
+                  </div>
+                )}
+              </motion.div>
+
+              {/* 6. CERTIFICATIONS SECTION */}
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <h2 className="ds-section-title" style={{ margin: 0 }}>Certifications ({certifications.length})</h2>
+                  <span style={{ fontSize: '11px', color: 'var(--ds-text3)' }}>Verified Credentials</span>
+                </div>
+
+                {certifications.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
+                    {certifications.map((cert: any, idx: number) => (
+                      <div key={cert._id || idx} className="ds-card" style={{ display: 'flex', flexDirection: 'column', gap: '10px', height: '100%' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <h3 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ds-text1)', margin: 0 }}>{cert.title}</h3>
+                              {cert.isFeatured && <span style={{ color: 'var(--ds-amber)', fontSize: '13px' }}>★</span>}
                             </div>
-                            <div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '4px' }}>
-                                <span style={{ color: 'var(--ds-text2)' }}>🏢 On-site</span>
-                                <span style={{ color: 'var(--ds-text1)', fontWeight: 700 }}>{offline}</span>
-                              </div>
-                              <AnimBar pct={internships.length > 0 ? (offline / internships.length) * 100 : 0} color="#6366f1" />
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ds-text2)', marginTop: '2px' }}>
+                              {cert.issuingOrganization}
                             </div>
                           </div>
-                        );
-                      })()}
-                      {/* Latest internship */}
-                      {(() => {
-                        const intern = internships.find((i: any) => i.isFeatured) || internships[0];
-                        return (
-                          <div style={{ padding: '10px', background: 'var(--ds-surface3)', borderRadius: '8px', marginTop: 'auto' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ds-text1)', marginBottom: '2px' }}>{intern.role}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--ds-text2)' }}>{intern.organization}</div>
-                            <div style={{ fontSize: '10px', color: 'var(--ds-text3)', marginTop: '3px', fontFamily: 'var(--ds-font-mono)' }}>
-                              {intern.startDate}{intern.endDate ? ` → ${intern.endDate}` : ' → Present'}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </motion.div>
-                  )}
+                          <span className="ds-badge ds-badge-success" style={{ fontSize: '9px', padding: '2px 8px', textTransform: 'uppercase' }}>
+                            {cert.certType || 'Certificate'}
+                          </span>
+                        </div>
 
-                  {/* Events */}
-                  {events.length > 0 && (
-                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}
-                      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexShrink: 0 }}>
-                        <div className="ds-card-label" style={{ margin: 0, color: 'var(--ds-jade)', fontWeight: 800, fontSize: '11px' }}>CAMPUS EVENTS</div>
-                        <span style={{ fontSize: '10.5px', color: 'var(--ds-text3)', fontWeight: 600 }}>({events.length} Total)</span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                        {events.slice(0, 3).map((ev: any, i: number) => (
-                          <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '8px', background: 'var(--ds-surface3)', borderRadius: '8px' }}>
-                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, var(--ds-jade), #6366f1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', flexShrink: 0 }}>🎯</div>
-                            <div>
-                              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ds-text1)' }}>{ev.eventName}</div>
-                              <div style={{ fontSize: '10px', color: 'var(--ds-text3)' }}>Role: {ev.role}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
+                        {cert.description && (
+                          <p style={{ fontSize: '12px', color: 'var(--ds-text3)', margin: 0, flex: 1 }}>
+                            {cert.description}
+                          </p>
+                        )}
 
+                        <div style={{ fontSize: '10.5px', color: 'var(--ds-text3)' }}>
+                          Issued: {cert.issueDate || 'N/A'} {cert.expiryDate ? `· Expires: ${cert.expiryDate}` : ''}
+                        </div>
+
+                        {cert.certUrl && (
+                          <div style={{ paddingTop: '8px', borderTop: '1px solid var(--ds-border)', marginTop: 'auto' }}>
+                            <a href={cert.certUrl} target="_blank" rel="noopener noreferrer" className="ds-link" style={{ fontSize: '12px' }}>
+                              View Credential →
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="ds-card" style={{ padding: '24px', textAlign: 'center', color: 'var(--ds-text3)', fontSize: '13px' }}>
+                    No certifications uploaded yet.
+                  </div>
+                )}
+              </motion.div>
+
+              {/* 7. SKILLS & EXPERTISE SECTION */}
+              {skills.length > 0 && (
+                <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <h2 className="ds-section-title" style={{ margin: 0 }}>Skills & Tech Stack ({skills.length})</h2>
+                    <span style={{ fontSize: '11px', color: 'var(--ds-text3)' }}>Categorized Expertise</span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(activeCats.length, 1)}, 1fr)`, gap: '20px' }}>
+                    {activeCats.map(cat => (
+                      <div key={cat} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ds-jade)', textTransform: 'uppercase', letterSpacing: '0.8px', paddingBottom: '6px', borderBottom: '1px solid var(--ds-border)' }}>
+                          {cat}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {skillGroups[cat].map((name, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--ds-text1)' }}>
+                              <span style={{ color: 'var(--ds-jade)', fontSize: '10px' }}>●</span>
+                              {name}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* 8. COURSES, RESEARCH & EVENTS GRID */}
+              {(courses.length > 0 || research.length > 0 || events.length > 0) && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
                   {/* Courses */}
                   {courses.length > 0 && (
-                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.40 }}
-                      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexShrink: 0 }}>
-                        <div className="ds-card-label" style={{ margin: 0, color: 'var(--ds-jade)', fontWeight: 800, fontSize: '11px' }}>ONLINE COURSES</div>
-                        <span style={{ fontSize: '10.5px', color: 'var(--ds-text3)', fontWeight: 600 }}>({courses.length} Total)</span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                        {courses.slice(0, 3).map((c: any, i: number) => (
-                          <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '8px', background: 'var(--ds-surface3)', borderRadius: '8px' }}>
-                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #6366f1, #ec4899)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', flexShrink: 0 }}>📚</div>
-                            <div>
-                              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ds-text1)' }}>{c.title}</div>
-                              <div style={{ fontSize: '10px', color: 'var(--ds-text3)' }}>{c.provider}</div>
-                            </div>
+                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.48 }}>
+                      <div className="ds-card-label" style={{ marginBottom: '14px' }}>ONLINE COURSES ({courses.length})</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {courses.map((c: any, i: number) => (
+                          <div key={i} style={{ padding: '10px 12px', background: 'var(--ds-surface3)', borderRadius: '8px', border: '1px solid var(--ds-border)' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ds-text1)' }}>{c.title}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--ds-text2)', marginTop: '2px' }}>{c.provider}</div>
+                            {c.link && (
+                              <a href={c.link} target="_blank" rel="noopener noreferrer" className="ds-link" style={{ fontSize: '11px', marginTop: '6px', display: 'inline-block' }}>
+                                Course Link →
+                              </a>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -705,151 +657,123 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
 
                   {/* Research */}
                   {research.length > 0 && (
-                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}
-                      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexShrink: 0 }}>
-                        <div className="ds-card-label" style={{ margin: 0, color: 'var(--ds-jade)', fontWeight: 800, fontSize: '11px' }}>RESEARCH & PAPERS</div>
-                        <span style={{ fontSize: '10.5px', color: 'var(--ds-text3)', fontWeight: 600 }}>({research.length} Total)</span>
+                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+                      <div className="ds-card-label" style={{ marginBottom: '14px' }}>RESEARCH PAPERS ({research.length})</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {research.map((r: any, i: number) => (
+                          <div key={i} style={{ padding: '10px 12px', background: 'var(--ds-surface3)', borderRadius: '8px', border: '1px solid var(--ds-border)' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ds-text1)' }}>{r.title}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--ds-text2)', marginTop: '2px' }}>{r.journalConference} ({r.publicationYear})</div>
+                            {r.doi && (
+                              <a href={r.doi} target="_blank" rel="noopener noreferrer" className="ds-link" style={{ fontSize: '11px', marginTop: '6px', display: 'inline-block' }}>
+                                View DOI Publication →
+                              </a>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                        {research.slice(0, 2).map((r: any, i: number) => (
-                          <div key={i} style={{ padding: '10px', background: 'var(--ds-surface3)', borderRadius: '8px' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ds-text1)', marginBottom: '2px' }}>{r.title}</div>
-                            <div style={{ fontSize: '10px', color: 'var(--ds-text3)' }}>{r.journalConference} · {r.publicationYear}</div>
+                    </motion.div>
+                  )}
+
+                  {/* Events */}
+                  {events.length > 0 && (
+                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.52 }}>
+                      <div className="ds-card-label" style={{ marginBottom: '14px' }}>CAMPUS EVENTS ({events.length})</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {events.map((ev: any, i: number) => (
+                          <div key={i} style={{ padding: '10px 12px', background: 'var(--ds-surface3)', borderRadius: '8px', border: '1px solid var(--ds-border)' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ds-text1)' }}>{ev.eventName}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--ds-text3)', marginTop: '2px' }}>Role: {ev.role}</div>
                           </div>
                         ))}
                       </div>
                     </motion.div>
                   )}
                 </div>
+              )}
 
-                {/* ── DEVELOPER PLATFORMS (read-only) ── */}
-                <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.44 }}>
-                  <h2 className="ds-section-title" style={{ marginBottom: '16px' }}>Developer Profiles</h2>
-                  <div className="ds-platforms">
-                    {[
-                      { key: 'leetcodeUrl', label: 'LeetCode', desc: 'Solved problems & coding skills',
-                        stat: profile ? `Solved: ${(profile.leetcodeEasySolved || 0) + (profile.leetcodeMediumSolved || 0) + (profile.leetcodeHardSolved || 0)} (${profile.leetcodeEasySolved || 0}E · ${profile.leetcodeMediumSolved || 0}M · ${profile.leetcodeHardSolved || 0}H)` : '' },
-                      { key: 'githubUrl', label: 'GitHub', desc: 'Repositories & open-source',
-                        stat: profile ? `Repos: ${profile.githubReposCount || 0} · Commits: ${profile.githubCommitsCount || 0}` : '' },
-                      { key: 'hackerrankUrl', label: 'HackerRank', desc: 'Verified badges & certifications',
-                        stat: profile ? `Badges: ${profile.hackerrankBadges || 0} verified` : '' },
-                      { key: 'linkedinUrl', label: 'LinkedIn', desc: 'Professional network',
-                        stat: 'Professional Connection Verified' },
-                      { key: 'codechefUrl', label: 'CodeChef', desc: 'Competitive programming',
-                        stat: profile ? `Rating: ${profile.codechefRating || 0} · Stars: ${profile.codechefStars || '1★'}` : '' },
-                      { key: 'spokenTutorialUrl', label: 'Spoken Tutorial', desc: 'IIT Bombay tutorials',
-                        stat: 'Spoken Tutorial Synced' },
-                      { key: 'prepinstaUrl', label: 'PrepInsta', desc: 'Placement preparation',
-                        stat: 'PrepInsta Profile Synced' },
-                    ].map(plat => {
-                      const connected = !!(profile?.[plat.key]);
-                      return (
-                        <div key={plat.key} className={`ds-platform-card ${connected ? 'connected' : ''}`}>
-                          <div className="ds-platform-top">
-                            <span className="ds-platform-name" style={{ marginLeft: 0 }}>{plat.label}</span>
-                            <span className={`ds-badge ${connected ? 'ds-badge-success' : 'ds-badge-pending'}`}>
-                              {connected ? 'Connected' : 'Not Linked'}
-                            </span>
-                          </div>
-                          <p className="ds-platform-desc">{plat.desc}</p>
-                          {connected && (
-                            <div style={{ fontSize: '11px', color: 'var(--ds-text1)', fontWeight: 600, margin: '4px 0 4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <span style={{ fontSize: '10px' }}>⚡</span>{plat.stat}
-                            </div>
-                          )}
-                          {connected
-                            ? <a href={profile[plat.key]} target="_blank" rel="noopener noreferrer" className="ds-link" style={{ fontSize: '12px' }}>View Profile →</a>
-                            : <span style={{ fontSize: '11px', color: 'var(--ds-text3)', fontStyle: 'italic' }}>Not yet linked</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </motion.div>
-
-                {/* ── BOTTOM: Education Timeline + Mentor ── */}
-                <div className="ds-overview-bottom-grid">
-                  {/* Education Timeline */}
-                  {education.length > 0 && (
-                    <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.46 }}>
-                      <div className="ds-card-label" style={{ marginBottom: '16px' }}>Education Timeline</div>
-                      <div className="ds-timeline">
-                        {education.slice(0, 4).map((edu: any, idx: number) => (
-                          <div key={idx} className="ds-timeline-item">
-                            <div className="ds-timeline-dot" />
-                            <div className="ds-timeline-content">
-                              <div className="ds-timeline-type">{edu.eduType}</div>
-                              <div className="ds-timeline-inst">{edu.institution || edu.boardUniversity}</div>
-                              <div className="ds-timeline-meta ds-mono">{edu.score} {edu.scoreType} · {edu.yearOfPassing}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {/* Mentor Info */}
-                  <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.50 }}>
-                    <div className="ds-card-label" style={{ marginBottom: '16px' }}>Assigned Mentor</div>
-                    {mentor ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{
-                            width: 44, height: 44, borderRadius: '50%',
-                            background: 'linear-gradient(135deg, var(--ds-jade), #6366f1)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '16px', fontWeight: 800, color: '#fff', flexShrink: 0
-                          }}>
-                            {mentor.fullName?.charAt(0) || 'M'}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ds-text1)' }}>{mentor.fullName}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--ds-text3)' }}>{mentor.email}</div>
+              {/* 9. EDUCATION TIMELINE & ASSIGNED MENTOR */}
+              <div className="ds-overview-bottom-grid">
+                {/* Education Timeline */}
+                {education.length > 0 && (
+                  <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}>
+                    <div className="ds-card-label" style={{ marginBottom: '16px' }}>Education History</div>
+                    <div className="ds-timeline">
+                      {education.map((edu: any, idx: number) => (
+                        <div key={idx} className="ds-timeline-item">
+                          <div className="ds-timeline-dot" />
+                          <div className="ds-timeline-content">
+                            <div className="ds-timeline-type">{edu.eduType}</div>
+                            <div className="ds-timeline-inst">{edu.institution || edu.boardUniversity}</div>
+                            <div className="ds-timeline-meta ds-mono">{edu.score} {edu.scoreType} · Class of {edu.yearOfPassing}</div>
                           </div>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px', background: 'var(--ds-surface3)', borderRadius: '8px' }}>
-                          {mentor.phone && (
-                            <div style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
-                              <span style={{ color: 'var(--ds-text3)' }}>📞</span>
-                              <span style={{ color: 'var(--ds-text1)', fontWeight: 600 }}>{mentor.phone}</span>
-                            </div>
-                          )}
-                          {mentor.department && (
-                            <div style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
-                              <span style={{ color: 'var(--ds-text3)' }}>🏛️</span>
-                              <span style={{ color: 'var(--ds-text1)', fontWeight: 600 }}>{mentor.department}</span>
-                            </div>
-                          )}
-                        </div>
-                        <p style={{ fontSize: '11px', color: 'var(--ds-text3)', fontStyle: 'italic', margin: 0 }}>
-                          Reach out to the mentor for academic guidance or concerns.
-                        </p>
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                        <div style={{ fontSize: '32px', marginBottom: '8px' }}>👤</div>
-                        <p style={{ fontSize: '12px', color: 'var(--ds-text3)', margin: 0 }}>No mentor assigned yet.</p>
-                      </div>
-                    )}
+                      ))}
+                    </div>
                   </motion.div>
-                </div>
+                )}
 
+                {/* Mentor Card */}
+                <motion.div className="ds-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.58 }}>
+                  <div className="ds-card-label" style={{ marginBottom: '16px' }}>Assigned Faculty Mentor</div>
+                  {mentor ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <div style={{
+                          width: 48, height: 48, borderRadius: '50%',
+                          background: 'linear-gradient(135deg, var(--ds-jade), #6366f1)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '18px', fontWeight: 800, color: '#fff', flexShrink: 0
+                        }}>
+                          {mentor.fullName?.charAt(0) || 'M'}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--ds-text1)' }}>{mentor.fullName}</div>
+                          <div style={{ fontSize: '12px', color: 'var(--ds-text3)' }}>{mentor.email}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px 14px', background: 'var(--ds-surface3)', borderRadius: '8px', border: '1px solid var(--ds-border)' }}>
+                        {mentor.phone && (
+                          <div style={{ display: 'flex', gap: '8px', fontSize: '13px' }}>
+                            <span style={{ color: 'var(--ds-text3)' }}>📞</span>
+                            <span style={{ color: 'var(--ds-text1)', fontWeight: 600 }}>{mentor.phone}</span>
+                          </div>
+                        )}
+                        {mentor.department && (
+                          <div style={{ display: 'flex', gap: '8px', fontSize: '13px' }}>
+                            <span style={{ color: 'var(--ds-text3)' }}>🏛️</span>
+                            <span style={{ color: 'var(--ds-text1)', fontWeight: 600 }}>{mentor.department}</span>
+                          </div>
+                        )}
+                      </div>
+                      <p style={{ fontSize: '11px', color: 'var(--ds-text3)', fontStyle: 'italic', margin: 0 }}>
+                        Contact your child's assigned mentor for academic guidance or attendance concerns.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '30px 0' }}>
+                      <div style={{ fontSize: '36px', marginBottom: '8px' }}>👤</div>
+                      <p style={{ fontSize: '13px', color: 'var(--ds-text3)', margin: 0 }}>No faculty mentor assigned yet.</p>
+                    </div>
+                  )}
+                </motion.div>
               </div>
-            );
-          })()}
 
-          {/* Empty state */}
+            </div>
+          )}
+
+          {/* Empty initial state */}
           {!loading && !error && !data && (
             <div style={{ textAlign: 'center', padding: '80px 20px' }}>
               <div style={{ fontSize: '48px', marginBottom: '12px' }}>🎓</div>
               <h2 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--ds-text1)', marginBottom: '8px' }}>Search Your Child's Profile</h2>
-              <p style={{ fontSize: '13px', color: 'var(--ds-text3)' }}>Enter the student roll number above to view their complete academic overview.</p>
+              <p style={{ fontSize: '13px', color: 'var(--ds-text3)' }}>Enter the student roll number above to view their complete portfolio and academic overview.</p>
             </div>
           )}
         </main>
       </div>
 
-      {/* ══════════════════════════════════════════ FOOTER ══════════════════════════════════════════ */}
+      {/* ════════════════════ FOOTER ════════════════════ */}
       <footer className="ds-footer">
         <div className="ds-footer-inner">
           <LogoHeader imageStyle={{ height: '22px', opacity: 0.6 }} />
@@ -858,7 +782,7 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
         </div>
       </footer>
 
-      {/* ══════════════════════════════════════════ MOBILE BOTTOM NAV ══════════════════════════════════════════ */}
+      {/* ════════════════════ MOBILE BOTTOM NAV ════════════════════ */}
       <nav className="ds-bottom-nav">
         <div className="ds-bottom-nav-inner">
           <button className="ds-bottom-nav-item active">
@@ -866,7 +790,7 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
               <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
               <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
             </svg>
-            <span>Overview</span>
+            <span>Child Overview</span>
           </button>
           <button className="ds-bottom-nav-item" onClick={handleLogout}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
