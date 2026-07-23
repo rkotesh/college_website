@@ -68,18 +68,8 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [linkCopied, setLinkCopied] = useState(false);
-  const [theme] = useState<'dark' | 'light'>(() =>
-    (localStorage.getItem('ds-theme') as any) || 'dark'
-  );
-
   const API_BASE_URL = import.meta.env.VITE_API_URL || '';
   const APP_ORIGIN = window.location.origin;
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('ds-theme', theme);
-  }, [theme]);
 
   const fetchData = async (roll: string) => {
     try {
@@ -107,13 +97,6 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchVal.trim()) fetchData(searchVal);
-  };
-
-  const copyPortfolioLink = (slugOrRoll: string) => {
-    const url = `${APP_ORIGIN}/portfolio/${slugOrRoll}`;
-    navigator.clipboard.writeText(url);
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2500);
   };
 
   // Destructure student data

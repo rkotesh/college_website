@@ -430,8 +430,7 @@ ${profile.profileSummary}` : `I'm **${name}**, a student at CIET currently build
           ._pw{width:260px;height:260px}
           ._cw{right:12px;left:12px;bottom:78px;width:auto}
         }
-      `}</style>
-        ._pp ::selection{background:#e53935;color:#fff}
+        ._pp::selection{background:#e53935;color:#fff}
         ._pp ::-webkit-scrollbar{width:6px}
         ._pp ::-webkit-scrollbar-track{background:#0e1117}
         ._pp ::-webkit-scrollbar-thumb{background:rgba(229, 57, 53,.3);border-radius:99px}
