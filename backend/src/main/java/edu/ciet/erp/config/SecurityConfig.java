@@ -58,7 +58,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         // Allow localhost development origins and support credentials (HttpOnly cookies)
-        configuration.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:5174", "http://localhost:5175"));
+        configuration.setAllowedOrigins(List.of("https://college-website-omega-flax.vercel.app/", "https://college-website-omega-flax.vercel.app/", "https://college-website-omega-flax.vercel.app/"));
         configuration.setAllowCredentials(true);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Cache-Control", "Cookie"));
