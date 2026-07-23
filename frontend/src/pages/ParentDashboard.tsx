@@ -68,7 +68,7 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+  const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || (import.meta.env.DEV ? '' : 'https://ciet-erp.onrender.com');
   const APP_ORIGIN = window.location.origin;
 
   const fetchData = async (roll: string) => {

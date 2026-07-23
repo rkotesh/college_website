@@ -162,7 +162,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
   const [studentDataLoading, setStudentDataLoading] = useState(false);
   const [certTypeFilter, setCertTypeFilter] = useState<string>('All');
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+  const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || (import.meta.env.DEV ? '' : 'https://ciet-erp.onrender.com');
 
   const fetchStudentDashboardData = async (userId: string) => {
     setStudentDataLoading(true);

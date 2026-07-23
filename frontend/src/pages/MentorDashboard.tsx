@@ -25,7 +25,7 @@ type Tab =
   | 'messages';
 
 export default function MentorDashboard({ userSession, handleLogout }: MentorDashboardProps) {
-  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+  const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || (import.meta.env.DEV ? '' : 'https://ciet-erp.onrender.com');
   
   const getInitialTab = (): Tab => {
     const parts = window.location.pathname.split('/');

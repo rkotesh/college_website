@@ -656,7 +656,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
   }, [studentEscalations]);
 
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+  const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || (import.meta.env.DEV ? '' : 'https://ciet-erp.onrender.com');
 
   const [linkCopied, setLinkCopied] = useState(false);
   const copyPortfolioLink = (slug: string) => {

@@ -217,7 +217,7 @@ function InteractiveCanvas() {
 }
 
 export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
-  const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+  const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || (import.meta.env.DEV ? '' : 'https://ciet-erp.onrender.com');
 
   const [phase, setPhase] = useState<1 | 2>(1);
   const [identifier, setIdentifier] = useState('');
