@@ -108,6 +108,7 @@ export default function LandingPage() {
   const [newsIndex, setNewsIndex] = useState(0);
   const [statsVisible, setStatsVisible] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const statsRef = useRef<HTMLDivElement>(null);
 
   // auto-rotate news
@@ -142,9 +143,9 @@ export default function LandingPage() {
 
       {/* ── NAVBAR ── */}
       <nav className="lp-nav" style={{
-        background: scrolled ? 'rgba(255, 255, 255, 0.92)' : 'transparent',
-        backdropFilter: scrolled ? 'blur(20px)' : 'none',
-        borderBottom: scrolled ? '1px solid var(--lp-border)' : '1px solid transparent',
+        background: scrolled || mobileMenuOpen ? 'rgba(255, 255, 255, 0.96)' : 'transparent',
+        backdropFilter: scrolled || mobileMenuOpen ? 'blur(20px)' : 'none',
+        borderBottom: scrolled || mobileMenuOpen ? '1px solid var(--lp-border)' : '1px solid transparent',
       }}>
         <div className="lp-nav-inner">
           {/* CIET Official Logo */}
@@ -154,14 +155,12 @@ export default function LandingPage() {
               alt="CIET Logo"
               className="lp-ciet-logo-img"
               onError={(e) => {
-                // fallback to text badge if logo doesn't load
                 (e.target as HTMLImageElement).style.display = 'none';
                 const next = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
                 if (next) next.style.display = 'flex';
               }}
             />
             <div className="lp-brand-badge" style={{ display: 'none' }}>CIET</div>
-           
           </div>
 
           <div className="lp-nav-links">
@@ -171,6 +170,23 @@ export default function LandingPage() {
             <a href="https://chalapathiengg.ac.in/contact-us" target="_blank" rel="noreferrer" className="lp-btn-outline">Contact</a>
             <a href="/login" className="lp-btn-primary">Portal Login →</a>
           </div>
+
+          <button
+            className="lp-mobile-toggle"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle navigation menu"
+          >
+            {mobileMenuOpen ? '✕' : '☰'}
+          </button>
+        </div>
+
+        {/* Mobile menu dropdown */}
+        <div className={`lp-mobile-menu${mobileMenuOpen ? ' open' : ''}`}>
+          <a href="https://chalapathiengg.ac.in/about-us" target="_blank" rel="noreferrer" className="lp-mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>About Us</a>
+          <a href="https://chalapathiengg.ac.in/departments/computer-science-and-engineering/" target="_blank" rel="noreferrer" className="lp-mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>Departments</a>
+          <a href="https://chalapathiengg.ac.in/placements-cell" target="_blank" rel="noreferrer" className="lp-mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>Placements</a>
+          <a href="https://chalapathiengg.ac.in/contact-us" target="_blank" rel="noreferrer" className="lp-mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>Contact Us</a>
+          <a href="/login" className="lp-btn-primary" style={{ textAlign: 'center', marginTop: '8px' }} onClick={() => setMobileMenuOpen(false)}>Portal Login →</a>
         </div>
       </nav>
 
@@ -305,17 +321,13 @@ export default function LandingPage() {
       </section>
 
       {/* ── RECRUITERS MARQUEE ── */}
-      <section style={{ padding: '48px 0', borderTop: '1px solid var(--lp-border)', borderBottom: '1px solid var(--lp-border)', overflow: 'hidden' }}>
+      <section className="lp-recruiters-section">
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <div className="lp-section-tag">Our Students Work At</div>
         </div>
-        <div style={{ display: 'flex', gap: '48px', justifyContent: 'center', flexWrap: 'wrap', padding: '0 32px' }}>
+        <div className="lp-recruiters-grid">
           {RECRUITERS.map(r => (
-            <div key={r} style={{
-              padding: '12px 28px', borderRadius: '12px', border: '1px solid var(--lp-border)',
-              background: 'var(--lp-bg-raised)', color: 'var(--lp-text-sec)',
-              fontWeight: 700, fontSize: '15px', letterSpacing: '0.5px'
-            }}>{r}</div>
+            <div key={r} className="lp-recruiter-card">{r}</div>
           ))}
         </div>
       </section>
