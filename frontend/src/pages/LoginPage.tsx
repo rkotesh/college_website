@@ -93,10 +93,10 @@ function InteractiveCanvas() {
     const mouse = { x: null as number | null, y: null as number | null };
 
     const colors = [
-      'rgba(82, 139, 242, 0.8)',
-      'rgba(30, 41, 59, 0.6)',
-      'rgba(15, 23, 42, 0.45)',
-      'rgba(59, 130, 246, 0.55)',
+      'rgba(229, 57, 53, 0.65)',
+      'rgba(0, 0, 0, 0.45)',
+      'rgba(229, 57, 53, 0.45)',
+      'rgba(0, 0, 0, 0.3)',
     ];
 
     function createParticle(): ParticleObj {
@@ -158,7 +158,7 @@ function InteractiveCanvas() {
             ctx!.moveTo(particles[i].x, particles[i].y);
             ctx!.lineTo(particles[j].x, particles[j].y);
             // Dynamic transparency lines based on distance
-            ctx!.strokeStyle = `rgba(45, 158, 107, ${0.16 * (1 - dist / 120)})`;
+            ctx!.strokeStyle = `rgba(229, 57, 53, ${0.16 * (1 - dist / 120)})`;
             ctx!.lineWidth = 0.8;
             ctx!.stroke();
           }
@@ -473,17 +473,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       {/* Background decorations container to prevent overflow scrollbars */}
       <div className="login-bg-decorations">
         <InteractiveCanvas />
-
         {/* Dot-grid texture overlay */}
         <div className="llp-dot-grid" />
-
-        {/* Floating ambient particles */}
-        <div className="llp-particle llp-p1" />
-        <div className="llp-particle llp-p2" />
-        <div className="llp-particle llp-p3" />
-        <div className="llp-particle llp-p4" />
-        <div className="llp-particle llp-p5" />
-        <div className="llp-particle llp-p6" />
       </div>
 
       {/* CENTER PANEL — single glass card */}

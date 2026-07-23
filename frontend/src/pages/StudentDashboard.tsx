@@ -7,9 +7,10 @@ import LogoHeader from '../components/LogoHeader';
 export const APP_ORIGIN = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '') || window.location.origin;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ANIMATED PARTICLE BACKGROUND — 150 particles, 3 tiers, glow + mouse
+// ANIMATED PARTICLE BACKGROUND (UNUSED)
 // ─────────────────────────────────────────────────────────────────────────────
-function DashboardParticles() {
+/*
+function _DashboardParticles() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -20,10 +21,9 @@ function DashboardParticles() {
     let W = (canvas.width = canvas.offsetWidth);
     let H = (canvas.height = canvas.offsetHeight);
 
-    // ── three tiers of particles ──
-    const LARGE  = 18;   // big glowing orbs
-    const MEDIUM = 62;   // medium web-connector nodes
-    const SMALL  = 70;   // tiny sparkles
+    const LARGE  = 18;
+    const MEDIUM = 62;
+    const SMALL  = 70;
     const NUM = LARGE + MEDIUM + SMALL;
 
     const mouse = { x: W / 2, y: H / 2 };
@@ -35,7 +35,7 @@ function DashboardParticles() {
       hue: number; sat: number; lit: number;
       alpha: number; baseAlpha: number;
       phase: number; phaseSpeed: number;
-      tier: 0 | 1 | 2;         // 0=large, 1=medium, 2=small
+      tier: 0 | 1 | 2;
       attractMouse: boolean;
     }
 
@@ -45,14 +45,10 @@ function DashboardParticles() {
                    : tier === 1 ? Math.random() * 2 + 1
                    :              Math.random() * 1.2 + 0.4;
       const speed  = tier === 0 ? 0.18 : tier === 1 ? 0.32 : 0.55;
-      // green-to-teal spectrum + occasional cyan
-      const hue    = tier === 0
-                      ? 145 + Math.random() * 25           // rich forest green
-                      : tier === 1
-                        ? 150 + Math.random() * 30         // green/teal mix
-                        : 160 + Math.random() * 40;        // teal/cyan sparkles
-      const sat    = tier === 0 ? 70 : tier === 1 ? 60 : 55;
-      const lit    = tier === 0 ? 52 : tier === 1 ? 58 : 65;
+      const isRed  = Math.random() > 0.5;
+      const hue    = 0;
+      const sat    = isRed ? 85 : 0;
+      const lit    = isRed ? 52 : (tier === 0 ? 15 : (tier === 1 ? 20 : 30));
       const alpha  = tier === 0 ? 0.55 + Math.random() * 0.3
                    : tier === 1 ? 0.28 + Math.random() * 0.2
                    :              0.15 + Math.random() * 0.25;
@@ -76,90 +72,6 @@ function DashboardParticles() {
     const tick = () => {
       frame++;
       ctx.clearRect(0, 0, W, H);
-
-      for (let i = 0; i < pts.length; i++) {
-        const p = pts[i];
-
-        // pulse size & alpha
-        p.phase += p.phaseSpeed;
-        const pulse = Math.sin(p.phase);
-        p.r = p.baseR * (1 + pulse * 0.25);
-        p.alpha = p.baseAlpha * (0.75 + pulse * 0.25);
-
-        // mouse attraction / repulsion
-        const mdx = mouse.x - p.x, mdy = mouse.y - p.y;
-        const mdist = Math.sqrt(mdx * mdx + mdy * mdy);
-        if (p.attractMouse && mdist < 180 && mdist > 0) {
-          // tier 1 attracted gently, tier 2 repelled
-          const force = p.tier === 1 ? 0.06 : -0.04;
-          p.vx += (mdx / mdist) * force;
-          p.vy += (mdy / mdist) * force;
-        }
-
-        // speed cap + damping
-        const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-        const maxSpeed = p.tier === 0 ? 0.5 : p.tier === 1 ? 0.9 : 1.5;
-        if (speed > maxSpeed) { p.vx = (p.vx / speed) * maxSpeed; p.vy = (p.vy / speed) * maxSpeed; }
-        p.vx *= 0.985; p.vy *= 0.985;
-        p.x += p.vx; p.y += p.vy;
-        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
-        if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
-
-        // ── draw the particle ──
-        if (p.tier === 0) {
-          // large orb: radial gradient glow
-          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3.5);
-          grad.addColorStop(0,   `hsla(${p.hue},${p.sat}%,${p.lit}%,${p.alpha})`);
-          grad.addColorStop(0.4, `hsla(${p.hue},${p.sat}%,${p.lit}%,${p.alpha * 0.5})`);
-          grad.addColorStop(1,   `hsla(${p.hue},${p.sat}%,${p.lit}%,0)`);
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r * 3.5, 0, Math.PI * 2);
-          ctx.fillStyle = grad;
-          ctx.fill();
-          // bright core
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r * 0.6, 0, Math.PI * 2);
-          ctx.fillStyle = `hsla(${p.hue},80%,78%,${p.alpha * 1.2})`;
-          ctx.fill();
-        } else if (p.tier === 1) {
-          // medium dot with soft glow
-          ctx.shadowBlur = 6;
-          ctx.shadowColor = `hsla(${p.hue},${p.sat}%,${p.lit}%,0.5)`;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-          ctx.fillStyle = `hsla(${p.hue},${p.sat}%,${p.lit}%,${p.alpha})`;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        } else {
-          // tiny sparkle — cross/star shape
-          ctx.fillStyle = `hsla(${p.hue},${p.sat}%,${p.lit + 10}%,${p.alpha})`;
-          ctx.fillRect(p.x - p.r / 2, p.y - p.r * 1.5, p.r, p.r * 3);
-          ctx.fillRect(p.x - p.r * 1.5, p.y - p.r / 2, p.r * 3, p.r);
-        }
-
-        // ── connect medium particles ──
-        if (p.tier === 1) {
-          for (let j = i + 1; j < LARGE + MEDIUM; j++) {
-            const q = pts[j];
-            if (q.tier !== 1) continue;
-            const ddx = p.x - q.x, ddy = p.y - q.y;
-            const d = Math.sqrt(ddx * ddx + ddy * ddy);
-            if (d < 140) {
-              const opacity = 0.18 * (1 - d / 140);
-              ctx.beginPath();
-              ctx.moveTo(p.x, p.y);
-              ctx.lineTo(q.x, q.y);
-              // gradient line
-              const lg = ctx.createLinearGradient(p.x, p.y, q.x, q.y);
-              lg.addColorStop(0, `hsla(${p.hue},60%,55%,${opacity})`);
-              lg.addColorStop(1, `hsla(${q.hue},60%,55%,${opacity * 0.5})`);
-              ctx.strokeStyle = lg;
-              ctx.lineWidth = 0.8;
-              ctx.stroke();
-            }
-          }
-        }
-      }
       raf = requestAnimationFrame(tick);
     };
 
@@ -186,6 +98,7 @@ function DashboardParticles() {
     />
   );
 }
+*/
 
 
 
@@ -962,18 +875,9 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
   return (
     <div className="ds-root">
 
-      {/* ── ANIMATED BACKGROUND ── */}
+      {/* ── BACKGROUND LAYER ── */}
       <div className="ds-bg-layer" aria-hidden="true">
-        <DashboardParticles />
-        <div className="ds-orb ds-orb-1" />
-        <div className="ds-orb ds-orb-2" />
-        <div className="ds-orb ds-orb-3" />
         <div className="ds-grid-texture" />
-        <div className="ds-particle ds-p1" />
-        <div className="ds-particle ds-p2" />
-        <div className="ds-particle ds-p3" />
-        <div className="ds-particle ds-p4" />
-        <div className="ds-particle ds-p5" />
       </div>
 
       {/* ── TOPBAR ── */}
@@ -1154,7 +1058,39 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                       </div>
                       <div className="ds-hero-info">
                         <div className="ds-hero-tag">Active Scholar · {profile?.departmentId || 'Department'}</div>
-                        <h1 className="ds-hero-name">{user?.fullName || 'Student'}</h1>
+                        <div className="ds-hero-name-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                          <h1 className="ds-hero-name" style={{ margin: 0 }}>{user?.fullName || 'Student'}</h1>
+                          {profile?.isPublic && (profile?.slug || profile?.rollNo) && (
+                            <button
+                              type="button"
+                              onClick={() => copyPortfolioLink(profile.slug || profile.rollNo)}
+                              className="ds-portfolio-chip"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '5px 12px',
+                                borderRadius: '99px',
+                                background: linkCopied ? 'hsl(0, 75%, 45%)' : 'var(--ds-jade)',
+                                color: '#ffffff',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: '11.5px',
+                                fontStyle: 'normal',
+                                fontWeight: 700,
+                                transition: 'all 0.15s ease',
+                                boxShadow: '0 2px 8px var(--ds-jade-glow)'
+                              }}
+                              title={`${APP_ORIGIN}/portfolio/${profile.slug || profile.rollNo}`}
+                            >
+                              {linkCopied ? (
+                                <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied!</>
+                              ) : (
+                                <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Portfolio</>
+                              )}
+                            </button>
+                          )}
+                        </div>
                         <p className="ds-hero-meta">
                           <span className="ds-mono">{profile?.rollNo}</span> · {profile?.batch || 'Batch'} · {profile?.sectionId || ''}
                         </p>
@@ -1171,38 +1107,81 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                           {profile?.prepinstaUrl && <a href={profile.prepinstaUrl} target="_blank" rel="noopener noreferrer" className="ds-social-link">PrepInsta</a>}
                         </div>
                       </div>
-                      <div className="ds-hero-right">
-                        {/* Share Portfolio Link */}
-                        {profile?.isPublic && (profile?.slug || profile?.rollNo) && (
-                          <button
-                            type="button"
-                            onClick={() => copyPortfolioLink(profile.slug || profile.rollNo)}
-                            className="ds-resume-btn"
-                            style={{ cursor: 'pointer', border: 'none', background: linkCopied ? 'var(--ds-jade-hi)' : 'var(--ds-jade)' }}
-                            title={`${APP_ORIGIN}/portfolio/${profile.slug || profile.rollNo}`}
-                          >
-                            {linkCopied ? (
-                              <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied!</>
-                            ) : (
-                              <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg> Share Portfolio</>
-                            )}
-                          </button>
-                        )}
+                      <div className="ds-hero-right" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '10px', flexShrink: 0, marginLeft: 'auto', minWidth: '126px' }}>
                         {profile?.resumeUrl && (
                           <a
                             href={profile.resumeUrl.startsWith('http') || profile.resumeUrl.startsWith('data:') ? profile.resumeUrl : `https://${profile.resumeUrl}`}
                             target="_blank" rel="noopener noreferrer"
                             className="ds-resume-btn"
-                            style={{ background: 'var(--ds-surface2)', color: 'var(--ds-text1)', border: '1px solid var(--ds-border)' }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                              padding: '8px 14px',
+                              borderRadius: '10px',
+                              background: 'var(--ds-surface2)',
+                              color: 'var(--ds-text1)',
+                              border: '1px solid var(--ds-border)',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              textDecoration: 'none',
+                              whiteSpace: 'nowrap',
+                              boxShadow: '0 2px 6px rgba(0, 0, 0, 0.04)'
+                            }}
                           >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                             View Resume
                           </a>
                         )}
-                        <div className="ds-cgpa-mini">
-                          <div className="ds-cgpa-mini-val ds-mono">{profile?.cgpa ? profile.cgpa.toFixed(2) : '—'}</div>
-                          <div className="ds-cgpa-mini-label">CGPA / 10</div>
-                          <button className="ds-btn ds-btn-ghost" style={{ fontSize: '11px', marginTop: '8px', width: '100%' }} onClick={() => setActiveTab('academics')}>View Transcript</button>
+                        {/* Ring Form CGPA Indicator */}
+                        <div className="ds-cgpa-ring-card" style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '14px 18px',
+                          background: 'var(--ds-surface2)',
+                          border: '1px solid var(--ds-border)',
+                          borderRadius: '16px',
+                          minWidth: '120px'
+                        }}>
+                          <div style={{ position: 'relative', width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <svg width="64" height="64" viewBox="0 0 64 64" style={{ transform: 'rotate(-90deg)' }}>
+                              <circle cx="32" cy="32" r="25" stroke="var(--ds-border)" strokeWidth="4.5" fill="none" />
+                              <circle
+                                cx="32" cy="32" r="25"
+                                stroke="var(--ds-jade)"
+                                strokeWidth="4.5"
+                                fill="none"
+                                strokeDasharray={157.08}
+                                strokeDashoffset={157.08 * (1 - Math.min(Math.max((profile?.cgpa || 0) / 10, 0), 1))}
+                                strokeLinecap="round"
+                                style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+                              />
+                            </svg>
+                            <div style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              textAlign: 'center'
+                            }}>
+                              <span style={{ fontSize: '14px', fontWeight: 800, fontFamily: 'var(--ds-font-mono)', color: 'var(--ds-text1)', lineHeight: 1 }}>
+                                {profile?.cgpa ? profile.cgpa.toFixed(2) : '—'}
+                              </span>
+                              <span style={{ fontSize: '7.5px', fontWeight: 800, color: 'var(--ds-text3)', textTransform: 'uppercase', marginTop: '2px', letterSpacing: '0.5px' }}>CGPA</span>
+                            </div>
+                          </div>
+                          <button
+                            className="ds-btn ds-btn-ghost"
+                            style={{ fontSize: '10.5px', padding: '4px 10px', marginTop: '10px', width: '100%', borderRadius: '6px', whiteSpace: 'nowrap' }}
+                            onClick={() => setActiveTab('academics')}
+                          >
+                            Transcript →
+                          </button>
                         </div>
                       </div>
                     </motion.div>
@@ -1981,7 +1960,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
                             <div className="ds-port-date">Issued: {cert.issuedDate}</div>
                             {cert.certType && (
-                              <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '100px', background: 'rgba(45, 158, 107, 0.14)', color: '#2d9e6b', border: '1px solid rgba(45, 158, 107, 0.28)', letterSpacing: '0.5px' }}>
+                              <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '100px', background: 'rgba(229, 57, 53, 0.14)', color: '#e53935', border: '1px solid rgba(229, 57, 53, 0.28)', letterSpacing: '0.5px' }}>
                                 {cert.certType}
                               </span>
                             )}
@@ -2480,7 +2459,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
               )}
 
               {/* ══════════════════════════════════════════
-                  ANNOUNCEMENTS & TRAININGS TAB (Forest Green Theme)
+                  ANNOUNCEMENTS & TRAININGS TAB (Red Theme)
               ══════════════════════════════════════════ */}
               {activeTab === 'broadcasts' && (
                 <div className="ds-tab-section">

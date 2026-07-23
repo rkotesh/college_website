@@ -6,12 +6,12 @@ const CIET_LOGO_URL = 'https://chalapathiengg.ac.in/wp-content/themes/ciet/asset
 
 // ── Real data from chalapathiengg.ac.in ──
 const CIET_STATS = [
-  { label: 'Engineers Produced', value: '2800+', icon: '🎓', color: 'hsl(220,90%,65%)' },
-  { label: 'Faculty with PhD', value: '20+',    icon: '👨‍🏫', color: 'hsl(150,60%,50%)' },
-  { label: 'Recruiters',        value: '38+',   icon: '🏢', color: 'hsl(40,80%,55%)' },
-  { label: 'Placements',        value: '440+',  icon: '🚀', color: 'hsl(280,70%,65%)' },
-  { label: 'NBA Programs',      value: '4',     icon: '✅', color: 'hsl(0,70%,60%)' },
-  { label: 'Years of Excellence', value: '18+', icon: '⭐', color: 'hsl(200,80%,55%)' },
+  { label: 'Engineers Produced', value: '2800+', icon: '🎓', color: 'hsl(0,75%,50%)' },
+  { label: 'Faculty with PhD', value: '20+',    icon: '👨‍🏫', color: 'hsl(0,0%,20%)' },
+  { label: 'Recruiters',        value: '38+',   icon: '🏢', color: 'hsl(0,75%,50%)' },
+  { label: 'Placements',        value: '440+',  icon: '🚀', color: 'hsl(0,0%,20%)' },
+  { label: 'NBA Programs',      value: '4',     icon: '✅', color: 'hsl(0,75%,50%)' },
+  { label: 'Years of Excellence', value: '18+', icon: '⭐', color: 'hsl(0,0%,20%)' },
 ];
 
 // ── Real news from chalapathiengg.ac.in ──
@@ -22,7 +22,7 @@ const NEWS = [
     title: 'Students Gain Industry Exposure Through SAP Functional Training',
     desc: 'CIET is conducting a SAP Functional Training Program providing students with practical knowledge of ERP systems, real-time business processes, and hands-on sessions in SAP consulting and enterprise applications.',
     icon: '🖥️',
-    color: 'hsl(220,90%,65%)',
+    color: 'hsl(0,75%,50%)',
   },
   {
     date: 'Mar 2026',
@@ -30,7 +30,7 @@ const NEWS = [
     title: 'CIET NOVUM 2026 — Annual Tech & Cultural Fest',
     desc: 'CIET NOVUM 2026 was celebrated on March 13th & 14th with Technical Events, Cultural Events, and Sports Fiesta. Students from across departments showcased their talent and creativity.',
     icon: '🎉',
-    color: 'hsl(40,80%,55%)',
+    color: 'hsl(0,0%,20%)',
   },
   {
     date: 'Aug 2025',
@@ -38,7 +38,7 @@ const NEWS = [
     title: '6 CIET Students Achieve ISC² Certified in Cybersecurity Credential',
     desc: '6 students from CIET earned the prestigious ISC² Certified in Cybersecurity credential, demonstrating the college\'s strong focus on cybersecurity education and industry-ready skill development.',
     icon: '🏅',
-    color: 'hsl(150,60%,50%)',
+    color: 'hsl(0,75%,50%)',
   },
   {
     date: 'Jun 2025',
@@ -46,7 +46,7 @@ const NEWS = [
     title: '34 CIET Students Earn Salesforce Certified AI Specialist Credentials',
     desc: '34 CIET students earned prestigious Salesforce Certified AI Specialist credentials. Additionally, students achieved CEH, ServiceNow, and Microsoft Azure Administrator Associate certifications.',
     icon: '📄',
-    color: 'hsl(280,70%,65%)',
+    color: 'hsl(0,0%,20%)',
   },
 ];
 
@@ -142,7 +142,7 @@ export default function LandingPage() {
 
       {/* ── NAVBAR ── */}
       <nav className="lp-nav" style={{
-        background: scrolled ? 'hsla(220,12%,11%,0.92)' : 'transparent',
+        background: scrolled ? 'rgba(255, 255, 255, 0.92)' : 'transparent',
         backdropFilter: scrolled ? 'blur(20px)' : 'none',
         borderBottom: scrolled ? '1px solid var(--lp-border)' : '1px solid transparent',
       }}>

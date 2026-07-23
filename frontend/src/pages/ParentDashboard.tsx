@@ -69,7 +69,7 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
+  const [theme] = useState<'dark' | 'light'>(() =>
     (localStorage.getItem('ds-theme') as any) || 'dark'
   );
 
@@ -292,14 +292,7 @@ export default function ParentDashboard({ userSession, handleLogout }: ParentDas
                           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                           View Public Portfolio
                         </a>
-                        <button
-                          type="button"
-                          onClick={() => copyPortfolioLink(profile.slug || profile.rollNo)}
-                          className="ds-resume-btn"
-                          style={{ cursor: 'pointer', border: '1px solid var(--ds-border)', background: linkCopied ? 'var(--ds-surface3)' : 'var(--ds-surface2)', color: 'var(--ds-text1)' }}
-                        >
-                          {linkCopied ? '✓ Copied!' : 'Copy Link'}
-                        </button>
+                        
                       </div>
                     )}
 

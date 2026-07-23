@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { read, utils, write } from 'xlsx';
 import LogoHeader from '../components/LogoHeader';
 
@@ -86,11 +86,11 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
 
   const [usersList, setUsersList] = useState<any[]>([]);
   const [otpRecords, setOtpRecords] = useState<any[]>([]);
-  const [resultsList, setResultsList] = useState<any[]>([]);
+  // const [resultsList, setResultsList] = useState<any[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [studentFile, setStudentFile] = useState<File | null>(null);
   const [staffFile, setStaffFile] = useState<File | null>(null);
-  const [resultsFile, setResultsFile] = useState<File | null>(null);
+  const [_resultsFile, setResultsFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -146,16 +146,16 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
   const [formSectionId, setFormSectionId] = useState('');
 
   // Results CRUD Modal States
-  const [activeResultModal, setActiveResultModal] = useState<'create' | 'edit' | null>(null);
-  const [selectedResult, setSelectedResult] = useState<any | null>(null);
-  const [resRollNo, setResRollNo] = useState('');
-  const [resSemester, setResSemester] = useState('');
-  const [resExamName, setResExamName] = useState('');
-  const [resSubjectCode, setResSubjectCode] = useState('');
-  const [resSubjectName, setResSubjectName] = useState('');
-  const [resScore, setResScore] = useState('0.0');
-  const [resMaxScore, setResMaxScore] = useState('100.0');
-  const [resGrade, setResGrade] = useState('');
+  // const [activeResultModal, setActiveResultModal] = useState<'create' | 'edit' | null>(null);
+  // const [selectedResult, setSelectedResult] = useState<any | null>(null);
+  // const [resRollNo, setResRollNo] = useState('');
+  // const [resSemester, setResSemester] = useState('');
+  // const [resExamName, setResExamName] = useState('');
+  // const [resSubjectCode, setResSubjectCode] = useState('');
+  // const [resSubjectName, setResSubjectName] = useState('');
+  // const [resScore, setResScore] = useState('0.0');
+  // const [resMaxScore, setResMaxScore] = useState('100.0');
+  // const [resGrade, setResGrade] = useState('');
 
   // Student full profile data for admin view
   const [studentDashboardData, setStudentDashboardData] = useState<any | null>(null);
@@ -666,15 +666,16 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
       const response = await fetch(`${API_BASE_URL}/api/v1/admin/results`, { credentials: 'include', 
         headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
       });
-      const data = await response.json();
+      await response.json();
       if (response.ok) {
-        setResultsList(data);
+        // setResultsList(data);
       }
     } catch (err) {
       console.error("Failed to fetch results", err);
     }
   };
 
+  /*
   const openCreateResultModal = () => {
     setResRollNo('');
     setResSemester('1');
@@ -796,6 +797,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
       setLoading(false);
     }
   };
+  */
 
   const fetchDiagnostics = async () => {
     try {
@@ -1825,7 +1827,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                             </div>
                           </td>
                           <td>
-                            <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '100px', background: 'rgba(45, 158, 107, 0.14)', color: '#2d9e6b', border: '1px solid rgba(45, 158, 107, 0.28)' }}>
+                            <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '100px', background: 'rgba(229, 57, 53, 0.14)', color: '#e53935', border: '1px solid rgba(229, 57, 53, 0.28)' }}>
                               {c.certType || 'Other'}
                             </span>
                           </td>
@@ -2135,8 +2137,8 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
 
             {activeModal === 'view' && selectedUserForModal && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', background: 'rgba(45, 158, 107, 0.08)', padding: '15px', borderRadius: '10px' }}>
-                  <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#2d9e6b', color: '#FFF', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '20px', fontWeight: 'bold' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', background: 'rgba(229, 57, 53, 0.08)', padding: '15px', borderRadius: '10px' }}>
+                  <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#e53935', color: '#FFF', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '20px', fontWeight: 'bold' }}>
                     {(selectedUserForModal.fullName || 'U')[0].toUpperCase()}
                   </div>
                   <div>
@@ -2236,7 +2238,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                                     {cert.description && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>{cert.description}</div>}
                                   </div>
                                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                                    {cert.certType && <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '100px', background: 'rgba(45, 158, 107, 0.14)', color: '#2d9e6b', border: '1px solid rgba(45, 158, 107, 0.28)' }}>{cert.certType}</span>}
+                                    {cert.certType && <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '100px', background: 'rgba(229, 57, 53, 0.14)', color: '#e53935', border: '1px solid rgba(229, 57, 53, 0.28)' }}>{cert.certType}</span>}
                                     {cert.certUrl && <a href={cert.certUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '11px', color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>View ↗</a>}
                                   </div>
                                 </div>

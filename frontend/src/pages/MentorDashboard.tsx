@@ -645,10 +645,10 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
     let h = (canvas.height = window.innerHeight);
 
     interface Orb {
-      x: number; y: number; vx: number; vy: number; r: number; alpha: number; dAlpha: number;
+      x: number; y: number; vx: number; vy: number; r: number; alpha: number; dAlpha: number; isRed: boolean;
     }
     const orbs: Orb[] = [];
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 85; i++) {
       orbs.push({
         x: Math.random() * w,
         y: Math.random() * h,
@@ -656,13 +656,13 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
         vy: (Math.random() - 0.5) * 0.4,
         r: Math.random() * 2 + 1,
         alpha: Math.random() * 0.5 + 0.2,
-        dAlpha: (Math.random() - 0.5) * 0.015
+        dAlpha: (Math.random() - 0.5) * 0.015,
+        isRed: Math.random() > 0.5
       });
     }
 
     const render = () => {
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = 'rgba(59, 130, 246, 0.4)'; // blue particles
       orbs.forEach((o) => {
         o.x += o.vx;
         o.y += o.vy;
@@ -673,9 +673,31 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
 
         ctx.beginPath();
         ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(59, 130, 246, ${Math.max(0.1, Math.min(o.alpha, 0.8))})`;
+        const rgb = o.isRed ? '229, 57, 53' : '0, 0, 0';
+        ctx.fillStyle = `rgba(${rgb}, ${Math.max(0.1, Math.min(o.alpha, 0.8))})`;
         ctx.fill();
       });
+
+      // Draw connection lines (spiderweb net)
+      for (let i = 0; i < orbs.length; i++) {
+        for (let j = i + 1; j < orbs.length; j++) {
+          const o1 = orbs[i];
+          const o2 = orbs[j];
+          const dx = o1.x - o2.x;
+          const dy = o1.y - o2.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 185) {
+            const lineAlpha = 0.38 * (1 - dist / 185);
+            ctx.beginPath();
+            ctx.moveTo(o1.x, o1.y);
+            ctx.lineTo(o2.x, o2.y);
+            const isRedLine = o1.isRed || o2.isRed;
+            ctx.strokeStyle = isRedLine ? `rgba(229, 57, 53, ${lineAlpha})` : `rgba(0, 0, 0, ${lineAlpha})`;
+            ctx.lineWidth = 0.9;
+            ctx.stroke();
+          }
+        }
+      }
       animId = requestAnimationFrame(render);
     };
     render();
@@ -716,40 +738,39 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
       
       {/* BACKGROUND PARTICLE LAYER */}
       <div className="ds-bg-layer" style={{ zIndex: 0 }}>
-        <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
         <div className="ds-grid-texture" />
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
         .ds-root {
-          --accent: #ffffff !important;
-          --accent-light: #ffffff !important;
-          --accent-dark: #f3f4f6 !important;
-          --accent-glow: rgba(255, 255, 255, 0.12) !important;
-          --accent-border: #ffffff !important;
+          --accent: hsl(0, 75%, 50%) !important;
+          --accent-light: hsl(0, 75%, 60%) !important;
+          --accent-dark: hsl(0, 75%, 40%) !important;
+          --accent-glow: hsla(0, 75%, 50%, 0.15) !important;
+          --accent-border: hsl(0, 75%, 50%) !important;
         }
         .ds-nav-item.active {
-          color: #ffffff !important;
+          color: var(--ds-text1) !important;
           background: var(--ds-surface3) !important;
         }
         .ds-nav-item.active svg {
-          color: #ffffff !important;
-          stroke: #ffffff !important;
+          color: hsl(0, 75%, 50%) !important;
+          stroke: hsl(0, 75%, 50%) !important;
         }
         .ds-nav-item.active::before {
-          background: #ffffff !important;
+          background: hsl(0, 75%, 50%) !important;
         }
         .ds-btn-primary {
-          background: #ffffff !important;
-          color: #000000 !important;
+          background: hsl(0, 75%, 50%) !important;
+          color: #ffffff !important;
         }
         .ds-btn-primary:hover {
-          background: #f3f4f6 !important;
+          background: hsl(0, 75%, 42%) !important;
         }
       ` }} />
 
       {/* HEADER TOPBAR (BLUE COMPLIANT) */}
-      <header className="ds-topbar" style={{ borderBottom: '1px solid var(--ds-border)', background: 'hsla(210, 8%, 13%, 0.82)', backdropFilter: 'blur(18px)', position: 'relative', zIndex: 1000 }}>
+      <header className="ds-topbar" style={{ borderBottom: '1px solid var(--ds-border)', background: 'var(--ds-surface)', position: 'relative', zIndex: 1000 }}>
         <div className="ds-topbar-left" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <LogoHeader imageStyle={{ height: '32px' }} />
           <span className="ds-logo-sep" style={{ width: '1px', height: '16px', background: 'var(--ds-border)' }} />
@@ -804,38 +825,38 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
           <nav className="ds-nav" style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div className="ds-nav-section" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.8px', paddingBottom: '6px' }}>Operations</div>
             
-            <button className={`ds-nav-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'overview' ? '#ffffff' : 'var(--ds-text2)', fontWeight: activeTab === 'overview' ? 700 : 500 }}>
+            <button className={`ds-nav-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'overview' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'overview' ? 700 : 500 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
               <span>Department Overview</span>
             </button>
             
-            <button className={`ds-nav-item ${activeTab === 'mentorship' ? 'active' : ''}`} onClick={() => setActiveTab('mentorship')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'mentorship' ? '#ffffff' : 'var(--ds-text2)', fontWeight: activeTab === 'mentorship' ? 700 : 500 }}>
+            <button className={`ds-nav-item ${activeTab === 'mentorship' ? 'active' : ''}`} onClick={() => setActiveTab('mentorship')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'mentorship' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'mentorship' ? 700 : 500 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               <span>My Mentees</span>
             </button>
 
-            <button className={`ds-nav-item ${activeTab === 'documents' ? 'active' : ''}`} onClick={() => setActiveTab('documents')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'documents' ? '#ffffff' : 'var(--ds-text2)', fontWeight: activeTab === 'documents' ? 700 : 500 }}>
+            <button className={`ds-nav-item ${activeTab === 'documents' ? 'active' : ''}`} onClick={() => setActiveTab('documents')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'documents' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'documents' ? 700 : 500 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
               <span>Curriculum Files</span>
             </button>
 
             <div className="ds-nav-section" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 6px' }}>Development & OBE</div>
 
-            <button className={`ds-nav-item ${activeTab === 'training' ? 'active' : ''}`} onClick={() => setActiveTab('training')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'training' ? '#ffffff' : 'var(--ds-text2)', fontWeight: activeTab === 'training' ? 700 : 500 }}>
+            <button className={`ds-nav-item ${activeTab === 'training' ? 'active' : ''}`} onClick={() => setActiveTab('training')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'training' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'training' ? 700 : 500 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
               <span>Trainings & Broadcasts</span>
             </button>
 
 
 
-             <button className={`ds-nav-item ${activeTab === 'escalations' ? 'active' : ''}`} onClick={() => setActiveTab('escalations')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'escalations' ? '#ffffff' : 'var(--ds-text2)', fontWeight: activeTab === 'escalations' ? 700 : 500 }}>
+             <button className={`ds-nav-item ${activeTab === 'escalations' ? 'active' : ''}`} onClick={() => setActiveTab('escalations')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'escalations' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'escalations' ? 700 : 500 }}>
                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                <span>Escalation Chain</span>
              </button>
 
              <div className="ds-nav-section" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 6px' }}>Account</div>
 
-             <button className={`ds-nav-item ${activeTab === 'notifications' ? 'active' : ''}`} onClick={() => setActiveTab('notifications')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'notifications' ? '#ffffff' : 'var(--ds-text2)', fontWeight: activeTab === 'notifications' ? 700 : 500 }}>
+             <button className={`ds-nav-item ${activeTab === 'notifications' ? 'active' : ''}`} onClick={() => setActiveTab('notifications')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'notifications' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'notifications' ? 700 : 500 }}>
                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                <span>Notifications</span>
                {hodNotifications.filter(n => !n.read).length > 0 && (
@@ -845,12 +866,12 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
                )}
              </button>
 
-             <button className={`ds-nav-item ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'messages' ? '#ffffff' : 'var(--ds-text2)', fontWeight: activeTab === 'messages' ? 700 : 500 }}>
+             <button className={`ds-nav-item ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'messages' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'messages' ? 700 : 500 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 <span>Direct Messages</span>
               </button>
 
-             <button className={`ds-nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'settings' ? '#ffffff' : 'var(--ds-text2)', fontWeight: activeTab === 'settings' ? 700 : 500 }}>
+             <button className={`ds-nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'settings' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'settings' ? 700 : 500 }}>
                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
                <span>Profile Settings</span>
              </button>
@@ -1713,7 +1734,7 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
               )}
 
               {/* ══════════════════════════════════════════
-                  DIRECT MESSAGES TAB (Forest Green Theme)
+                  DIRECT MESSAGES TAB (Red Theme)
               ══════════════════════════════════════════ */}
               {activeTab === 'messages' && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)', gap: '20px' }}>
