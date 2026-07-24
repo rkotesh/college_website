@@ -2531,21 +2531,22 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
           {/* FOOTER */}
           <footer className="ds-footer">
-            <div className="ds-footer-brand">
-              <LogoHeader imageStyle={{ height: '32px' }} />
-              
-            </div>
-            <div className="ds-footer-links">
-              <div>
-                <h5 className="ds-footer-col-title">Quick Contacts</h5>
-                <ul className="ds-footer-list">
-                  <li>📞 0863 - 2524112 / 113</li>
-                  <li><a href="mailto:principal@chalapathiengg.ac.in">principal@chalapathiengg.ac.in</a></li>
-                </ul>
+            <div className="ds-footer-top">
+              <div className="ds-footer-brand">
+                <LogoHeader imageStyle={{ height: '32px' }} />
               </div>
-              <div>
-                <h5 className="ds-footer-col-title">Address</h5>
-                <p className="ds-footer-addr">Chalapathi Nagar, Lam,<br />Guntur District, A.P. – 522 034</p>
+              <div className="ds-footer-links">
+                <div>
+                  <h5 className="ds-footer-col-title">Quick Contacts</h5>
+                  <ul className="ds-footer-list">
+                    <li>📞 0863 - 2524112 / 113</li>
+                    <li><a href="mailto:principal@chalapathiengg.ac.in">principal@chalapathiengg.ac.in</a></li>
+                  </ul>
+                </div>
+                <div>
+                  <h5 className="ds-footer-col-title">Address</h5>
+                  <p className="ds-footer-addr">Chalapathi Nagar, Lam,<br />Guntur District, A.P. – 522 034</p>
+                </div>
               </div>
             </div>
             <div className="ds-footer-bottom">

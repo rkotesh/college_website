@@ -673,20 +673,24 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
       setError('');
       const headers = { 'Authorization': `Bearer ${userSession.accessToken}` };
 
-      const [dashRes, annRes, trRes, escRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/v1/portal/student/dashboard`, { credentials: 'include', headers }),
-        fetch(`${API_BASE_URL}/api/v1/portal/student/announcements`, { credentials: 'include', headers }),
-        fetch(`${API_BASE_URL}/api/v1/portal/student/trainings`, { credentials: 'include', headers }),
-        fetch(`${API_BASE_URL}/api/v1/portal/student/escalations`, { credentials: 'include', headers })
-      ]);
-
-
-      if (!dashRes.ok) throw new Error('Failed to load dashboard.');
+      const dashRes = await fetch(`${API_BASE_URL}/api/v1/portal/student/dashboard`, { credentials: 'include', headers }).catch(() => null);
+      if (!dashRes || !dashRes.ok) throw new Error('Failed to connect to server. Please check your backend connection or retry.');
       setDashboardData(await dashRes.json());
 
-      if (annRes.ok) setAnnouncements(await annRes.json());
-      if (trRes.ok) setTrainings(await trRes.json());
-      if (escRes.ok) setStudentEscalations(await escRes.json());
+      fetch(`${API_BASE_URL}/api/v1/portal/student/announcements`, { credentials: 'include', headers })
+        .then(r => r.ok ? r.json() : [])
+        .then(data => setAnnouncements(data))
+        .catch(() => {});
+
+      fetch(`${API_BASE_URL}/api/v1/portal/student/trainings`, { credentials: 'include', headers })
+        .then(r => r.ok ? r.json() : [])
+        .then(data => setTrainings(data))
+        .catch(() => {});
+
+      fetch(`${API_BASE_URL}/api/v1/portal/student/escalations`, { credentials: 'include', headers })
+        .then(r => r.ok ? r.json() : [])
+        .then(data => setStudentEscalations(data))
+        .catch(() => {});
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -962,19 +966,6 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
             ))}
           </nav>
 
-          <div className="ds-sidebar-footer">
-            <div className="ds-mini-avatar">
-              {profile?.photoUrl ? (
-                <img src={profile.photoUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              ) : (
-                userSession.fullName?.slice(0, 1)?.toUpperCase() || 'S'
-              )}
-            </div>
-            <div>
-              <div className="ds-mini-name">{userSession.fullName || 'Student'}</div>
-              <div className="ds-mini-roll">{profile?.rollNo || 'Roll No'}</div>
-            </div>
-          </div>
         </aside>
 
         {/* ── MAIN CONTENT ── */}
@@ -2550,21 +2541,22 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
 
           {/* FOOTER */}
           <footer className="ds-footer">
-            <div className="ds-footer-brand">
-              <LogoHeader imageStyle={{ height: '32px' }} />
-              
-            </div>
-            <div className="ds-footer-links">
-              <div>
-                <h5 className="ds-footer-col-title">Quick Contacts</h5>
-                <ul className="ds-footer-list">
-                  <li>📞 0863 - 2524112 / 113</li>
-                  <li><a href="mailto:principal@chalapathiengg.ac.in">principal@chalapathiengg.ac.in</a></li>
-                </ul>
+            <div className="ds-footer-top">
+              <div className="ds-footer-brand">
+                <LogoHeader imageStyle={{ height: '32px' }} />
               </div>
-              <div>
-                <h5 className="ds-footer-col-title">Address</h5>
-                <p className="ds-footer-addr">Chalapathi Nagar, Lam,<br />Guntur District, A.P. – 522 034</p>
+              <div className="ds-footer-links">
+                <div>
+                  <h5 className="ds-footer-col-title">Quick Contacts</h5>
+                  <ul className="ds-footer-list">
+                    <li>📞 0863 - 2524112 / 113</li>
+                    <li><a href="mailto:principal@chalapathiengg.ac.in">principal@chalapathiengg.ac.in</a></li>
+                  </ul>
+                </div>
+                <div>
+                  <h5 className="ds-footer-col-title">Address</h5>
+                  <p className="ds-footer-addr">Chalapathi Nagar, Lam,<br />Guntur District, A.P. – 522 034</p>
+                </div>
               </div>
             </div>
             <div className="ds-footer-bottom">

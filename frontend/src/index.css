@@ -3179,7 +3179,7 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
 
 .ds-sidebar {
   display: none;
-  width: 220px;
+  width: 230px;
   background: var(--ds-surface);
   border-right: 1px solid var(--ds-border);
   flex-direction: column;
@@ -3191,7 +3191,12 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
 }
 @media (min-width: 1024px) { .ds-sidebar { display: flex; } }
 
-.ds-nav { padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.ds-nav {
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .ds-nav-section {
   font-size: 9.5px; font-weight: 800; color: var(--ds-text3);
   text-transform: uppercase; letter-spacing: 1px;
@@ -3222,19 +3227,20 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
 
 .ds-sidebar-footer {
   display: flex; align-items: center; gap: 10px;
+  padding: 14px 14px;
   margin-top: auto;
-  padding: 16px 14px; border-top: 1px solid var(--ds-border);
+  border-top: 1px solid var(--ds-border);
   background: var(--ds-surface);
   flex-shrink: 0;
 }
 .ds-mini-avatar {
-  width: 28px; height: 28px; border-radius: 50%;
+  width: 30px; height: 30px; border-radius: 50%;
   background: var(--ds-jade-sub); border: 1px solid var(--ds-jade-glow);
   display: flex; align-items: center; justify-content: center;
   font-family: var(--ds-font-display); font-weight: 800; font-size: 11px; color: var(--ds-jade);
-  overflow: hidden;
+  overflow: hidden; flex-shrink: 0;
 }
-.ds-mini-name { font-size: 11.5px; font-weight: 700; color: var(--ds-text1); }
+.ds-mini-name { font-size: 12px; font-weight: 700; color: var(--ds-text1); line-height: 1.2; }
 .ds-mini-roll { font-size: 10px; color: var(--ds-text3); font-family: var(--ds-font-mono); }
 
 .ds-main {
@@ -3608,36 +3614,140 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
 ───────────────────────────────────────────────────────────────*/
 .ds-footer {
   margin-top: auto;
-  /* Mobile: pad bottom enough to clear the fixed bottom-nav (≈68px) + device safe area */
-  padding: 36px 20px calc(72px + env(safe-area-inset-bottom, 0px));
+  padding: 18px 16px calc(64px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--ds-border);
   background: var(--ds-surface);
-  /* Ensure no transparent bleed shows through */
   width: 100%;
   box-sizing: border-box;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
-/* On desktop the bottom-nav is hidden — restore normal footer padding */
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   .ds-footer {
-    width: 100vw;
-    margin-left: calc(100% - 100vw);
-    padding: 36px 20px 24px;
+    padding: 24px 28px calc(68px + env(safe-area-inset-bottom, 0px));
+    gap: 20px;
   }
 }
-.ds-footer-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-.ds-footer-logo { width: 36px; height: 36px; object-fit: contain; background: #fff; border-radius: 4px; }
-.ds-footer-name { font-size: 13px; font-weight: 800; color: var(--ds-text1); margin: 0; letter-spacing: 0.3px; }
-.ds-footer-tagline { font-size: 11px; color: var(--ds-text3); font-weight: 500; margin: 2px 0 0; }
-.ds-footer-links { display: flex; gap: 40px; flex-wrap: wrap; margin-bottom: 24px; }
-.ds-footer-col-title { font-size: 10px; font-weight: 800; color: var(--ds-text3); text-transform: uppercase; letter-spacing: 1px; margin: 0 0 10px; }
-.ds-footer-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 7px; font-size: 12px; color: var(--ds-text2); }
+@media (min-width: 1024px) {
+  .ds-footer {
+    width: 100%;
+    margin-left: 0;
+    padding: 32px 48px 24px;
+    gap: 24px;
+  }
+}
+
+.ds-footer-top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+}
+@media (min-width: 768px) {
+  .ds-footer-top {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 36px;
+  }
+}
+
+.ds-footer-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 0; }
+.ds-footer-brand img { height: 26px !important; }
+@media (min-width: 768px) {
+  .ds-footer-brand img { height: 32px !important; }
+}
+
+.ds-footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+@media (min-width: 640px) {
+  .ds-footer-links {
+    flex-direction: row;
+    gap: 40px;
+    width: auto;
+  }
+}
+@media (min-width: 1024px) {
+  .ds-footer-links {
+    gap: 60px;
+  }
+}
+
+.ds-footer-col-title {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--ds-text3);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin: 0 0 5px;
+}
+@media (min-width: 768px) {
+  .ds-footer-col-title {
+    font-size: 11px;
+    margin: 0 0 10px;
+  }
+}
+
+.ds-footer-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--ds-text2);
+}
+@media (min-width: 768px) {
+  .ds-footer-list {
+    gap: 6px;
+    font-size: 12.5px;
+  }
+}
 .ds-footer-list a { color: inherit; text-decoration: none; }
 .ds-footer-list a:hover { color: var(--ds-jade); }
-.ds-footer-addr { font-size: 12px; color: var(--ds-text2); line-height: 1.6; margin: 0; }
-.ds-footer-bottom { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding-top: 16px; border-top: 1px solid var(--ds-border); font-size: 11px; color: var(--ds-text3); }
-.ds-footer-bottom a { color: var(--ds-jade); text-decoration: none; font-weight: 600; }
-.ds-footer-bottom a:hover { color: var(--ds-jade-hi); }
+
+.ds-footer-addr {
+  font-size: 11.5px;
+  color: var(--ds-text2);
+  line-height: 1.45;
+  margin: 0;
+}
+@media (min-width: 768px) {
+  .ds-footer-addr {
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+}
+
+.ds-footer-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ds-border);
+  font-size: 10.5px;
+  color: var(--ds-text3);
+  width: 100%;
+}
+@media (min-width: 768px) {
+  .ds-footer-bottom {
+    padding-top: 18px;
+    font-size: 11.5px;
+    gap: 12px;
+  }
+}
+.ds-footer-bottom a { color: #ef4444; text-decoration: none; font-weight: 700; }
+.ds-footer-bottom a:hover { color: #dc2626; }
 
 
 /* ── Bottom Grid & Weightage Card ── */
