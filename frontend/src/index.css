@@ -14,11 +14,11 @@
   --font-body: 'Inter', sans-serif;
 
   /* ── Neutral Surface Scale (Light Mode UI - Soft Muted Grey) ── */
-  --surface-base:    hsl(0, 0%, 89%);       /* duller soft page bg (grey) */
-  --surface-raised:  hsl(0, 0%, 94.5%);     /* cards, sidebar (muted off-white) */
-  --surface-overlay: hsl(0, 0%, 94.5%);     /* modals, dropdowns */
-  --surface-border:  hsl(0, 0%, 84%);       /* subtle dividers */
-  --surface-hover:   hsl(0, 0%, 92.5%);     /* hover surfaces */
+  --surface-base:    hsl(0, 0%, 93%);       /* soft page bg (grey) */
+  --surface-raised:  hsl(0, 0%, 100%);      /* cards, sidebar (bright white) */
+  --surface-overlay: hsl(0, 0%, 100%);      /* modals, dropdowns */
+  --surface-border:  hsl(0, 0%, 86%);       /* subtle dividers */
+  --surface-hover:   hsl(0, 0%, 97%);       /* hover surfaces */
 
   /* ── Text Scale ── */
   --text-primary:   hsl(0, 0%, 10%);        /* black */

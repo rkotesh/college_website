@@ -415,13 +415,13 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
 
               return (
                 <div key={cert.id || cert._id || idx} className="certificate-card reveal-item">
-                  <div className="certificate-image-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #f5f5f7, #eaeaef)', position: 'relative' }}>
+              <div className="certificate-image-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #f5f5f7, #eaeaef)', position: 'relative' }}>
                     {img ? (
                       <img src={img} alt={cert.title || cert.name} />
                     ) : (
                       <div style={{ textAlign: 'center', padding: '1.5rem' }}>
-                        <div style={{ fontSize: '2.5rem', marginBottom: '0.4rem', opacity: 0.8 }}>📜</div>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.8px', color: 'var(--highlight-dark)', textTransform: 'uppercase' }}>
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--highlight)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '0.4rem', opacity: 0.7 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                        <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.8px', color: 'var(--highlight-dark)', textTransform: 'uppercase' }}>
                           {cert.certType || 'Verified Credential'}
                         </div>
                       </div>
@@ -508,7 +508,7 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
                   <div className="project-info">
                     {isFeatured && (
                       <div className="featured-badge-red">
-                        ★ FEATURED PROJECT
+                        FEATURED PROJECT
                       </div>
                     )}
                     

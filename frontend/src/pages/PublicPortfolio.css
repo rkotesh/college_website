@@ -1533,7 +1533,7 @@ footer a { color: var(--text); text-decoration: none; font-weight: 500; }
 .certificate-image-container {
     position: relative;
     width: 100%;
-    aspect-ratio: 1.414 / 1; /* Standard A4 landscape aspect ratio */
+    height: 140px;
     overflow: hidden;
     background: #EAEAEF;
     border-bottom: 1px solid var(--border);
@@ -1580,7 +1580,7 @@ footer a { color: var(--text); text-decoration: none; font-weight: 500; }
     color: #FFFFFF;
 }
 .certificate-info {
-    padding: 1.5rem;
+    padding: 1rem 1.25rem;
     display: flex;
     flex-direction: column;
     flex: 1;
