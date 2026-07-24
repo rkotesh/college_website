@@ -504,8 +504,14 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
               }
 
               return (
-                <div key={proj.id || proj._id || idx} className={`project-card reveal-item ${isFeatured ? 'featured' : ''}`}>
+                <div key={proj.id || proj._id || idx} className="project-card reveal-item">
                   <div className="project-info">
+                    {isFeatured && (
+                      <div className="featured-badge-red">
+                        ★ FEATURED PROJECT
+                      </div>
+                    )}
+                    
                     <h4>{proj.title}</h4>
                     <p>{proj.description || 'Custom software and web development project.'}</p>
                     
@@ -517,15 +523,15 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
                       </div>
                     )}
 
-                    <div className="project-links">
-                      {live && (
-                        <a href={live} target="_blank" rel="noreferrer" className="project-link" style={{ borderColor: 'var(--highlight)', color: 'var(--highlight-dark)', fontWeight: 700, background: 'rgba(153, 102, 255, 0.06)' }}>
-                          Live Demo ↗
+                    <div className="project-links" style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
+                      {github && (
+                        <a href={github} target="_blank" rel="noreferrer" className="project-link-pill">
+                          Source Code ↗
                         </a>
                       )}
-                      {github && (
-                        <a href={github} target="_blank" rel="noreferrer" className="project-link">
-                          GitHub ↗
+                      {live && (
+                        <a href={live} target="_blank" rel="noreferrer" className="project-link-pill" style={{ background: 'rgba(153, 102, 255, 0.1)', color: 'var(--highlight-dark)', borderColor: 'rgba(153, 102, 255, 0.3)' }}>
+                          Live Demo ↗
                         </a>
                       )}
                     </div>

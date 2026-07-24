@@ -623,24 +623,74 @@ section { padding: 6rem 2.5rem; max-width: 1200px; margin: 0 auto; }
 #projects { border-top: 1px solid var(--border); }
 .projects-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1.5rem;
-    max-width: 860px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+    max-width: 1200px;
     margin: 0 auto;
 }
+
+@media (max-width: 1024px) {
+    .projects-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+    .projects-grid { grid-template-columns: 1fr; }
+}
+
 .project-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
     display: flex;
     flex-direction: column;
+    position: relative;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
 }
-.project-card:hover { transform: translateY(-3px); }
-.project-info { padding: 1.25rem 1.4rem; flex: 1; display: flex; flex-direction: column; transform-style: preserve-3d; }
-.project-info h4 { font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; margin-bottom: 0.5rem; }
-.project-info p { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1rem; flex: 1; }
+.project-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--highlight);
+    box-shadow: 0 12px 28px rgba(153, 102, 255, 0.08);
+}
+.featured-badge-red {
+    color: #e53935;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+.project-info { padding: 1.5rem; flex: 1; display: flex; flex-direction: column; }
+.project-info h4 { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; margin-bottom: 0.4rem; color: var(--text); }
+.project-info p { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.55; margin-bottom: 1.25rem; flex: 1; }
 .project-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1.25rem; }
 .project-tags span {
-    padding: 0.3rem 0.75rem; border-radius: 100px;
-    background: var(--tag-bg); font-size: 0.72rem; font-weight: 500;
+    padding: 0.25rem 0.65rem; border-radius: 4px;
+    background: transparent; font-size: 0.75rem;
+    font-weight: 500; color: var(--text-secondary);
     border: 1px solid var(--border);
+}
+.project-link-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.45rem 1rem;
+    border-radius: 100px;
+    background: var(--tag-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.2s, border-color 0.2s, transform 0.2s;
+}
+.project-link-pill:hover {
+    background: var(--highlight);
+    color: #ffffff;
+    border-color: var(--highlight);
+    transform: translateY(-1px);
 }
 .project-links { display: flex; gap: 1rem; align-items: center; margin-top: auto; }
 .project-link {
