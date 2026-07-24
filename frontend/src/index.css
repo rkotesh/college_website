@@ -13,12 +13,12 @@
   --font-display: 'Outfit', sans-serif;
   --font-body: 'Inter', sans-serif;
 
-  /* ── Neutral Surface Scale (Light Mode UI - Soft Muted White) ── */
-  --surface-base:    hsl(0, 0%, 92%);       /* soft page bg (grey) */
-  --surface-raised:  hsl(0, 0%, 96.5%);     /* cards, sidebar (muted off-white) */
-  --surface-overlay: hsl(0, 0%, 96.5%);     /* modals, dropdowns */
-  --surface-border:  hsl(0, 0%, 86%);       /* subtle dividers */
-  --surface-hover:   hsl(0, 0%, 94.5%);     /* hover surfaces */
+  /* ── Neutral Surface Scale (Light Mode UI - Soft Muted Grey) ── */
+  --surface-base:    hsl(0, 0%, 89%);       /* duller soft page bg (grey) */
+  --surface-raised:  hsl(0, 0%, 94.5%);     /* cards, sidebar (muted off-white) */
+  --surface-overlay: hsl(0, 0%, 94.5%);     /* modals, dropdowns */
+  --surface-border:  hsl(0, 0%, 84%);       /* subtle dividers */
+  --surface-hover:   hsl(0, 0%, 92.5%);     /* hover surfaces */
 
   /* ── Text Scale ── */
   --text-primary:   hsl(0, 0%, 10%);        /* black */
@@ -3023,11 +3023,11 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
 
 /* ── Token Layer ── */
 :root {
-  --ds-bg:       hsl(0, 0%, 92%);        /* soft grey page background */
-  --ds-surface:  hsl(0, 0%, 96.5%);      /* soft muted off-white (less glare/brightness) */
-  --ds-surface2: hsl(0, 0%, 94.5%);      /* soft inner containers */
-  --ds-surface3: hsl(0, 0%, 91.5%);      /* light grey for active states */
-  --ds-border:   hsl(0, 0%, 86%);        /* subtle soft border */
+  --ds-bg:       hsl(0, 0%, 89%);        /* duller soft grey page background */
+  --ds-surface:  hsl(0, 0%, 94.5%);      /* soft muted off-white (less glare/brightness) */
+  --ds-surface2: hsl(0, 0%, 92.5%);      /* soft inner containers */
+  --ds-surface3: hsl(0, 0%, 89.5%);      /* light grey for active states */
+  --ds-border:   hsl(0, 0%, 84%);        /* subtle soft border */
   --ds-border-hi:hsl(0, 0%, 76%);        /* stronger border */
 
   /* Red replaces jade/green */
