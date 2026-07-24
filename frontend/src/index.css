@@ -902,9 +902,20 @@ body {
 .admin-main {
   flex: 1;
   padding: 32px 36px;
-  overflow-y: auto;
+  overflow: visible;
   display: flex;
   flex-direction: column;
+}
+
+.admin-footer {
+  width: 100% !important;
+}
+
+@media (min-width: 1025px) {
+  .admin-footer {
+    width: calc(100% + 232px) !important;
+    margin-left: -232px !important;
+  }
 }
 
 /* Page header */
@@ -3071,6 +3082,7 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
   display: flex;
   flex-direction: column;
   height: 100vh;
+  min-height: 100dvh;
   background: var(--ds-bg);
   color: var(--ds-text1);
   font-family: var(--ds-font-body);
@@ -3161,6 +3173,7 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
 .ds-body {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -3171,6 +3184,7 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
   border-right: 1px solid var(--ds-border);
   flex-direction: column;
   flex-shrink: 0;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--ds-border) transparent;
@@ -3208,7 +3222,10 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
 
 .ds-sidebar-footer {
   display: flex; align-items: center; gap: 10px;
+  margin-top: auto;
   padding: 16px 14px; border-top: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  flex-shrink: 0;
 }
 .ds-mini-avatar {
   width: 28px; height: 28px; border-radius: 50%;
@@ -3221,7 +3238,7 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
 .ds-mini-roll { font-size: 10px; color: var(--ds-text3); font-family: var(--ds-font-mono); }
 
 .ds-main {
-  flex: 1; overflow-y: auto; overflow-x: hidden;
+  flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
   scrollbar-width: thin; scrollbar-color: var(--ds-border) transparent;
   /* No padding-bottom here — footer handles the bottom spacing on mobile */
   display: flex;
@@ -3603,6 +3620,8 @@ td.cell-error small { display:block; font-size:10px; color: var(--danger); margi
 /* On desktop the bottom-nav is hidden — restore normal footer padding */
 @media (min-width: 1024px) {
   .ds-footer {
+    width: 100vw;
+    margin-left: calc(100% - 100vw);
     padding: 36px 20px 24px;
   }
 }
