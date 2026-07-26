@@ -2035,10 +2035,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
               <div style={{ maxWidth: '380px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
                   <LogoHeader imageStyle={{ height: '38px', background: '#fff', borderRadius: '4px', padding: '2px' }} />
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '0.5px' }}>CHALAPATHI INSTITUTE</h4>
-                    <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>OF ENGINEERING & TECHNOLOGY (AUTONOMOUS)</p>
-                  </div>
+                 
                 </div>
                 <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
                   Approved by AICTE, Affiliated to Acharya Nagarjuna University. Accredited by NAAC with 'A' Grade & NBA.
@@ -2084,7 +2081,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
               fontWeight: 500
             }}>
               <span>© {new Date().getFullYear()} CIET. All Rights Reserved.</span>
-              <a href="http://chalapathiengg.ac.in" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-light)', textDecoration: 'none', fontWeight: 600 }}>Official Portal →</a>
+              <a href="http://chalapathiengg.ac.in" target="_blank" rel="noopener noreferrer" style={{ color: 'red', textDecoration: 'none', fontWeight: 600 }}>Official Portal →</a>
             </div>
           </footer>
         </div>
