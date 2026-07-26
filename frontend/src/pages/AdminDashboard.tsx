@@ -2285,7 +2285,22 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
 
             {(activeModal === 'create' || activeModal === 'edit') && (
               <form onSubmit={activeModal === 'create' ? handleCreateUser : handleUpdateUser} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                {errorMsg && (
+                  <div style={{
+                    padding: '12px 16px',
+                    borderRadius: '8px',
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    color: '#ef4444',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    lineHeight: '1.4'
+                  }}>
+                    ⚠️ {errorMsg}
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+
                     <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>Full Name</label>
                     <input 
                       type="text" 
@@ -2343,28 +2358,60 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                   />
                 </div>
 
-                {activeModal === 'create' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>
-                      {formRole === 'Student' ? 'Custom Password (Optional)' : 'Initial Password *'}
-                    </label>
-                    <input 
-                      type="password" 
-                      required={formRole !== 'Student'}
-                      className="form-input" 
-                      style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', marginLeft: '3px',
-    paddingLeft: '6px' }}
-                      value={formPassword}
-                      onChange={(e) => setFormPassword(e.target.value)}
-                      placeholder={formRole === 'Student' ? 'Leave blank → defaults to Register Number' : 'Min 8 chars, 1 uppercase, 1 lowercase, 1 digit, 1 symbol'}
-                    />
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                      {formRole === 'Student' 
-                        ? 'Default password is the Register Number. If setting a custom password, it must meet complexity requirements.'
-                        : 'Must be at least 8 characters with at least one uppercase, one lowercase, one number, and one symbol (e.g. @).'}
-                    </span>
-                  </div>
-                )}
+                {activeModal === 'create' && (() => {
+                  const pwd = formPassword || '';
+                  const checks = [
+                    { label: 'At least 8 characters', ok: pwd.length >= 8 },
+                    { label: 'One uppercase letter (A-Z)', ok: /[A-Z]/.test(pwd) },
+                    { label: 'One lowercase letter (a-z)', ok: /[a-z]/.test(pwd) },
+                    { label: 'One number (0-9)', ok: /[0-9]/.test(pwd) },
+                    { label: 'One symbol (e.g. @, #, !)', ok: /[^A-Za-z0-9]/.test(pwd) },
+                  ];
+                  const showChecklist = formRole !== 'Student' && pwd.length > 0;
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                        {formRole === 'Student' ? 'Custom Password (Optional)' : 'Initial Password *'}
+                      </label>
+                      <input
+                        type="password"
+                        required={formRole !== 'Student'}
+                        className="form-input"
+                        style={{
+                          background: 'var(--surface-base)',
+                          color: 'var(--text-primary)',
+                          border: showChecklist
+                            ? checks.every(c => c.ok)
+                              ? '1px solid #22c55e'
+                              : '1px solid #ef4444'
+                            : '1px solid var(--card-border)',
+                          marginLeft: '3px',
+                          paddingLeft: '6px'
+                        }}
+                        value={formPassword}
+                        onChange={(e) => { setFormPassword(e.target.value); setErrorMsg(''); }}
+                        placeholder={formRole === 'Student' ? 'Leave blank → defaults to Register Number' : 'Min 8 chars, 1 uppercase, 1 lowercase, 1 digit, 1 symbol'}
+                      />
+                      {formRole === 'Student' ? (
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Default password is the Register Number. If setting a custom password, it must meet complexity requirements.
+                        </span>
+                      ) : showChecklist ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px', padding: '8px 10px', background: 'var(--surface-raised)', borderRadius: '6px', border: '1px solid var(--card-border)' }}>
+                          {checks.map((c, i) => (
+                            <span key={i} style={{ fontSize: '11px', fontWeight: '600', color: c.ok ? '#22c55e' : '#ef4444', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              {c.ok ? '✓' : '✗'} {c.label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Must be at least 8 characters with at least one uppercase, one lowercase, one number, and one symbol (e.g. @).
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   <label style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)' }}>Phone Number</label>
