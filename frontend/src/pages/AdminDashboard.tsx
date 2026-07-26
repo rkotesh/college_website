@@ -1239,8 +1239,8 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
           </button>
         </div>
 
-        <div className="admin-main" style={{ display: 'flex', flexDirection: 'column', padding: 0 }}>
-          <div style={{ padding: '32px 36px 0 36px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div className="admin-main">
+          <div className="admin-main-content">
             {errorMsg && <div className="status-msg error" style={{ marginBottom: '20px' }}>{errorMsg}</div>}
             {uploadStatus && <div className="status-msg success" style={{ marginBottom: '20px' }}>{uploadStatus}</div>}
 
@@ -1573,8 +1573,8 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                             borderRadius: '12px',
                             fontSize: '11.5px',
                             fontWeight: '600',
-                            background: r.isUsed ? 'rgba(107, 114, 128, 0.12)' : 'rgba(34, 197, 94, 0.12)',
-                            color: r.isUsed ? '#4b5563' : '#166534'
+                            background: r.isUsed ? 'var(--surface-hover)' : 'hsla(142,72%,40%,.15)',
+                            color: r.isUsed ? 'var(--text-muted)' : 'hsl(142,72%,62%)'
                           }}>
                             {r.isUsed ? 'Consumed' : 'Active'}
                           </span>
@@ -2015,8 +2015,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
 
           {/* CIET Footer */}
           <footer className="admin-footer" style={{
-            marginTop: 'auto',
-            padding: '40px 36px 36px',
+            padding: '36px 36px 28px',
             background: 'var(--surface-overlay)',
             borderTop: '1px solid var(--surface-border)',
             width: '100%',
@@ -2166,7 +2165,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                   {selectedUserForModal.cgpa !== undefined && selectedUserForModal.cgpa > 0 && (
                     <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--surface-raised)', paddingBottom: '8px' }}>
                       <span style={{ color: 'var(--text-secondary)', fontWeight: '600' }}>CGPA</span>
-                      <span style={{ fontWeight: '700', color: selectedUserForModal.cgpa >= 8 ? '#16a34a' : selectedUserForModal.cgpa >= 6 ? '#d97706' : '#dc2626' }}>
+                      <span style={{ fontWeight: '700', color: selectedUserForModal.cgpa >= 8 ? 'hsl(142,72%,62%)' : selectedUserForModal.cgpa >= 6 ? 'hsl(38,95%,62%)' : 'hsl(0,80%,65%)' }}>
                         {selectedUserForModal.cgpa.toFixed(2)} / 10.00
                       </span>
                     </div>
@@ -2187,7 +2186,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', borderBottom: '1px solid var(--surface-raised)', paddingBottom: '8px' }}>
                     <span style={{ color: 'var(--text-secondary)', fontWeight: '600' }}>Portal Access</span>
-                    <span style={{ fontWeight: '700', color: selectedUserForModal.isActive ? '#16a34a' : '#dc2626' }}>
+                    <span style={{ fontWeight: '700', color: selectedUserForModal.isActive ? 'hsl(142,72%,62%)' : 'hsl(0,80%,65%)' }}>
                       {selectedUserForModal.isActive ? 'Granted / Active' : 'Revoked / Locked'}
                     </span>
                   </div>
