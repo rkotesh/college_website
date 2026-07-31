@@ -976,38 +976,38 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     if (type === 'students') {
       headers = ['email', 'fullName', 'phone', 'rollNo', 'batch', 'department', 'cgpa', 'sectionId'];
       sampleData = [{
-        email: 'student.cse@ciet.edu.in',
-        fullName: 'Aditya Vardhan',
-        phone: '9876543210',
-        rollNo: '22B01A0501',
-        batch: '2022-2026',
+        email: 'student.dept@ciet.edu.in',
+        fullName: 'Student Full Name',
+        phone: '9XXXXXXXXX',
+        rollNo: 'XXBXXAXXXX',
+        batch: 'YYYY-YYYY',
         department: 'CSE',
-        cgpa: 9.25,
+        cgpa: 0.0,
         sectionId: 'CSE-A'
       }];
       filename = 'students_template.xlsx';
     } else if (type === 'users') {
       headers = ['email', 'fullName', 'phone', 'role', 'department', 'password'];
       sampleData = [{
-        email: 'faculty.ece@ciet.edu.in',
-        fullName: 'Dr. Suresh Kumar',
-        phone: '9988776655',
+        email: 'user.dept@ciet.edu.in',
+        fullName: 'User Full Name',
+        phone: '9XXXXXXXXX',
         role: 'Faculty',
-        department: 'ECE',
-        password: 'password123'
+        department: 'CSE',
+        password: 'ChangeMe@123'
       }];
       filename = 'users_template.xlsx';
     } else {
       headers = ['rollNo', 'semester', 'examName', 'subjectCode', 'subjectName', 'score', 'maxScore', 'grade'];
       sampleData = [{
-        rollNo: '22B01A0501',
-        semester: '3',
+        rollNo: 'XXBXXAXXXX',
+        semester: '1',
         examName: 'Semester End Examinations',
-        subjectCode: 'R22-CSE301',
-        subjectName: 'Data Structures & Algorithms',
-        score: 85.0,
+        subjectCode: 'SUBJECT_CODE',
+        subjectName: 'Subject Name',
+        score: 0.0,
         maxScore: 100.0,
-        grade: 'A+'
+        grade: 'A'
       }];
       filename = 'results_template.xlsx';
     }

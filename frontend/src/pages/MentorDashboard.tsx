@@ -179,8 +179,7 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
   // Notifications dropdown
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications] = useState([
-    { id: 1, title: 'Accreditation Review', msg: 'NAAC Pre-Audit check is scheduled for next Monday.', time: '2 hours ago' },
-    { id: 2, title: 'At-Risk Alert', msg: 'Student Ravi Kumar (22B01A0501) flagged for low attendance.', time: '1 day ago' }
+    { id: 1, title: 'Accreditation Review', msg: 'NAAC Pre-Audit check is scheduled for next Monday.', time: '2 hours ago' }
   ]);
 
   useEffect(() => {
