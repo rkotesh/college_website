@@ -415,17 +415,17 @@ html, body, #root {
 
 /* ── Hero Section (100% Responsive Screen Width) ── */
 .lp-hero {
-  position: relative;
-  width: 100%;
-  max-width: 100%;
+  position: relative !important;
+  width: 100% !important;
+  max-width: 100% !important;
   height: 88vh;
   min-height: 500px;
   background: #000000;
   display: flex;
   align-items: center;
   overflow: hidden;
-  margin: 0;
-  padding: 0;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 @media (max-width: 767px) {

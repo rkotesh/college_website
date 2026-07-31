@@ -36,7 +36,7 @@ html { scroll-behavior: smooth; font-size: 16px; }
     background: rgba(153, 102, 255, 0.55);
 }
 
-body {
+.portfolio-root {
     font-family: var(--font-body);
     background: var(--bg);
     color: var(--text);
@@ -48,7 +48,7 @@ body {
 ::selection { background: var(--highlight); color: #fff; }
 
 /* ---- NAV ---- */
-nav {
+.portfolio-root nav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 100;
     background: rgba(245, 245, 247, 0.65);
     backdrop-filter: blur(20px) saturate(180%);
@@ -412,7 +412,7 @@ nav.scrolled .nav-container { padding: 0.9rem 4rem; }
 }
 
 /* ---- SECTIONS ---- */
-section { padding: 6rem 2.5rem; max-width: 1200px; margin: 0 auto; }
+.portfolio-root section { padding: 6rem 2.5rem; max-width: 1200px; margin: 0 auto; }
 
 .section-header {
     display: flex; justify-content: space-between; align-items: flex-end;
@@ -844,14 +844,14 @@ section { padding: 6rem 2.5rem; max-width: 1200px; margin: 0 auto; }
 }
 
 /* ---- FOOTER ---- */
-footer {
+.portfolio-root footer {
     padding: 3rem 2.5rem;
     border-top: 1px solid var(--border);
     max-width: 1200px; margin: 0 auto;
     display: flex; justify-content: space-between; align-items: center;
 }
-footer p { font-size: 0.8rem; color: var(--text-secondary); }
-footer a { color: var(--text); text-decoration: none; font-weight: 500; }
+.portfolio-root footer p { font-size: 0.8rem; color: var(--text-secondary); }
+.portfolio-root footer a { color: var(--text); text-decoration: none; font-weight: 500; }
 
 /* ---- SCROLL REVEAL ---- */
 .reveal, .reveal-item, .stagger-reveal {
