@@ -10,6 +10,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 @Builder
@@ -30,10 +32,13 @@ public class TrainingProgram {
     @Builder.Default
     private boolean isActive = true;
     
-    private String category; // Aptitude, Technical, Soft Skills, etc.
+    private String category; // Aptitude, Technical, Soft Skills, Course, Training, Workshop, Event, etc.
 
     @Indexed
     private String departmentId;
+
+    @Builder.Default
+    private List<String> targetYears = new ArrayList<>();
 
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();

@@ -13,6 +13,7 @@ import java.util.List;
 
 @Slf4j
 @Service
+@SuppressWarnings("unchecked")
 public class PlatformSyncService {
 
     private final RestTemplate restTemplate = new RestTemplate();
@@ -61,7 +62,8 @@ public class PlatformSyncService {
             
             HttpEntity<String> request = new HttpEntity<>(graphqlQuery, headers);
             
-            ResponseEntity<Map> response = restTemplate.exchange("https://leetcode.com/graphql", HttpMethod.POST, request, Map.class);
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange("https://leetcode.com/graphql", HttpMethod.POST, request, (Class<Map<String, Object>>)(Class<?>)Map.class);
             
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 Map<String, Object> data = (Map<String, Object>) response.getBody().get("data");
@@ -99,7 +101,8 @@ public class PlatformSyncService {
             headers.set("User-Agent", "CIET-ERP-Portal");
             HttpEntity<String> request = new HttpEntity<>(headers);
 
-            ResponseEntity<Map> response = restTemplate.exchange("https://api.github.com/users/" + username, HttpMethod.GET, request, Map.class);
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange("https://api.github.com/users/" + username, HttpMethod.GET, request, (Class<Map<String, Object>>)(Class<?>)Map.class);
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 Map<String, Object> body = response.getBody();
@@ -122,10 +125,12 @@ public class PlatformSyncService {
                 username = parts[parts.length - 2];
             }
 
-            ResponseEntity<Map> response = restTemplate.exchange("https://codeforces.com/api/user.info?handles=" + username, HttpMethod.GET, null, Map.class);
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange("https://codeforces.com/api/user.info?handles=" + username, HttpMethod.GET, null, (Class<Map<String, Object>>)(Class<?>)Map.class);
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 Map<String, Object> body = response.getBody();
                 if ("OK".equals(body.get("status"))) {
+                    @SuppressWarnings("unchecked")
                     List<Map<String, Object>> result = (List<Map<String, Object>>) body.get("result");
                     if (result != null && !result.isEmpty()) {
                         Map<String, Object> user = result.get(0);
@@ -153,7 +158,8 @@ public class PlatformSyncService {
             headers.set("User-Agent", "Mozilla/5.0");
             HttpEntity<String> request = new HttpEntity<>(headers);
 
-            ResponseEntity<Map> response = restTemplate.exchange("https://codechef-api.vercel.app/handle/" + username, HttpMethod.GET, request, Map.class);
+            @SuppressWarnings("unchecked")
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange("https://codechef-api.vercel.app/handle/" + username, HttpMethod.GET, request, (Class<Map<String, Object>>)(Class<?>)Map.class);
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 Map<String, Object> body = response.getBody();
                 if (body.get("currentRating") != null) {

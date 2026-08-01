@@ -47,9 +47,268 @@ public class PortalController {
     private final EscalationThreadRepository escalationThreadRepository;
     private final EscalationMessageRepository escalationMessageRepository;
     private final MentorshipAssignmentRepository mentorshipAssignmentRepository;
+    private final BroadcastLogRepository broadcastLogRepository;
 
     @org.springframework.beans.factory.annotation.Value("${app.mail.from:noreply@ciet.edu}")
     private String fromEmail;
+
+    @GetMapping("/directory")
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD', 'ROLE_Faculty', 'ROLE_Mentor')")
+    public ResponseEntity<?> getDirectoryUsers(Authentication authentication) {
+        String email = authentication.getName();
+        User currentUser = userRepository.findByEmailIgnoreCase(email).orElse(null);
+        if (currentUser == null) return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
+        
+        List<String> allowedDepts = currentUser.getDepartmentIds();
+        if (allowedDepts == null || allowedDepts.isEmpty()) {
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+        
+        List<User> allUsers = userRepository.findAll();
+        List<User> filteredUsers = new ArrayList<>();
+        
+        for (User u : allUsers) {
+            boolean match = false;
+            if (u.getDepartmentIds() != null) {
+                for (String d : u.getDepartmentIds()) {
+                    if (allowedDepts.contains(d.toUpperCase())) {
+                        match = true;
+                        break;
+                    }
+                }
+            }
+            if (!match && u.getRole() == Role.Student) {
+                if (u.getDepartmentId() != null && allowedDepts.contains(u.getDepartmentId().toUpperCase())) {
+                    match = true;
+                } else {
+                    Optional<StudentProfile> pOpt = studentProfileRepository.findByUserId(u.getId());
+                    if (pOpt.isPresent() && pOpt.get().getDepartmentId() != null &&
+                        allowedDepts.contains(pOpt.get().getDepartmentId().toUpperCase())) {
+                        match = true;
+                    }
+                }
+            }
+            if (match) {
+                u.setPasswordHash(null);
+                filteredUsers.add(u);
+            }
+        }
+        return ResponseEntity.ok(filteredUsers);
+    }
+
+    @PutMapping("/directory/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD', 'ROLE_Faculty', 'ROLE_Mentor')")
+    public ResponseEntity<?> updateDirectoryUser(@PathVariable("id") String id, @RequestBody Map<String, String> body, Authentication authentication) {
+        String emailAuth = authentication.getName();
+        User currentUser = userRepository.findByEmailIgnoreCase(emailAuth).orElse(null);
+        if (currentUser == null) return ResponseEntity.badRequest().body(Map.of("error", "Unauthorized"));
+        List<String> allowedDepts = currentUser.getDepartmentIds();
+        if (allowedDepts == null) allowedDepts = new ArrayList<>();
+
+        User user = userRepository.findById(id).orElseThrow(() -> new RuntimeException("User not found"));
+        
+        // Ensure user belongs to the staff's department
+        boolean isAuthorized = false;
+        if (user.getDepartmentIds() != null) {
+            for (String d : user.getDepartmentIds()) {
+                if (allowedDepts.contains(d.toUpperCase())) { isAuthorized = true; break; }
+            }
+        }
+        if (!isAuthorized && user.getRole() == Role.Student) {
+            if (user.getDepartmentId() != null && allowedDepts.contains(user.getDepartmentId().toUpperCase())) {
+                isAuthorized = true;
+            } else {
+                Optional<StudentProfile> pOpt = studentProfileRepository.findByUserId(user.getId());
+                if (pOpt.isPresent() && pOpt.get().getDepartmentId() != null && allowedDepts.contains(pOpt.get().getDepartmentId().toUpperCase())) {
+                    isAuthorized = true;
+                }
+            }
+        }
+        if (!isAuthorized) {
+            return ResponseEntity.status(403).body(Map.of("error", "You do not have permission to edit this user"));
+        }
+
+        String email = body.get("email");
+        String fullName = body.get("fullName");
+        String phone = body.get("phone");
+
+        if (email != null && !email.equalsIgnoreCase(user.getEmail())) {
+            if (userRepository.existsByEmailIgnoreCase(email)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Email is already taken"));
+            }
+            user.setEmail(email.toLowerCase());
+        }
+
+        if (fullName != null) user.setFullName(fullName);
+        if (phone != null) user.setPhone(phone);
+
+        // Explicitly NOT allowing role or department_code changes for non-admin
+        if (body.containsKey("year")) user.setYear(body.get("year"));
+        if (body.containsKey("sectionId")) user.setSectionId(body.get("sectionId"));
+        if (body.containsKey("batch")) user.setBatch(body.get("batch"));
+        if (user.getRole() == Role.Student && body.containsKey("roll_no")) {
+            user.setRollNo(body.get("roll_no").toUpperCase());
+        }
+
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(user);
+
+        if (user.getRole() == Role.Student) {
+            studentProfileRepository.findByUserId(user.getId()).ifPresent(p -> {
+                if (body.containsKey("cgpa")) {
+                    try { p.setCgpa(Double.parseDouble(body.get("cgpa"))); } catch (Exception e) {}
+                }
+                if (body.containsKey("batch")) p.setBatch(body.get("batch"));
+                if (body.containsKey("sectionId")) p.setSectionId(body.get("sectionId"));
+                if (body.containsKey("year")) p.setYear(body.get("year"));
+                if (body.containsKey("academicStatus")) {
+                    try { p.setAcademicStatus(AcademicStatus.valueOf(body.get("academicStatus").toUpperCase())); } catch (Exception e) {}
+                }
+                p.setUpdatedAt(LocalDateTime.now());
+                studentProfileRepository.save(p);
+            });
+        }
+        return ResponseEntity.ok(Map.of("message", "User updated successfully"));
+    }
+
+    @PostMapping("/broadcast")
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD', 'ROLE_Faculty', 'ROLE_Mentor')")
+    public ResponseEntity<?> sendPortalBroadcast(@RequestBody Map<String, Object> body, Authentication authentication) {
+        String email = authentication.getName();
+        User currentUser = userRepository.findByEmailIgnoreCase(email).orElse(null);
+        if (currentUser == null) return ResponseEntity.badRequest().body(Map.of("error", "Unauthorized"));
+        List<String> allowedDepts = currentUser.getDepartmentIds();
+        if (allowedDepts == null || allowedDepts.isEmpty()) {
+            return ResponseEntity.status(403).body(Map.of("error", "No departments assigned"));
+        }
+
+        String title = (String) body.get("title");
+        String message = (String) body.get("message");
+        if (title == null || title.isBlank() || message == null || message.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Title and message are required"));
+        }
+
+        @SuppressWarnings("unchecked")
+        List<String> targetRoles = (List<String>) body.get("targetRoles");
+        String yearFilter = (String) body.get("year");
+        String deptFilter = (String) body.get("departmentId");
+        String sectionFilter = (String) body.get("sectionId");
+
+        Set<String> recipientIds = new HashSet<>();
+
+        if (targetRoles != null && !targetRoles.isEmpty()) {
+            boolean includeStudents = targetRoles.stream().anyMatch("Student"::equalsIgnoreCase);
+            boolean includeFaculty = targetRoles.stream().anyMatch("Faculty"::equalsIgnoreCase);
+            boolean includeMentor = targetRoles.stream().anyMatch("Mentor"::equalsIgnoreCase);
+            boolean includeHOD = targetRoles.stream().anyMatch("HOD"::equalsIgnoreCase);
+
+            if (includeStudents) {
+                List<StudentProfile> profiles = studentProfileRepository.findAll();
+                for (StudentProfile p : profiles) {
+                    String sDept = p.getDepartmentId();
+                    if (sDept == null || !allowedDepts.contains(sDept.toUpperCase())) continue;
+                    
+                    if (deptFilter != null && !deptFilter.isBlank() && !"ALL".equalsIgnoreCase(deptFilter)) {
+                        if (!sDept.equalsIgnoreCase(deptFilter)) continue;
+                    }
+                    if (sectionFilter != null && !sectionFilter.isBlank() && !"ALL".equalsIgnoreCase(sectionFilter)) {
+                        if (p.getSectionId() == null || !p.getSectionId().equalsIgnoreCase(sectionFilter)) continue;
+                    }
+                    if (yearFilter != null && !yearFilter.isBlank() && !"ALL".equalsIgnoreCase(yearFilter)) {
+                        String computedYear = p.getYear();
+                        if (computedYear == null || computedYear.isBlank()) {
+                            if (p.getBatch() != null && p.getBatch().contains("-")) {
+                                try {
+                                    int startYr = Integer.parseInt(p.getBatch().split("-")[0].trim());
+                                    int currentYr = java.time.Year.now().getValue();
+                                    int calc = (currentYr - startYr) + 1;
+                                    computedYear = String.valueOf(Math.min(Math.max(calc, 1), 4));
+                                } catch (Exception e) { computedYear = "3"; }
+                            } else {
+                                computedYear = "3";
+                            }
+                        }
+                        if (!computedYear.equals(yearFilter)) continue;
+                    }
+                    if (p.getRollNo() != null && !p.getRollNo().isBlank()) {
+                        recipientIds.add(p.getRollNo().toUpperCase());
+                    }
+                }
+            }
+
+            if (includeFaculty || includeMentor || includeHOD) {
+                List<User> staff = userRepository.findAll();
+                for (User u : staff) {
+                    if (u.getRole() == Role.Faculty && !includeFaculty) continue;
+                    if (u.getRole() == Role.Mentor && !includeMentor) continue;
+                    if (u.getRole() == Role.HOD && !includeHOD) continue;
+
+                    boolean belongsToDept = false;
+                    if (u.getDepartmentIds() != null) {
+                        for (String d : u.getDepartmentIds()) {
+                            if (allowedDepts.contains(d.toUpperCase())) {
+                                belongsToDept = true; break;
+                            }
+                        }
+                    }
+                    if (!belongsToDept) continue;
+
+                    if (deptFilter != null && !deptFilter.isBlank() && !"ALL".equalsIgnoreCase(deptFilter)) {
+                        boolean matchedSpecific = false;
+                        if (u.getDepartmentIds() != null) {
+                            for (String d : u.getDepartmentIds()) {
+                                if (d.equalsIgnoreCase(deptFilter)) { matchedSpecific = true; break; }
+                            }
+                        }
+                        if (!matchedSpecific) continue;
+                    }
+                    if (u.getEmail() != null) recipientIds.add(u.getEmail());
+                }
+            }
+        }
+
+        List<Notification> notifs = new ArrayList<>();
+        for (String rId : recipientIds) {
+            notifs.add(Notification.builder()
+                    .rollNo(rId)
+                    .title(title)
+                    .message(message)
+                    .type("SYSTEM")
+                    .read(false)
+                    .createdAt(LocalDateTime.now())
+                    .build());
+        }
+        notificationRepository.saveAll(notifs);
+        
+        BroadcastLog logRecord = BroadcastLog.builder()
+                .senderId(currentUser.getId())
+                .senderName(currentUser.getFullName())
+                .senderRole(currentUser.getRole().name())
+                .title(title)
+                .message(message)
+                .targetRoles(targetRoles)
+                .targetDepartment(deptFilter)
+                .targetYear(yearFilter)
+                .targetSection(sectionFilter)
+                .recipientCount(notifs.size())
+                .build();
+        broadcastLogRepository.save(logRecord);
+
+        return ResponseEntity.ok(Map.of(
+            "message", "Broadcast sent successfully to " + notifs.size() + " recipients within your department scope.",
+            "recipients", notifs.size()
+        ));
+    }
+
+    @GetMapping("/broadcasts/history")
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD', 'ROLE_Faculty', 'ROLE_Mentor')")
+    public ResponseEntity<?> getBroadcastHistory(Authentication authentication) {
+        String email = authentication.getName();
+        User currentUser = userRepository.findByEmailIgnoreCase(email).orElse(null);
+        if (currentUser == null) return ResponseEntity.badRequest().body(Map.of("error", "Unauthorized"));
+        List<BroadcastLog> history = broadcastLogRepository.findAllBySenderIdOrderByCreatedAtDesc(currentUser.getId());
+        return ResponseEntity.ok(history);
+    }
 
     @GetMapping("/student/dashboard")
     @PreAuthorize("hasAnyAuthority('ROLE_Student')")
@@ -1457,6 +1716,105 @@ public class PortalController {
         notificationRepository.save(notification);
 
         return ResponseEntity.ok(Map.of("message", "Message sent successfully"));
+    }
+
+    @PostMapping("/notification")
+    public ResponseEntity<?> sendPortalManualNotification(@RequestBody Map<String, Object> body) {
+        String title = (String) body.get("title");
+        String message = (String) body.get("message");
+        String type = (String) body.get("type");
+        String targetRollNo = (String) body.get("rollNo");
+
+        if (title == null || title.isBlank() || message == null || message.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Title and message are required"));
+        }
+
+        @SuppressWarnings("unchecked")
+        List<String> targetRoles = (List<String>) body.get("targetRoles");
+        String yearFilter = (String) body.get("year");
+        String deptFilter = (String) body.get("departmentId");
+        String sectionFilter = (String) body.get("sectionId");
+
+        Set<String> recipientIds = new HashSet<>();
+
+        if (targetRoles != null && !targetRoles.isEmpty()) {
+            // Audience targeting mode
+            boolean includeStudents = targetRoles.stream().anyMatch("Student"::equalsIgnoreCase);
+            boolean includeFaculty = targetRoles.stream().anyMatch("Faculty"::equalsIgnoreCase);
+            boolean includeMentor = targetRoles.stream().anyMatch("Mentor"::equalsIgnoreCase);
+            boolean includeHOD = targetRoles.stream().anyMatch("HOD"::equalsIgnoreCase);
+
+            if (includeStudents) {
+                List<StudentProfile> profiles = studentProfileRepository.findAll();
+                for (StudentProfile p : profiles) {
+                    if (deptFilter != null && !deptFilter.isBlank() && !"ALL".equalsIgnoreCase(deptFilter)) {
+                        if (p.getDepartmentId() == null || !p.getDepartmentId().equalsIgnoreCase(deptFilter)) continue;
+                    }
+                    if (sectionFilter != null && !sectionFilter.isBlank() && !"ALL".equalsIgnoreCase(sectionFilter)) {
+                        if (p.getSectionId() == null || !p.getSectionId().equalsIgnoreCase(sectionFilter)) continue;
+                    }
+                    if (yearFilter != null && !yearFilter.isBlank() && !"ALL".equalsIgnoreCase(yearFilter)) {
+                        String computedYear = p.getYear();
+                        if (computedYear == null || computedYear.isBlank()) {
+                            if (p.getBatch() != null && p.getBatch().contains("-")) {
+                                try {
+                                    int startYr = Integer.parseInt(p.getBatch().split("-")[0].trim());
+                                    int currentYr = java.time.Year.now().getValue();
+                                    int calc = (currentYr - startYr) + 1;
+                                    computedYear = String.valueOf(Math.min(Math.max(calc, 1), 4));
+                                } catch (Exception e) { computedYear = "1"; }
+                            } else { computedYear = "1"; }
+                        }
+                        if (!computedYear.equalsIgnoreCase(yearFilter)) continue;
+                    }
+                    recipientIds.add(p.getRollNo());
+                }
+            }
+
+            if (includeFaculty || includeMentor || includeHOD) {
+                List<User> staffUsers = userRepository.findAll().stream()
+                        .filter(u -> (includeFaculty && u.getRole() == Role.Faculty) ||
+                                     (includeMentor && u.getRole() == Role.Mentor) ||
+                                     (includeHOD && u.getRole() == Role.HOD))
+                        .toList();
+
+                for (User u : staffUsers) {
+                    if (deptFilter != null && !deptFilter.isBlank() && !"ALL".equalsIgnoreCase(deptFilter)) {
+                        if (u.getDepartmentIds() == null || u.getDepartmentIds().stream().noneMatch(d -> d.equalsIgnoreCase(deptFilter))) {
+                            continue;
+                        }
+                    }
+                    recipientIds.add(u.getEmail());
+                }
+            }
+        } else if ("ALL".equalsIgnoreCase(targetRollNo) || targetRollNo == null || targetRollNo.isBlank()) {
+            List<StudentProfile> profiles = studentProfileRepository.findAll();
+            for (StudentProfile p : profiles) recipientIds.add(p.getRollNo());
+            List<User> staffUsers = userRepository.findAll().stream()
+                    .filter(u -> u.getRole() == Role.HOD || u.getRole() == Role.Faculty || u.getRole() == Role.Mentor)
+                    .toList();
+            for (User u : staffUsers) recipientIds.add(u.getEmail());
+        } else {
+            // Single target rollNo or email
+            recipientIds.add(targetRollNo.trim());
+        }
+
+        int sentCount = 0;
+        for (String id : recipientIds) {
+            Notification notif = Notification.builder()
+                    .rollNo(id)
+                    .title(title)
+                    .message(message)
+                    .type(type != null ? type : "SYSTEM")
+                    .read(false)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            notificationRepository.save(notif);
+            sentCount++;
+        }
+
+        return ResponseEntity.ok(Map.of("message", "Notification broadcast successfully", "recipientCount", sentCount));
     }
 
     @GetMapping("/student/announcements")

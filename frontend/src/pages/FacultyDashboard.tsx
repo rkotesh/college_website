@@ -22,7 +22,9 @@ type Tab =
   | 'escalations'
   | 'notifications'
   | 'settings'
-  | 'messages';
+  | 'messages'
+  | 'directory'
+  | 'broadcasts';
 
 export default function FacultyDashboard({ userSession, handleLogout }: FacultyDashboardProps) {
   const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || (import.meta.env.DEV ? '' : 'https://ciet-erp.onrender.com');
@@ -33,7 +35,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
     const validTabs: Tab[] = [
       'overview', 'faculty', 'mentorship', 'documents', 'training', 
       'escalations', 'notifications', 'settings', 'messages'
-    ];
+    , 'directory', 'broadcasts'];
     if (validTabs.includes(tabFromUrl as Tab)) {
       return tabFromUrl as Tab;
     }
@@ -42,7 +44,181 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
   const [activeTab, setActiveTab] = useState<Tab>(getInitialTab());
 
+  // --- Injected User Directory State ---
+  const [directoryUsers, setDirectoryUsers] = useState<any[]>([]);
+  const [dirSearchQuery, setDirSearchQuery] = useState('');
+  const [dirRoleFilter, setDirRoleFilter] = useState('ALL');
+  const [dirDeptFilter, setDirDeptFilter] = useState('ALL');
+  const [dirCurrentPage, setDirCurrentPage] = useState(1);
+  const [dirActiveModal, setDirActiveModal] = useState<'view' | 'edit' | null>(null);
+  const [dirSelectedUser, setDirSelectedUser] = useState<any | null>(null);
+  const dirUsersPerPage = 15;
+
+  const [dirFormEmail, setDirFormEmail] = useState('');
+  const [dirFormFullName, setDirFormFullName] = useState('');
+  const [dirFormPhone, setDirFormPhone] = useState('');
+  const [dirFormYear, setDirFormYear] = useState('');
+  const [dirFormSectionId, setDirFormSectionId] = useState('');
+  const [dirFormBatch, setDirFormBatch] = useState('');
+  const [dirFormCgpa, setDirFormCgpa] = useState('0.0');
+  const [dirFormAcademicStatus, setDirFormAcademicStatus] = useState('ACTIVE');
+  const [dirFormRollNo, setDirFormRollNo] = useState('');
+
+  // --- Injected Broadcast State ---
+  const [notifTarget, setNotifTarget] = useState('AUDIENCE');
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [notifType, setNotifType] = useState('SYSTEM');
+  const [sendingNotif, setSendingNotif] = useState(false);
+  const [notifTargetRoles, setNotifTargetRoles] = useState<string[]>(['Student']);
+  const [notifYearFilter, setNotifYearFilter] = useState<string>('ALL');
+  const [notifDeptFilterAlert, setNotifDeptFilterAlert] = useState<string>('ALL');
+  const [notifSectionFilter, setNotifSectionFilter] = useState<string>('ALL');
+  const [broadcastHistory, setBroadcastHistory] = useState<any[]>([]);
+  const [selectedBroadcast, setSelectedBroadcast] = useState<any | null>(null);
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+
+
   // Whenever activeTab changes, update history URL and title
+
+  // --- Injected Functions ---
+  const fetchDirectoryUsers = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/portal/directory`, {
+        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDirectoryUsers(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleEditDirUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dirSelectedUser) return;
+    try {
+      const payload: any = {
+        email: dirFormEmail,
+        fullName: dirFormFullName,
+        phone: dirFormPhone,
+      };
+      if (dirSelectedUser.role === 'Student') {
+        payload.year = dirFormYear;
+        payload.sectionId = dirFormSectionId;
+        payload.batch = dirFormBatch;
+        payload.cgpa = dirFormCgpa;
+        payload.academicStatus = dirFormAcademicStatus;
+        payload.roll_no = dirFormRollNo;
+      }
+      const res = await fetch(`${API_BASE_URL}/api/v1/portal/directory/${dirSelectedUser.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userSession.accessToken}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('Update failed');
+      alert('User updated successfully');
+      setDirActiveModal(null);
+      fetchDirectoryUsers();
+    } catch (e) {
+      alert('Error updating user');
+    }
+  };
+
+  const openDirEditModal = (u: any) => {
+    setDirSelectedUser(u);
+    setDirFormEmail(u.email || '');
+    setDirFormFullName(u.fullName || '');
+    setDirFormPhone(u.phone || '');
+    setDirFormRollNo(u.rollNo || '');
+    setDirFormYear(u.year || '');
+    setDirFormSectionId(u.sectionId || '');
+    setDirFormBatch(u.batch || '');
+    setDirFormCgpa(u.cgpa?.toString() || '0.0');
+    setDirFormAcademicStatus(u.academicStatus || 'ACTIVE');
+    setDirActiveModal('edit');
+  };
+
+  const fetchBroadcastHistory = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/portal/broadcasts/history`, {
+        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBroadcastHistory(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSendBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notifTitle.trim() || !notifMessage.trim()) return alert('Title and Message are required.');
+    try {
+      setSendingNotif(true);
+      const payload: any = { title: notifTitle, message: notifMessage, type: notifType };
+      if (notifTarget === 'AUDIENCE') {
+        payload.targetRoles = notifTargetRoles;
+        payload.year = notifYearFilter;
+        payload.departmentId = notifDeptFilterAlert;
+        payload.sectionId = notifSectionFilter;
+      } else {
+        payload.rollNo = notifTarget;
+      }
+      const res = await fetch(`${API_BASE_URL}/api/v1/portal/broadcast`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userSession.accessToken}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) { alert('Failed to send broadcast'); return; }
+      const data = await res.json();
+      alert(data.message);
+      setNotifTitle('');
+      setNotifMessage('');
+      fetchBroadcastHistory();
+    } catch (e) {
+      alert('Error sending broadcast');
+    } finally {
+      setSendingNotif(false);
+    }
+  };
+
+  const filteredDirUsers = directoryUsers.filter(u => {
+    if (dirRoleFilter !== 'ALL' && u.role !== dirRoleFilter) return false;
+    if (dirDeptFilter !== 'ALL') {
+      const uDept = u.departmentIds?.[0] || u.departmentId || '';
+      if (uDept !== dirDeptFilter) return false;
+    }
+    if (dirSearchQuery) {
+      const sq = dirSearchQuery.toLowerCase();
+      if (!u.fullName?.toLowerCase().includes(sq) && 
+          !u.email?.toLowerCase().includes(sq) &&
+          !u.rollNo?.toLowerCase().includes(sq)) {
+        return false;
+      }
+    }
+    return true;
+  });
+  
+  const dirTotalPages = Math.max(1, Math.ceil(filteredDirUsers.length / dirUsersPerPage));
+  const displayedDirUsers = filteredDirUsers.slice((dirCurrentPage - 1) * dirUsersPerPage, dirCurrentPage * dirUsersPerPage);
+
+
+  useEffect(() => {
+    if (activeTab === 'directory') fetchDirectoryUsers();
+    if (activeTab === 'broadcasts') fetchBroadcastHistory();
+  }, [activeTab]);
+
   useEffect(() => {
     let tabLabel = '';
     switch (activeTab) {
@@ -77,7 +253,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
       const validTabs: Tab[] = [
         'overview', 'faculty', 'mentorship', 'documents', 'training', 
         'escalations', 'notifications', 'settings', 'messages'
-      ];
+      , 'directory', 'broadcasts'];
       if (validTabs.includes(tabFromUrl as Tab)) {
         setActiveTab(tabFromUrl as Tab);
       } else {
@@ -192,10 +368,10 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   const [detailUserLoading, setDetailUserLoading] = useState(false);
 
   // Notifications dropdown
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications] = useState([
-    { id: 1, title: 'Accreditation Review', msg: 'NAAC Pre-Audit check is scheduled for next Monday.', time: '2 hours ago' }
-  ]);
+  // const [showNotifications, setShowNotifications] = useState(false);
+  // const [notifications] = useState([
+    // { id: 1, title: 'Accreditation Review', msg: 'NAAC Pre-Audit check is scheduled for next Monday.', time: '2 hours ago' }
+  // ]);
 
   useEffect(() => {
     fetchBaseData();
@@ -876,111 +1052,82 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
           --accent-glow: hsla(0, 75%, 50%, 0.15) !important;
           --accent-border: hsl(0, 75%, 50%) !important;
         }
-        .ds-nav-item.active {
-          color: var(--ds-text1) !important;
+        .sidebar-item.active {
+          color: var(--text-primary) !important;
           background: var(--ds-surface3) !important;
         }
-        .ds-nav-item.active svg {
+        .sidebar-item.active svg {
           color: hsl(0, 75%, 50%) !important;
           stroke: hsl(0, 75%, 50%) !important;
         }
-        .ds-nav-item.active::before {
+        .sidebar-item.active::before {
           background: hsl(0, 75%, 50%) !important;
         }
-        .ds-btn-primary {
+        .btn-action-primary {
           background: hsl(0, 75%, 50%) !important;
           color: #ffffff !important;
         }
-        .ds-btn-primary:hover {
+        .btn-action-primary:hover {
           background: hsl(0, 75%, 42%) !important;
         }
       ` }} />
 
       {/* HEADER TOPBAR (BLUE COMPLIANT) */}
-      <header className="ds-topbar" style={{ borderBottom: '1px solid var(--ds-border)', background: 'var(--ds-surface)', position: 'relative', zIndex: 1000 }}>
-        <div className="ds-topbar-left" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <LogoHeader imageStyle={{ height: '32px' }} />
-          <span className="ds-logo-sep" style={{ width: '1px', height: '16px', background: 'var(--ds-border)' }} />
-          <span className="ds-logo-sub" style={{ fontSize: '12.5px', color: 'var(--ds-text3)', fontWeight: 600 }}>Faculty Dashboard</span>
-        </div>
-
-        <div className="ds-topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button className="ds-icon-btn" onClick={() => setShowNotifications(!showNotifications)} style={{ position: 'relative', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--ds-border)', borderRadius: '8px', background: 'transparent', cursor: 'pointer', color: 'var(--ds-text2)' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-            <span className="ds-notif-dot" style={{ position: 'absolute', top: '4px', right: '4px', width: '6px', height: '6px', background: '#3b82f6', borderRadius: '50%' }} />
-          </button>
-          
-          {showNotifications && (
-            <div className="ds-notif-dropdown" style={{ position: 'absolute', top: '48px', right: '80px', width: '320px', background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '12px', boxShadow: 'var(--ds-s3)', padding: '14px', zIndex: 1100 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--ds-border)', paddingBottom: '8px', marginBottom: '8px' }}>
-                <span style={{ fontWeight: 800, fontSize: '13px', color: 'var(--ds-text1)' }}>Notifications</span>
-                <span style={{ fontSize: '11px', color: '#3b82f6', cursor: 'pointer' }}>Mark all read</span>
-              </div>
-              {notifications.map(n => (
-                <div key={n.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--ds-border)' }}>
-                  <div style={{ fontWeight: 700, fontSize: '12px', color: 'var(--ds-text1)' }}>{n.title}</div>
-                  <div style={{ fontSize: '11.5px', color: 'var(--ds-text2)', marginTop: '2px' }}>{n.msg}</div>
-                  <div style={{ fontSize: '9px', color: 'var(--ds-text3)', marginTop: '4px' }}>{n.time}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div className="ds-mini-avatar" style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: '12px', overflow: 'hidden' }}>
-              {profilePhotoUrl ? (
-                <img src={`${API_BASE_URL}${profilePhotoUrl}`} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={() => setProfilePhotoUrl('')} />
-              ) : (
-                userSession.fullName?.slice(0, 1)?.toUpperCase() || 'H'
-              )}
-            </div>
-            <div className="ds-avatar-info" style={{ display: 'flex', flexDirection: 'column' }}>
-              <span className="ds-avatar-name" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--ds-text1)' }}>{userSession.fullName || 'Faculty'}</span>
-              <span className="ds-avatar-sub" style={{ fontSize: '10px', color: 'var(--ds-text3)' }}>{userSession.role}</span>
-            </div>
-          </div>
-
-          <button className="ds-btn ds-btn-ghost ds-signout" onClick={handleLogout} style={{ border: '1px solid var(--ds-border)', padding: '6px 12px', borderRadius: '8px', background: 'transparent', color: 'var(--ds-text2)', fontSize: '12px', cursor: 'pointer' }}>Sign Out</button>
-        </div>
-      </header>
+      
 
       {/* LAYOUT BODY */}
-      <div className="ds-body" style={{ flex: 1, display: 'flex', overflow: 'hidden', zIndex: 1 }}>
+            {/* HEADER */}
+      <div className="admin-header">
+        <LogoHeader />
+        <div className="admin-header-right">
+          <div className="user-avatar-chip">
+            <div className="user-avatar-info">
+              <div className="user-avatar-name">{userSession.fullName || 'User'}</div>
+              <div className="user-avatar-role">{userSession.role}</div>
+            </div>
+          </div>
+          <button onClick={handleLogout} className="btn-topbar danger">Sign Out</button>
+        </div>
+      </div>
+
+      {/* BODY */}
+      <div className="admin-body">
+        <div className="admin-sidebar">
         
         {/* SIDEBAR NAVIGATION (ACCENT BLUE INTEGRATED) */}
-        <aside className="ds-sidebar" style={{ width: '240px', background: 'var(--ds-surface)', borderRight: '1px solid var(--ds-border)', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+        
           <nav className="ds-nav" style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div className="ds-nav-section" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.8px', paddingBottom: '6px' }}>Operations</div>
+            <div className="sidebar-section-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', paddingBottom: '6px' }}>Operations</div>
             
-            <button className={`ds-nav-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'overview' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'overview' ? 700 : 500 }}>
+            <button className={`sidebar-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'overview' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'overview' ? 700 : 500 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
               <span>Department Overview</span>
             </button>
             
 
 
-            <button className={`ds-nav-item ${activeTab === 'documents' ? 'active' : ''}`} onClick={() => setActiveTab('documents')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'documents' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'documents' ? 700 : 500 }}>
+            <button className={`sidebar-item ${activeTab === 'documents' ? 'active' : ''}`} onClick={() => setActiveTab('documents')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'documents' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'documents' ? 700 : 500 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
               <span>Curriculum Files</span>
             </button>
 
-            <div className="ds-nav-section" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 6px' }}>Development & OBE</div>
+            <div className="sidebar-section-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 6px' }}>Development & OBE</div>
 
-            <button className={`ds-nav-item ${activeTab === 'training' ? 'active' : ''}`} onClick={() => setActiveTab('training')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'training' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'training' ? 700 : 500 }}>
+            <button className={`sidebar-item ${activeTab === 'training' ? 'active' : ''}`} onClick={() => setActiveTab('training')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'training' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'training' ? 700 : 500 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
               <span>Trainings & Broadcasts</span>
             </button>
 
 
 
-             <button className={`ds-nav-item ${activeTab === 'escalations' ? 'active' : ''}`} onClick={() => setActiveTab('escalations')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'escalations' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'escalations' ? 700 : 500 }}>
+             <button className={`sidebar-item ${activeTab === 'escalations' ? 'active' : ''}`} onClick={() => setActiveTab('escalations')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'escalations' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'escalations' ? 700 : 500 }}>
                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                <span>Escalation Chain</span>
              </button>
 
-             <div className="ds-nav-section" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 6px' }}>Account</div>
+             <div className="sidebar-section-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 6px' }}>Account</div>
 
-             <button className={`ds-nav-item ${activeTab === 'notifications' ? 'active' : ''}`} onClick={() => setActiveTab('notifications')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'notifications' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'notifications' ? 700 : 500 }}>
+             <button className={`sidebar-item ${activeTab === 'notifications' ? 'active' : ''}`} onClick={() => setActiveTab('notifications')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'notifications' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'notifications' ? 700 : 500 }}>
                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                <span>Notifications</span>
                {hodNotifications.filter(n => !n.read).length > 0 && (
@@ -990,20 +1137,21 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                )}
              </button>
 
-             <button className={`ds-nav-item ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'messages' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'messages' ? 700 : 500 }}>
+             <button className={`sidebar-item ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'messages' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'messages' ? 700 : 500 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 <span>Direct Messages</span>
               </button>
 
-             <button className={`ds-nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'settings' ? 'var(--ds-text1)' : 'var(--ds-text2)', fontWeight: activeTab === 'settings' ? 700 : 500 }}>
+             <button className={`sidebar-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'settings' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'settings' ? 700 : 500 }}>
                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
                <span>Profile Settings</span>
              </button>
           </nav>
-        </aside>
+        </div>
 
         {/* MAIN PANEL CONTENT */}
-        <main className="ds-main">
+        <div className="admin-main">
+          <div className="admin-main-content">
           {error && (
             <div style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -1011,23 +1159,241 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
             </div>
           )}
           <AnimatePresence mode="wait">
-            <motion.div key={activeTab} variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={pageTransition} className="ds-page" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <motion.div key={activeTab} variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={pageTransition} className="admin-page" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               
               {/* TAB OVERVIEW */}
-              {activeTab === 'overview' && (
+              
+              {activeTab === 'directory' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div className="admin-view-header">
+                    <h2>User Directory</h2>
+                    <p>View and edit users within your department(s)</p>
+                  </div>
+
+                  {/* Filter Toolbar */}
+                  <div className="toolbar-row">
+                    <div className="toolbar-search">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                      <input type="text" placeholder="Search by name, email, or roll no..." value={dirSearchQuery} onChange={e => setDirSearchQuery(e.target.value)} />
+                    </div>
+                    <select className="filter-select" value={dirRoleFilter} onChange={e => setDirRoleFilter(e.target.value)}>
+                      <option value="ALL">All Roles</option>
+                      <option value="Student">Students</option>
+                      <option value="Faculty">Faculty</option>
+                      <option value="Mentor">Mentors</option>
+                      <option value="HOD">HODs</option>
+                    </select>
+                    <select className="filter-select" value={dirDeptFilter} onChange={e => setDirDeptFilter(e.target.value)}>
+                      <option value="ALL">All Departments</option>
+                      <option value="CSE">CSE</option>
+                      <option value="AI">AI</option>
+                      <option value="AIML">AIML</option>
+                      <option value="ECE">ECE</option>
+                      <option value="IT">IT</option>
+                    </select>
+                  </div>
+
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>User Details</th>
+                        <th>Role</th>
+                        <th>Department</th>
+                        <th>Status</th>
+                        <th style={{ textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedDirUsers.map((u: any) => (
+                        <tr key={u.id}>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span style={{ fontWeight: '700', color: 'var(--text-primary)', fontSize: '14px' }}>{u.fullName}</span>
+                              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{u.email}</span>
+                              {u.role === 'Student' && u.rollNo && (
+                                <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: '600' }}>{u.rollNo}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            <span className="badge-pill outline">{u.role}</span>
+                          </td>
+                          <td>
+                            <span style={{ fontWeight: '600', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                              {u.departmentIds?.join(', ') || u.departmentId || 'N/A'}
+                            </span>
+                          </td>
+                          <td>
+                            {u.isActive ? (
+                              <span className="badge-pill success">Active</span>
+                            ) : (
+                              <span className="badge-pill danger">Inactive</span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                              <button className="btn-row-action" onClick={() => { setDirSelectedUser(u); setDirActiveModal('view'); }}>
+                                View
+                              </button>
+                              <button className="btn-row-action" onClick={() => openDirEditModal(u)}>
+                                Edit
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {displayedDirUsers.length === 0 && (
+                        <tr><td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>No users found matching your filters.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                  
+                  {/* Pagination */}
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', alignItems: 'center', marginTop: '16px' }}>
+                    <button className="btn-action secondary" disabled={dirCurrentPage === 1} onClick={() => setDirCurrentPage(prev => Math.max(1, prev - 1))}>Previous</button>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)' }}>Page {dirCurrentPage} of {dirTotalPages}</span>
+                    <button className="btn-action secondary" disabled={dirCurrentPage === dirTotalPages} onClick={() => setDirCurrentPage(prev => Math.min(dirTotalPages, prev + 1))}>Next</button>
+                  </div>
+                </div>
+              )}
+
+
+              {activeTab === 'broadcasts' && (
+                <>
+                  <div className="admin-view-header">
+                    <h2>Department Broadcast Alerts</h2>
+                    <p>Send high-priority manual notifications to students or staff in your department</p>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '24px' }}>
+                      <form onSubmit={handleSendBroadcast} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Audience Mode</label>
+                          <select className="filter-select" value={notifTarget === 'AUDIENCE' ? 'AUDIENCE' : notifTarget === 'ALL' ? 'ALL' : 'SPECIFIC'} onChange={e => setNotifTarget(e.target.value === 'AUDIENCE' ? 'AUDIENCE' : e.target.value === 'ALL' ? 'ALL' : '')} style={{ padding: '10px', fontSize: '13px' }}>
+                            <option value="AUDIENCE">Targeted Audience (Roles, Dept, Year, Section)</option>
+                            <option value="SPECIFIC">Single Roll No / Staff Email</option>
+                          </select>
+                        </div>
+
+                        {notifTarget === 'AUDIENCE' && (
+                          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', marginBottom: '8px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Target Roles</label>
+                              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                {['Student', 'Faculty', 'Mentor'].map(role => {
+                                  const isChecked = notifTargetRoles.includes(role);
+                                  return (
+                                    <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: isChecked ? '700' : '500', color: isChecked ? 'var(--accent)' : 'var(--text-primary)' }}>
+                                      <input type="checkbox" checked={isChecked} onChange={(e) => {
+                                        if (e.target.checked) setNotifTargetRoles([...notifTargetRoles, role]);
+                                        else setNotifTargetRoles(notifTargetRoles.filter(r => r !== role));
+                                      }} /> {role}s
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                              <div>
+                                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)' }}>Department</label>
+                                <select className="filter-select" value={notifDeptFilterAlert} onChange={e => setNotifDeptFilterAlert(e.target.value)} style={{ padding: '8px', fontSize: '12.5px' }}>
+                                  <option value="ALL">All Associated Depts</option>
+                                  <option value="CSE">CSE</option><option value="AI">AI</option><option value="AIML">AIML</option><option value="ECE">ECE</option><option value="IT">IT</option>
+                                </select>
+                              </div>
+                              {notifTargetRoles.includes('Student') && (
+                                <>
+                                  <div>
+                                    <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)' }}>Academic Year</label>
+                                    <select className="filter-select" value={notifYearFilter} onChange={e => setNotifYearFilter(e.target.value)} style={{ padding: '8px', fontSize: '12.5px' }}>
+                                      <option value="ALL">All Academic Years</option><option value="1">1st Year</option><option value="2">2nd Year</option><option value="3">3rd Year</option><option value="4">4th Year</option>
+                                    </select>
+                                  </div>
+                                  <div style={{ gridColumn: 'span 2' }}>
+                                    <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)' }}>Section</label>
+                                    <select className="filter-select" value={notifSectionFilter} onChange={e => setNotifSectionFilter(e.target.value)} style={{ padding: '8px', fontSize: '12.5px' }}>
+                                      <option value="ALL">All Sections</option>
+                                      {['A', 'B', 'C', 'D'].map(sec => <option key={sec} value={sec}>Section {sec}</option>)}
+                                    </select>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {notifTarget !== 'ALL' && notifTarget !== 'AUDIENCE' && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Target Roll No / Staff Email</label>
+                            <input type="text" className="filter-select" placeholder="e.g. Y23CSM051" value={notifTarget} onChange={e => setNotifTarget(e.target.value)} style={{ padding: '10px', fontSize: '13px' }} required />
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Alert Type</label>
+                          <select className="filter-select" value={notifType} onChange={e => setNotifType(e.target.value)} style={{ padding: '10px', fontSize: '13px' }}>
+                            <option value="SYSTEM">System Announcement</option><option value="ACADEMIC">Academic</option><option value="PLACEMENT">Placement Training</option><option value="VERIFICATION">Verification Pending</option>
+                          </select>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Alert Title</label>
+                          <input type="text" className="filter-select" value={notifTitle} onChange={e => setNotifTitle(e.target.value)} required style={{ padding: '10px', fontSize: '13px' }} placeholder="e.g. Urgent: Placement Drive Update" />
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Message Body</label>
+                          <textarea className="filter-select" value={notifMessage} onChange={e => setNotifMessage(e.target.value)} required style={{ padding: '10px', fontSize: '13px', minHeight: '120px', resize: 'vertical' }} placeholder="Enter the detailed announcement..." />
+                        </div>
+
+                        <button type="submit" className="btn-action primary" disabled={sendingNotif} style={{ padding: '12px', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
+                          {sendingNotif ? 'Broadcasting...' : 'Send Broadcast Alert'}
+                        </button>
+                      </form>
+                    </div>
+
+                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '24px' }}>
+                      <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px' }}>Broadcast History</h3>
+                      {broadcastHistory.length === 0 ? (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>No broadcasts sent yet.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '700px', overflowY: 'auto', paddingRight: '8px' }}>
+                          {broadcastHistory.map((log: any) => (
+                            <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid var(--surface-border)' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{log.title}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                  Sent by {log.senderName} • {new Date(log.createdAt).toLocaleString()} • {log.recipientCount} recipients
+                                </span>
+                              </div>
+                              <button className="btn-row-action" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={() => { setSelectedBroadcast(log); setShowBroadcastModal(true); }}>
+                                View
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+{activeTab === 'overview' && (
                 <div style={{ display: 'flex', gap: '20px', flex: 1, flexDirection: 'row' }}>
                   {/* Left Column: Active Directory */}
-                  <div style={{ flex: 1.5, background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div style={{ flex: 1.5, background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                       <div>
-                        <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--ds-text1)', margin: 0 }}>Department Active Directory</h2>
-                        <p style={{ fontSize: '13px', color: 'var(--ds-text2)', margin: '4px 0 0' }}>Resolved scope: {department?.name || 'Computer Science & Engineering'} ({department?.code || 'CSE'})</p>
+                        <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Department Active Directory</h2>
+                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>Resolved scope: {department?.name || 'Computer Science & Engineering'} ({department?.code || 'CSE'})</p>
                       </div>
                       
                       {/* Search Bar */}
                       <input
                         type="text"
-                        className="ds-input"
+                        className="filter-select"
                         placeholder="Search directory..."
                         value={directorySearch}
                         onChange={e => setDirectorySearch(e.target.value)}
@@ -1036,7 +1402,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                     </div>
 
                     {/* Directory Categories Tabs */}
-                    <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--ds-border)', paddingBottom: '10px' }}>
+                    <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--surface-border)', paddingBottom: '10px' }}>
                       {(['students', 'faculty', 'mentors'] as const).map((cat) => {
                         const isSelected = directoryTab === cat;
                         return (
@@ -1048,7 +1414,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               borderRadius: '8px',
                               border: 'none',
                               background: isSelected ? '#ffffff' : 'transparent',
-                              color: isSelected ? '#000000' : 'var(--ds-text2)',
+                              color: isSelected ? '#000000' : 'var(--text-secondary)',
                               fontSize: '13px',
                               fontWeight: 700,
                               cursor: 'pointer',
@@ -1069,9 +1435,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           (s.user?.fullName || '').toLowerCase().includes(directorySearch.toLowerCase()) ||
                           (s.profile?.rollNo || '').toLowerCase().includes(directorySearch.toLowerCase())
                         );
-                        if (filtered.length === 0) return <p style={{ fontSize: '13px', color: 'var(--ds-text3)', textAlign: 'center', padding: '20px' }}>No students found matching your criteria</p>;
+                        if (filtered.length === 0) return <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No students found matching your criteria</p>;
                         return filtered.map((s: any) => (
-                          <div key={s.user?.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '12px' }}>
+                          <div key={s.user?.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: '13px', overflow: 'hidden' }}>
                                 {s.user?.photoUrl ? (
@@ -1081,16 +1447,16 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                 )}
                               </div>
                               <div>
-                                <strong style={{ fontSize: '14px', color: 'var(--ds-text1)' }}>{s.user?.fullName}</strong>
-                                <div style={{ fontSize: '12px', color: 'var(--ds-text3)', marginTop: '2px' }}>
+                                <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{s.user?.fullName}</strong>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
                                   Roll No: <span style={{ color: '#ffffff', fontWeight: 600 }}>{s.profile?.rollNo}</span> &nbsp;|&nbsp; Batch: {s.profile?.batch}
                                 </div>
                               </div>
                             </div>
                             <button
-                              className="ds-btn ds-btn-ghost"
+                              className="btn-action secondary"
                               onClick={() => fetchUserDetailForHOD({ id: s.user?.id, fullName: s.user?.fullName, email: s.user?.email, role: 'Student' })}
-                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--ds-border)', cursor: 'pointer' }}
+                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--surface-border)', cursor: 'pointer' }}
                             >
                               View Profile
                             </button>
@@ -1103,9 +1469,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           f.role === 'Faculty' &&
                           (f.fullName || '').toLowerCase().includes(directorySearch.toLowerCase())
                         );
-                        if (filtered.length === 0) return <p style={{ fontSize: '13px', color: 'var(--ds-text3)', textAlign: 'center', padding: '20px' }}>No faculty members found</p>;
+                        if (filtered.length === 0) return <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No faculty members found</p>;
                         return filtered.map((f: any) => (
-                          <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '12px' }}>
+                          <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: '13px', overflow: 'hidden' }}>
                                 {f.photoUrl ? (
@@ -1115,14 +1481,14 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                 )}
                               </div>
                               <div>
-                                <strong style={{ fontSize: '14px', color: 'var(--ds-text1)' }}>{f.fullName}</strong>
-                                <div style={{ fontSize: '12px', color: 'var(--ds-text3)', marginTop: '2px' }}>Email: {f.email}</div>
+                                <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{f.fullName}</strong>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Email: {f.email}</div>
                               </div>
                             </div>
                             <button
-                              className="ds-btn ds-btn-ghost"
+                              className="btn-action secondary"
                               onClick={() => fetchUserDetailForHOD({ id: f.id, fullName: f.fullName, email: f.email, role: 'Faculty' })}
-                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--ds-border)', cursor: 'pointer' }}
+                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--surface-border)', cursor: 'pointer' }}
                             >
                               View Workload
                             </button>
@@ -1135,9 +1501,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           f.role === 'Mentor' &&
                           (f.fullName || '').toLowerCase().includes(directorySearch.toLowerCase())
                         );
-                        if (filtered.length === 0) return <p style={{ fontSize: '13px', color: 'var(--ds-text3)', textAlign: 'center', padding: '20px' }}>No mentors found</p>;
+                        if (filtered.length === 0) return <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No mentors found</p>;
                         return filtered.map((m: any) => (
-                          <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '12px' }}>
+                          <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #10b981, #059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: '13px', overflow: 'hidden' }}>
                                 {m.photoUrl ? (
@@ -1147,14 +1513,14 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                 )}
                               </div>
                               <div>
-                                <strong style={{ fontSize: '14px', color: 'var(--ds-text1)' }}>{m.fullName}</strong>
-                                <div style={{ fontSize: '12px', color: 'var(--ds-text3)', marginTop: '2px' }}>Email: {m.email}</div>
+                                <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{m.fullName}</strong>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Email: {m.email}</div>
                               </div>
                             </div>
                             <button
-                              className="ds-btn ds-btn-ghost"
+                              className="btn-action secondary"
                               onClick={() => fetchUserDetailForHOD({ id: m.id, fullName: m.fullName, email: m.email, role: 'Mentor' })}
-                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--ds-border)', cursor: 'pointer' }}
+                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--surface-border)', cursor: 'pointer' }}
                             >
                               View Mentees
                             </button>
@@ -1167,42 +1533,42 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                   {/* Right Column: Feeds & Updates */}
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     {/* Widget 1: Recently Updated Curriculum Library */}
-                    <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <h3 style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--ds-text1)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <h3 style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                          Recently Updated Curriculum Library
                       </h3>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {documents.slice(0, 3).map(doc => (
-                          <div key={doc.id} style={{ padding: '12px', background: 'var(--ds-surface2)', borderRadius: '10px', border: '1px solid var(--ds-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div key={doc.id} style={{ padding: '12px', background: 'var(--surface-overlay)', borderRadius: '10px', border: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                               <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', marginBottom: '4px' }}>
                                 {doc.docType.replace('_', ' ')}
                               </div>
-                              <strong style={{ fontSize: '12.5px', color: 'var(--ds-text1)' }}>{doc.title}</strong>
-                              <div style={{ fontSize: '11px', color: 'var(--ds-text3)', marginTop: '2px' }}>Target: {doc.targetYear} Year Sec-{doc.targetSection}</div>
+                              <strong style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>{doc.title}</strong>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Target: {doc.targetYear} Year Sec-{doc.targetSection}</div>
                             </div>
                             <a href={doc.resourceUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--accent)', fontSize: '11.5px', padding: '4px 10px', borderRadius: '6px', fontWeight: 700 }}>
                               Open ↗
                             </a>
                           </div>
                         ))}
-                        {documents.length === 0 && <p style={{ fontSize: '12px', color: 'var(--ds-text3)', textAlign: 'center', padding: '10px' }}>No documents uploaded yet</p>}
+                        {documents.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>No documents uploaded yet</p>}
                       </div>
                     </div>
 
                     {/* Widget 2: Recently Published Announcements */}
-                    <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <h3 style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--ds-text1)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <h3 style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                          Recently Published Announcements
                       </h3>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         {announcements.slice(0, 3).map(ann => (
-                          <div key={ann.id} style={{ padding: '12px', background: 'var(--ds-surface2)', borderRadius: '10px', border: '1px solid var(--ds-border)' }}>
+                          <div key={ann.id} style={{ padding: '12px', background: 'var(--surface-overlay)', borderRadius: '10px', border: '1px solid var(--surface-border)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                              <strong style={{ fontSize: '13px', color: 'var(--ds-text1)' }}>{ann.title}</strong>
-                              <span style={{ fontSize: '9.5px', color: 'var(--ds-text3)' }}>{new Date(ann.createdAt).toLocaleDateString()}</span>
+                              <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{ann.title}</strong>
+                              <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>{new Date(ann.createdAt).toLocaleDateString()}</span>
                             </div>
-                            <p style={{ fontSize: '12px', color: 'var(--ds-text2)', margin: 0, lineHeight: '1.4' }}>{ann.content}</p>
+                            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4' }}>{ann.content}</p>
                             {ann.resourceUrl && (
                               <a href={ann.resourceUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-block', fontSize: '11px', color: 'var(--accent)', textDecoration: 'none', marginTop: '6px', fontWeight: 600 }}>
                                 Reference Attachment ↗
@@ -1210,7 +1576,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                             )}
                           </div>
                         ))}
-                        {announcements.length === 0 && <p style={{ fontSize: '12px', color: 'var(--ds-text3)', textAlign: 'center', padding: '10px' }}>No announcements published yet</p>}
+                        {announcements.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>No announcements published yet</p>}
                       </div>
                     </div>
                   </div>
@@ -1220,34 +1586,34 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
               {/* TAB FACULTY WORKLOAD */}
               {activeTab === 'faculty' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 6px' }}>Faculty List & Workload Monitoring</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--ds-text2)', margin: 0 }}>Review assigned courses, teaching hours, and active mentorship allocations of department faculty.</p>
+                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>Faculty List & Workload Monitoring</h2>
+                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Review assigned courses, teaching hours, and active mentorship allocations of department faculty.</p>
                   </div>
 
-                  <div className="ds-card ds-table-wrap" style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', overflow: 'hidden' }}>
-                    <table className="ds-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <div className="admin-card data-table-wrapper" style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', overflow: 'hidden' }}>
+                    <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
-                        <tr style={{ background: 'var(--ds-surface2)', textAlign: 'left', borderBottom: '1px solid var(--ds-border)' }}>
-                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--ds-text3)' }}>Name</th>
-                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--ds-text3)' }}>Role</th>
-                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--ds-text3)' }}>Subjects Taught</th>
-                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--ds-text3)' }}>Active Mentorship Group</th>
-                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--ds-text3)', textAlign: 'center' }}>Mentees</th>
+                        <tr style={{ background: 'var(--surface-overlay)', textAlign: 'left', borderBottom: '1px solid var(--surface-border)' }}>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Name</th>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Role</th>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Subjects Taught</th>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Active Mentorship Group</th>
+                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)', textAlign: 'center' }}>Mentees</th>
                         </tr>
                       </thead>
                       <tbody>
                         {facultyList.map((f: any) => (
-                          <tr key={f.id} style={{ borderBottom: '1px solid var(--ds-border)' }}>
-                            <td style={{ padding: '16px', fontSize: '13.5px', fontWeight: 700, color: 'var(--ds-text1)' }}>{f.fullName}</td>
-                            <td style={{ padding: '16px', fontSize: '12px', color: 'var(--ds-text2)' }}>
-                              <span style={{ padding: '3px 8px', borderRadius: '4px', background: 'var(--ds-surface2)', fontSize: '10.5px', fontWeight: 700 }}>{f.role}</span>
+                          <tr key={f.id} style={{ borderBottom: '1px solid var(--surface-border)' }}>
+                            <td style={{ padding: '16px', fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>{f.fullName}</td>
+                            <td style={{ padding: '16px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              <span style={{ padding: '3px 8px', borderRadius: '4px', background: 'var(--surface-overlay)', fontSize: '10.5px', fontWeight: 700 }}>{f.role}</span>
                             </td>
-                            <td style={{ padding: '16px', fontSize: '13.5px', color: 'var(--ds-text2)', fontWeight: 600 }}>{f.subjectCount} Subjects</td>
-                            <td style={{ padding: '16px', fontSize: '13px', color: 'var(--ds-text2)' }}>
-                              <span style={{ color: f.menteesCount > 0 ? '#3b82f6' : 'var(--ds-text3)', fontWeight: 700 }}>{f.mentorRange}</span>
+                            <td style={{ padding: '16px', fontSize: '13.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>{f.subjectCount} Subjects</td>
+                            <td style={{ padding: '16px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                              <span style={{ color: f.menteesCount > 0 ? '#3b82f6' : 'var(--text-muted)', fontWeight: 700 }}>{f.mentorRange}</span>
                             </td>
-                            <td style={{ padding: '16px', fontSize: '13.5px', color: 'var(--ds-text1)', fontWeight: 800, textAlign: 'center', fontFamily: 'var(--ds-font-mono)' }}>{f.menteesCount}</td>
+                            <td style={{ padding: '16px', fontSize: '13.5px', color: 'var(--text-primary)', fontWeight: 800, textAlign: 'center', fontFamily: 'var(--ds-font-mono)' }}>{f.menteesCount}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1261,24 +1627,24 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {userSession.role === 'HOD' ? (
                     <>
-                      <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px' }}>
-                        <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 6px' }}>Mentorship Assignment Control Panel</h2>
-                        <p style={{ fontSize: '13px', color: 'var(--ds-text2)', margin: 0 }}>Assign faculty mentors to department student cohorts manually or split them into half classes.</p>
+                      <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
+                        <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>Mentorship Assignment Control Panel</h2>
+                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Assign faculty mentors to department student cohorts manually or split them into half classes.</p>
                       </div>
 
                       {/* Halves split block */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                        <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px' }}>
-                          <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', marginBottom: '14px' }}>Class Halves Split Assignment</h3>
+                        <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
+                          <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Class Halves Split Assignment</h3>
                           <form onSubmit={handleSplitSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <div className="ds-form-group">
-                              <label className="ds-label">Batch & Section</label>
+                            <div className="admin-form-group">
+                              <label className="admin-label">Batch & Section</label>
                               <div style={{ display: 'flex', gap: '8px' }}>
-                                <select className="ds-input" value={splitForm.batch} onChange={e => setSplitForm({ ...splitForm, batch: e.target.value })} style={{ flex: 1 }}>
+                                <select className="filter-select" value={splitForm.batch} onChange={e => setSplitForm({ ...splitForm, batch: e.target.value })} style={{ flex: 1 }}>
                                   <option value="2022-2026">2022-2026 (IV Year)</option>
                                   <option value="2023-2027">2023-2027 (III Year)</option>
                                 </select>
-                                <select className="ds-input" value={splitForm.sectionId} onChange={e => setSplitForm({ ...splitForm, sectionId: e.target.value })} style={{ width: '80px' }}>
+                                <select className="filter-select" value={splitForm.sectionId} onChange={e => setSplitForm({ ...splitForm, sectionId: e.target.value })} style={{ width: '80px' }}>
                                   <option value="A">A</option>
                                   <option value="B">B</option>
                                   <option value="C">C</option>
@@ -1286,9 +1652,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               </div>
                             </div>
 
-                            <div className="ds-form-group">
-                              <label className="ds-label">Mentor A (1st Half)</label>
-                              <select className="ds-input" required value={splitForm.mentorAId} onChange={e => setSplitForm({ ...splitForm, mentorAId: e.target.value })}>
+                            <div className="admin-form-group">
+                              <label className="admin-label">Mentor A (1st Half)</label>
+                              <select className="filter-select" required value={splitForm.mentorAId} onChange={e => setSplitForm({ ...splitForm, mentorAId: e.target.value })}>
                                 <option value="">Select Mentor A...</option>
                                 {facultyList.map(f => (
                                   <option key={f.id} value={f.id}>{f.fullName}</option>
@@ -1296,9 +1662,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               </select>
                             </div>
 
-                            <div className="ds-form-group">
-                              <label className="ds-label">Mentor B (2nd Half)</label>
-                              <select className="ds-input" required value={splitForm.mentorBId} onChange={e => setSplitForm({ ...splitForm, mentorBId: e.target.value })}>
+                            <div className="admin-form-group">
+                              <label className="admin-label">Mentor B (2nd Half)</label>
+                              <select className="filter-select" required value={splitForm.mentorBId} onChange={e => setSplitForm({ ...splitForm, mentorBId: e.target.value })}>
                                 <option value="">Select Mentor B...</option>
                                 {facultyList.map(f => (
                                   <option key={f.id} value={f.id}>{f.fullName}</option>
@@ -1306,17 +1672,17 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               </select>
                             </div>
 
-                            <button type="submit" className="ds-btn ds-btn-primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Run Splits & Assign</button>
+                            <button type="submit" className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Run Splits & Assign</button>
                           </form>
                         </div>
 
                         {/* Manual checkbox block */}
-                        <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px' }}>
-                          <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', marginBottom: '14px' }}>Manual Mentorship Assignment</h3>
+                        <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
+                          <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Manual Mentorship Assignment</h3>
                           <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            <div className="ds-form-group">
-                              <label className="ds-label">Choose Mentor</label>
-                              <select className="ds-input" required value={manualForm.mentorUserId} onChange={e => setManualForm({ ...manualForm, mentorUserId: e.target.value })}>
+                            <div className="admin-form-group">
+                              <label className="admin-label">Choose Mentor</label>
+                              <select className="filter-select" required value={manualForm.mentorUserId} onChange={e => setManualForm({ ...manualForm, mentorUserId: e.target.value })}>
                                 <option value="">Select Mentor...</option>
                                 {facultyList.map(f => (
                                   <option key={f.id} value={f.id}>{f.fullName}</option>
@@ -1324,11 +1690,11 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               </select>
                             </div>
 
-                            <div className="ds-form-group">
-                              <label className="ds-label">Select Student Mentees</label>
-                              <div style={{ maxHeight: '120px', overflowY: 'auto', border: '1px solid var(--ds-border)', borderRadius: '8px', padding: '10px', background: 'var(--ds-surface2)' }}>
+                            <div className="admin-form-group">
+                              <label className="admin-label">Select Student Mentees</label>
+                              <div style={{ maxHeight: '120px', overflowY: 'auto', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '10px', background: 'var(--surface-overlay)' }}>
                                 {studentsList.map(item => (
-                                  <label key={item.profile.rollNo} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', padding: '4px 0', color: 'var(--ds-text2)', cursor: 'pointer' }}>
+                                  <label key={item.profile.rollNo} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', padding: '4px 0', color: 'var(--text-secondary)', cursor: 'pointer' }}>
                                     <input
                                       type="checkbox"
                                       checked={manualForm.studentRollNos.includes(item.profile.rollNo)}
@@ -1348,27 +1714,27 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               </div>
                             </div>
 
-                            <button type="submit" className="ds-btn ds-btn-primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Assign Selected</button>
+                            <button type="submit" className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Assign Selected</button>
                           </form>
                         </div>
                       </div>
 
                       {/* Active logs summary of Assignments */}
-                      <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px' }}>
-                        <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', marginBottom: '14px' }}>Active Mentorship Meeting Logs</h3>
+                      <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
+                        <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Active Mentorship Meeting Logs</h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '200px', overflowY: 'auto' }}>
                           {meetingLogs.map(log => (
-                            <div key={log.id} style={{ padding: '12px', background: 'var(--ds-surface2)', borderRadius: '10px', borderLeft: '3px solid #3b82f6' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, color: 'var(--ds-text1)' }}>
+                            <div key={log.id} style={{ padding: '12px', background: 'var(--surface-overlay)', borderRadius: '10px', borderLeft: '3px solid #3b82f6' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
                                 <span>Student: {log.rollNo}</span>
                                 <span>{log.meetingDate}</span>
                               </div>
-                              <p style={{ fontSize: '12px', color: 'var(--ds-text2)', margin: '4px 0 0' }}>
+                              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
                                 <strong>Discussed:</strong> {log.topicsDiscussed} | <strong>Concerns:</strong> {log.concerns}
                               </p>
                             </div>
                           ))}
-                          {meetingLogs.length === 0 && <p style={{ fontSize: '13px', color: 'var(--ds-text3)', textAlign: 'center', padding: '12px' }}>No session logs reported for this academic year.</p>}
+                          {meetingLogs.length === 0 && <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No session logs reported for this academic year.</p>}
                         </div>
                       </div>
                     </>
@@ -1377,54 +1743,54 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                     <div style={{ display: 'grid', gridTemplateColumns: selectedMentee ? '1.2fr 0.8fr' : '1fr', gap: '20px', alignItems: 'start' }}>
                       
                       {/* Left Column: Mentees List */}
-                      <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                         <div>
-                          <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 6px' }}>My Assigned Mentees</h2>
-                          <p style={{ fontSize: '13px', color: 'var(--ds-text2)', margin: 0 }}>Track academic standing, results, and log confidential counseling case notes for your assigned students.</p>
+                          <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>My Assigned Mentees</h2>
+                          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Track academic standing, results, and log confidential counseling case notes for your assigned students.</p>
                         </div>
 
                         {loadingMentees ? (
-                          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px', color: 'var(--ds-text3)' }}>Loading mentees list...</div>
+                          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px', color: 'var(--text-muted)' }}>Loading mentees list...</div>
                         ) : mentorMentees.length === 0 ? (
-                          <div style={{ padding: '40px', background: 'var(--ds-surface2)', border: '1px dashed var(--ds-border)', borderRadius: '12px', textAlign: 'center', color: 'var(--ds-text3)' }}>
+                          <div style={{ padding: '40px', background: 'var(--surface-overlay)', border: '1px dashed var(--surface-border)', borderRadius: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>
                             No student mentees are assigned to you for the current academic year.
                           </div>
                         ) : (
-                          <div className="ds-table-wrap" style={{ overflowX: 'auto' }}>
-                            <table className="ds-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
+                            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                               <thead>
-                                <tr style={{ background: 'var(--ds-surface2)', textAlign: 'left', borderBottom: '1px solid var(--ds-border)' }}>
-                                  <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--ds-text3)' }}>Roll Number</th>
-                                  <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--ds-text3)' }}>Name</th>
-                                  <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--ds-text3)' }}>Batch &amp; Section</th>
-                                  <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--ds-text3)', textAlign: 'center' }}>CGPA</th>
-                                  <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--ds-text3)', textAlign: 'right' }}>Actions</th>
+                                <tr style={{ background: 'var(--surface-overlay)', textAlign: 'left', borderBottom: '1px solid var(--surface-border)' }}>
+                                  <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Roll Number</th>
+                                  <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Name</th>
+                                  <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Batch &amp; Section</th>
+                                  <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)', textAlign: 'center' }}>CGPA</th>
+                                  <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)', textAlign: 'right' }}>Actions</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {mentorMentees.map((m: any) => {
                                   const isSelected = selectedMentee?.profile?.rollNo === m.profile?.rollNo;
                                   return (
-                                    <tr key={m.profile?.rollNo} style={{ borderBottom: '1px solid var(--ds-border)', background: isSelected ? 'rgba(255,255,255,0.03)' : 'transparent' }}>
-                                      <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: 700, color: 'var(--ds-text1)', fontFamily: 'var(--ds-font-mono)' }}>{m.profile?.rollNo}</td>
-                                      <td style={{ padding: '14px 16px', fontSize: '13.5px', fontWeight: 700, color: 'var(--ds-text1)' }}>{m.user?.fullName}</td>
-                                      <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--ds-text2)' }}>{m.profile?.batch} - Sec {m.profile?.sectionId || 'A'}</td>
-                                      <td style={{ padding: '14px 16px', fontSize: '13.5px', color: 'var(--ds-text1)', fontWeight: 800, textAlign: 'center' }}>{m.profile?.cgpa || '0.0'}</td>
+                                    <tr key={m.profile?.rollNo} style={{ borderBottom: '1px solid var(--surface-border)', background: isSelected ? 'rgba(255,255,255,0.03)' : 'transparent' }}>
+                                      <td style={{ padding: '14px 16px', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--ds-font-mono)' }}>{m.profile?.rollNo}</td>
+                                      <td style={{ padding: '14px 16px', fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>{m.user?.fullName}</td>
+                                      <td style={{ padding: '14px 16px', fontSize: '13px', color: 'var(--text-secondary)' }}>{m.profile?.batch} - Sec {m.profile?.sectionId || 'A'}</td>
+                                      <td style={{ padding: '14px 16px', fontSize: '13.5px', color: 'var(--text-primary)', fontWeight: 800, textAlign: 'center' }}>{m.profile?.cgpa || '0.0'}</td>
                                       <td style={{ padding: '14px 16px', textAlign: 'right', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                         <button 
                                           onClick={() => {
                                             setSelectedMentee(m);
                                             fetchMenteeNotes(m.profile?.rollNo);
                                           }}
-                                          className="ds-btn ds-btn-ghost" 
-                                          style={{ border: '1px solid var(--ds-border)', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', background: 'transparent', color: '#fff' }}
+                                          className="btn-action secondary" 
+                                          style={{ border: '1px solid var(--surface-border)', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', background: 'transparent', color: '#fff' }}
                                         >
                                           Counsel Notes
                                         </button>
                                         <button 
                                           onClick={() => fetchUserDetailForHOD(m.user)}
-                                          className="ds-btn ds-btn-ghost" 
-                                          style={{ border: '1px solid var(--ds-border)', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', background: 'transparent', color: '#fff' }}
+                                          className="btn-action secondary" 
+                                          style={{ border: '1px solid var(--surface-border)', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', background: 'transparent', color: '#fff' }}
                                         >
                                           View Profile
                                         </button>
@@ -1440,18 +1806,18 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
                       {/* Right Column: counseling session case notes for selected mentee */}
                       {selectedMentee && (
-                        <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
-                              <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', margin: 0 }}>Counseling Log</h3>
-                              <span style={{ fontSize: '11px', color: 'var(--ds-text3)' }}>Student: {selectedMentee.user?.fullName} ({selectedMentee.profile?.rollNo})</span>
+                              <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Counseling Log</h3>
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Student: {selectedMentee.user?.fullName} ({selectedMentee.profile?.rollNo})</span>
                             </div>
-                            <button onClick={() => setSelectedMentee(null)} style={{ background: 'transparent', border: 'none', color: 'var(--ds-text3)', cursor: 'pointer', fontSize: '12px' }}>✕ Close</button>
+                            <button onClick={() => setSelectedMentee(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '12px' }}>✕ Close</button>
                           </div>
 
                           <form onSubmit={handleAddMenteeNote} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             <textarea
-                              className="ds-input"
+                              className="filter-select"
                               rows={3}
                               required
                               value={newMenteeNote}
@@ -1462,7 +1828,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                             <button 
                               type="submit" 
                               disabled={submittingMenteeNote} 
-                              className="ds-btn ds-btn-primary" 
+                              className="btn-action primary" 
                               style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '12px' }}
                             >
                               {submittingMenteeNote ? 'Saving Note...' : 'Save Private Case Note'}
@@ -1470,17 +1836,17 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           </form>
 
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', maxHeight: '300px', marginTop: '10px' }}>
-                            <h4 style={{ fontSize: '12px', fontWeight: 800, color: 'var(--ds-text2)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Counseling Log History</h4>
+                            <h4 style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-secondary)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Counseling Log History</h4>
                             {menteeNotes.length === 0 ? (
-                              <p style={{ fontSize: '12px', color: 'var(--ds-text3)', textAlign: 'center', padding: '16px 0', margin: 0 }}>No counseling sessions logged for this student.</p>
+                              <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0', margin: 0 }}>No counseling sessions logged for this student.</p>
                             ) : (
                               menteeNotes.map((note: any) => (
-                                <div key={note.id} style={{ padding: '10px', background: 'var(--ds-surface2)', borderRadius: '8px', borderLeft: '3.5px solid #10b981' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--ds-text3)', marginBottom: '4px' }}>
+                                <div key={note.id} style={{ padding: '10px', background: 'var(--surface-overlay)', borderRadius: '8px', borderLeft: '3.5px solid #10b981' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px' }}>
                                     <span>By: {note.authorRole}</span>
                                     <span>{new Date(note.createdAt).toLocaleDateString()}</span>
                                   </div>
-                                  <p style={{ fontSize: '12px', color: 'var(--ds-text2)', margin: 0, lineHeight: '1.4' }}>{note.content}</p>
+                                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4' }}>{note.content}</p>
                                 </div>
                               ))
                             )}
@@ -1499,46 +1865,46 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                   
                   {/* Uploader */}
                   {userSession.role === 'HOD' && (
-                    <div style={{ width: '320px', background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px', flexShrink: 0 }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', marginBottom: '14px' }}>Upload Curriculum File</h3>
+                    <div style={{ width: '320px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', flexShrink: 0 }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Upload Curriculum File</h3>
                       <form onSubmit={handleDocSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div className="ds-form-group">
-                          <label className="ds-label">Document Category</label>
-                          <select className="ds-input" value={docForm.docType} onChange={e => setDocForm({ ...docForm, docType: e.target.value })}>
+                        <div className="admin-form-group">
+                          <label className="admin-label">Document Category</label>
+                          <select className="filter-select" value={docForm.docType} onChange={e => setDocForm({ ...docForm, docType: e.target.value })}>
                             <option value="LESSON_PLAN">Lesson Plan</option>
                             <option value="TIMETABLE">Class Timetable</option>
                             <option value="CALENDAR">Academic Calendar</option>
                           </select>
                         </div>
 
-                        <div className="ds-form-group">
-                          <label className="ds-label">Title / Caption</label>
-                          <input type="text" className="ds-input" required value={docForm.title} onChange={e => setDocForm({ ...docForm, title: e.target.value })} placeholder="e.g. III B.Tech CSE-A Timetable" />
+                        <div className="admin-form-group">
+                          <label className="admin-label">Title / Caption</label>
+                          <input type="text" className="filter-select" required value={docForm.title} onChange={e => setDocForm({ ...docForm, title: e.target.value })} placeholder="e.g. III B.Tech CSE-A Timetable" />
                         </div>
 
-                        <div className="ds-form-group">
-                          <label className="ds-label">Subject Code (if Lesson Plan)</label>
-                          <input type="text" className="ds-input" value={docForm.subjectCode} onChange={e => setDocForm({ ...docForm, subjectCode: e.target.value })} placeholder="e.g. CS301" />
+                        <div className="admin-form-group">
+                          <label className="admin-label">Subject Code (if Lesson Plan)</label>
+                          <input type="text" className="filter-select" value={docForm.subjectCode} onChange={e => setDocForm({ ...docForm, subjectCode: e.target.value })} placeholder="e.g. CS301" />
                         </div>
 
-                        <div className="ds-form-group">
-                          <label className="ds-label">External PDF Resource URL</label>
-                          <input type="url" className="ds-input" required value={docForm.resourceUrl} onChange={e => setDocForm({ ...docForm, resourceUrl: e.target.value })} placeholder="https://..." />
+                        <div className="admin-form-group">
+                          <label className="admin-label">External PDF Resource URL</label>
+                          <input type="url" className="filter-select" required value={docForm.resourceUrl} onChange={e => setDocForm({ ...docForm, resourceUrl: e.target.value })} placeholder="https://..." />
                         </div>
 
                         <div style={{ display: 'flex', gap: '8px' }}>
-                          <div className="ds-form-group" style={{ flex: 1 }}>
-                            <label className="ds-label">Year</label>
-                            <select className="ds-input" value={docForm.targetYear} onChange={e => setDocForm({ ...docForm, targetYear: e.target.value })}>
+                          <div className="admin-form-group" style={{ flex: 1 }}>
+                            <label className="admin-label">Year</label>
+                            <select className="filter-select" value={docForm.targetYear} onChange={e => setDocForm({ ...docForm, targetYear: e.target.value })}>
                               <option value="I">I Year</option>
                               <option value="II">II Year</option>
                               <option value="III">III Year</option>
                               <option value="IV">IV Year</option>
                             </select>
                           </div>
-                          <div className="ds-form-group" style={{ flex: 1 }}>
-                            <label className="ds-label">Section</label>
-                            <select className="ds-input" value={docForm.targetSection} onChange={e => setDocForm({ ...docForm, targetSection: e.target.value })}>
+                          <div className="admin-form-group" style={{ flex: 1 }}>
+                            <label className="admin-label">Section</label>
+                            <select className="filter-select" value={docForm.targetSection} onChange={e => setDocForm({ ...docForm, targetSection: e.target.value })}>
                               <option value="A">A</option>
                               <option value="B">B</option>
                               <option value="C">C</option>
@@ -1546,7 +1912,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           </div>
                         </div>
 
-                        <button type="submit" disabled={submittingDoc} className="ds-btn ds-btn-primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>
+                        <button type="submit" disabled={submittingDoc} className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>
                           {submittingDoc ? 'Recording...' : 'Record File'}
                         </button>
                       </form>
@@ -1554,26 +1920,26 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                   )}
 
                   {/* List */}
-                  <div style={{ flex: 1, background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', marginBottom: '14px' }}>Active Curriculum Library</h3>
+                  <div style={{ flex: 1, background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Active Curriculum Library</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {documents.map(doc => (
-                        <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'var(--ds-surface2)', borderRadius: '10px', border: '1px solid var(--ds-border)' }}>
+                        <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'var(--surface-overlay)', borderRadius: '10px', border: '1px solid var(--surface-border)' }}>
                           <div>
                             <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.1)', color: '#ffffff', textTransform: 'uppercase', marginRight: '8px' }}>
                               {doc.docType.replace('_', ' ')}
                             </span>
-                            <strong style={{ fontSize: '13.5px', color: 'var(--ds-text1)' }}>{doc.title}</strong>
-                            <div style={{ fontSize: '11px', color: 'var(--ds-text3)', marginTop: '4px' }}>
+                            <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)' }}>{doc.title}</strong>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
                               Target: {doc.targetYear} Year Sec-{doc.targetSection} | Semester: {doc.semester}
                             </div>
                           </div>
-                          <a href={doc.resourceUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--ds-border)', padding: '6px 12px', borderRadius: '8px', fontSize: '12.5px', color: '#ffffff', fontWeight: 600 }}>
+                          <a href={doc.resourceUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--surface-border)', padding: '6px 12px', borderRadius: '8px', fontSize: '12.5px', color: '#ffffff', fontWeight: 600 }}>
                             View PDF ↗
                           </a>
                         </div>
                       ))}
-                      {documents.length === 0 && <p style={{ fontSize: '13px', color: 'var(--ds-text3)', textAlign: 'center', padding: '24px' }}>No syllabus plans or timetables uploaded yet.</p>}
+                      {documents.length === 0 && <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '24px' }}>No syllabus plans or timetables uploaded yet.</p>}
                     </div>
                   </div>
                 </div>
@@ -1586,65 +1952,65 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                   {/* Uploader Left */}
                   {userSession.role === 'HOD' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px' }}>
-                        <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', marginBottom: '14px' }}>Broadcast Announcement</h3>
+                      <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
+                        <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Broadcast Announcement</h3>
                         <form onSubmit={handleAnnSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          <div className="ds-form-group">
-                            <label className="ds-label">Title</label>
-                            <input type="text" className="ds-input" required value={annForm.title} onChange={e => setAnnForm({ ...annForm, title: e.target.value })} placeholder="e.g. NBA Pre-Audit Review Scheduled" />
+                          <div className="admin-form-group">
+                            <label className="admin-label">Title</label>
+                            <input type="text" className="filter-select" required value={annForm.title} onChange={e => setAnnForm({ ...annForm, title: e.target.value })} placeholder="e.g. NBA Pre-Audit Review Scheduled" />
                           </div>
-                          <div className="ds-form-group">
-                            <label className="ds-label">Content Description</label>
-                            <textarea className="ds-input" required rows={3} value={annForm.content} onChange={e => setAnnForm({ ...annForm, content: e.target.value })} placeholder="Write announcement details..." />
+                          <div className="admin-form-group">
+                            <label className="admin-label">Content Description</label>
+                            <textarea className="filter-select" required rows={3} value={annForm.content} onChange={e => setAnnForm({ ...annForm, content: e.target.value })} placeholder="Write announcement details..." />
                           </div>
-                          <div className="ds-form-group">
-                            <label className="ds-label">Optional Resource Link</label>
-                            <input type="url" className="ds-input" value={annForm.resourceUrl} onChange={e => setAnnForm({ ...annForm, resourceUrl: e.target.value })} placeholder="https://..." />
+                          <div className="admin-form-group">
+                            <label className="admin-label">Optional Resource Link</label>
+                            <input type="url" className="filter-select" value={annForm.resourceUrl} onChange={e => setAnnForm({ ...annForm, resourceUrl: e.target.value })} placeholder="https://..." />
                           </div>
-                          <button type="submit" disabled={submittingAnn} className="ds-btn ds-btn-primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>{submittingAnn ? 'Publishing...' : 'Publish Broadcast'}</button>
+                          <button type="submit" disabled={submittingAnn} className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>{submittingAnn ? 'Publishing...' : 'Publish Broadcast'}</button>
                         </form>
                       </div>
 
-                      <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px' }}>
-                        <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', marginBottom: '14px' }}>Create Skill Training Course</h3>
+                      <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
+                        <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Create Skill Training Course</h3>
                         <form onSubmit={handleTrainingSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          <div className="ds-form-group">
-                            <label className="ds-label">Course Title</label>
-                            <input type="text" className="ds-input" required value={trainingForm.title} onChange={e => setTrainingForm({ ...trainingForm, title: e.target.value })} placeholder="e.g. React & Node.js bootcamp" />
+                          <div className="admin-form-group">
+                            <label className="admin-label">Course Title</label>
+                            <input type="text" className="filter-select" required value={trainingForm.title} onChange={e => setTrainingForm({ ...trainingForm, title: e.target.value })} placeholder="e.g. React & Node.js bootcamp" />
                           </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
-                            <div className="ds-form-group" style={{ flex: 1 }}>
-                              <label className="ds-label">Category</label>
-                              <select className="ds-input" value={trainingForm.category} onChange={e => setTrainingForm({ ...trainingForm, category: e.target.value })}>
+                            <div className="admin-form-group" style={{ flex: 1 }}>
+                              <label className="admin-label">Category</label>
+                              <select className="filter-select" value={trainingForm.category} onChange={e => setTrainingForm({ ...trainingForm, category: e.target.value })}>
                                 <option value="Technical">Technical</option>
                                 <option value="Aptitude">Aptitude</option>
                                 <option value="Soft Skills">Soft Skills</option>
                               </select>
                             </div>
-                            <div className="ds-form-group" style={{ flex: 1 }}>
-                              <label className="ds-label">Venue</label>
-                              <input type="text" className="ds-input" required value={trainingForm.venue} onChange={e => setTrainingForm({ ...trainingForm, venue: e.target.value })} placeholder="CSE Lab 3" />
+                            <div className="admin-form-group" style={{ flex: 1 }}>
+                              <label className="admin-label">Venue</label>
+                              <input type="text" className="filter-select" required value={trainingForm.venue} onChange={e => setTrainingForm({ ...trainingForm, venue: e.target.value })} placeholder="CSE Lab 3" />
                             </div>
                           </div>
-                          <div className="ds-form-group">
-                            <label className="ds-label">Registration Landing Page URL</label>
-                            <input type="url" className="ds-input" required value={trainingForm.registrationUrl} onChange={e => setTrainingForm({ ...trainingForm, registrationUrl: e.target.value })} placeholder="https://..." />
+                          <div className="admin-form-group">
+                            <label className="admin-label">Registration Landing Page URL</label>
+                            <input type="url" className="filter-select" required value={trainingForm.registrationUrl} onChange={e => setTrainingForm({ ...trainingForm, registrationUrl: e.target.value })} placeholder="https://..." />
                           </div>
-                          <button type="submit" disabled={submittingTraining} className="ds-btn ds-btn-primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>{submittingTraining ? 'Recording...' : 'Record Training Course'}</button>
+                          <button type="submit" disabled={submittingTraining} className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>{submittingTraining ? 'Recording...' : 'Record Training Course'}</button>
                         </form>
                       </div>
                     </div>
                   )}
 
                   {/* List Right */}
-                  <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', marginBottom: '10px' }}>Recent Published Announcements</h3>
+                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '10px' }}>Recent Published Announcements</h3>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {announcements.map(ann => (
-                          <div key={ann.id} style={{ padding: '10px', background: 'var(--ds-surface2)', borderRadius: '8px', border: '1px solid var(--ds-border)' }}>
-                            <strong style={{ fontSize: '13px', color: 'var(--ds-text1)' }}>{ann.title}</strong>
-                            <p style={{ fontSize: '12px', color: 'var(--ds-text2)', margin: '4px 0' }}>{ann.content}</p>
+                          <div key={ann.id} style={{ padding: '10px', background: 'var(--surface-overlay)', borderRadius: '8px', border: '1px solid var(--surface-border)' }}>
+                            <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{ann.title}</strong>
+                            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0' }}>{ann.content}</p>
                             {ann.resourceUrl && <a href={ann.resourceUrl} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: '#ffffff' }}>Attachment Resource ↗</a>}
                           </div>
                         ))}
@@ -1652,15 +2018,15 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                     </div>
 
                     <div>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', marginBottom: '10px' }}>Active Skill Trainings</h3>
+                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '10px' }}>Active Skill Trainings</h3>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {trainings.map(t => (
-                          <div key={t.id} style={{ padding: '10px', background: 'var(--ds-surface2)', borderRadius: '8px', borderLeft: '3px solid #10b981' }}>
+                          <div key={t.id} style={{ padding: '10px', background: 'var(--surface-overlay)', borderRadius: '8px', borderLeft: '3px solid #10b981' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <strong style={{ fontSize: '13px', color: 'var(--ds-text1)' }}>{t.title}</strong>
+                              <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{t.title}</strong>
                               <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: '#3b82f6', color: '#fff' }}>{t.category}</span>
                             </div>
-                            <div style={{ fontSize: '11.5px', color: 'var(--ds-text3)', marginTop: '4px' }}>Venue: {t.venue} | <a href={t.registrationUrl} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>Portal Register ↗</a></div>
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px' }}>Venue: {t.venue} | <a href={t.registrationUrl} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>Portal Register ↗</a></div>
                           </div>
                         ))}
                       </div>
@@ -1676,9 +2042,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                 <div style={{ display: 'flex', gap: '16px', height: 'calc(100vh - 140px)', minHeight: '0' }}>
                   
                   {/* Left Threads list */}
-                  <div style={{ width: '280px', background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
+                  <div style={{ width: '280px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--ds-text1)', margin: 0 }}>Escalation Threads</h3>
+                      <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Escalation Threads</h3>
                       <button
                         onClick={() => { setShowNewEscalationForm(true); setActiveThread(null); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '6px', color: '#ffffff', fontSize: '10px', fontWeight: 700, padding: '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -1694,8 +2060,8 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           onClick={() => selectThread(esc)}
                           style={{
                             textAlign: 'left',
-                            background: activeThread?.thread.id === esc.thread.id ? 'var(--ds-surface2)' : 'transparent',
-                            border: '1px solid var(--ds-border)',
+                            background: activeThread?.thread.id === esc.thread.id ? 'var(--surface-overlay)' : 'transparent',
+                            border: '1px solid var(--surface-border)',
                             borderRadius: '8px',
                             padding: '10px',
                             cursor: 'pointer',
@@ -1706,25 +2072,25 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <strong style={{ fontSize: '12.5px', color: 'var(--ds-text1)' }}>{esc.studentUser?.fullName || esc.thread.rollNo}</strong>
+                            <strong style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>{esc.studentUser?.fullName || esc.thread.rollNo}</strong>
                             {esc.thread.isEscalatedToHOD && <span style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', fontSize: '9px', fontWeight: 700, padding: '1px 4px', borderRadius: '3px' }}>HOD</span>}
                           </div>
-                          <span style={{ fontSize: '11px', color: 'var(--ds-text3)' }}>Roll No: {esc.thread.rollNo}</span>
-                          {esc.thread.subjectCode && <span style={{ fontSize: '11px', color: 'var(--ds-text2)' }}>Sub: {esc.thread.subjectCode}</span>}
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Roll No: {esc.thread.rollNo}</span>
+                          {esc.thread.subjectCode && <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Sub: {esc.thread.subjectCode}</span>}
                         </button>
                       ))}
                     </div>
                   </div>
 
                   {/* Chat Box Center */}
-                  <div style={{ flex: 1, background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  <div style={{ flex: 1, background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     {activeThread ? (
                       <>
-                        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--ds-border)', background: 'var(--ds-surface2)' }}>
-                          <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: 'var(--ds-text1)' }}>
+                        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--surface-border)', background: 'var(--surface-overlay)' }}>
+                          <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)' }}>
                             Intervention Room: {activeThread.studentUser?.fullName} ({activeThread.thread.rollNo})
                           </h4>
-                          <div style={{ fontSize: '11px', color: 'var(--ds-text3)', marginTop: '2px' }}>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
                             {activeThread.mentors && activeThread.mentors.length > 0 ? (
                               <span>Mentors: {activeThread.mentors.map((m: any) => m.fullName).join(', ')}</span>
                             ) : (
@@ -1745,10 +2111,10 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                             const isMe = m.senderUserId === userSession.fullName; // simple mock check
                             return (
                               <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
-                                <span style={{ fontSize: '9.5px', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>
+                                <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>
                                   {m.senderName} ({m.senderRole})
                                 </span>
-                                <div style={{ background: isMe ? '#ffffff' : 'var(--ds-surface2)', border: isMe ? 'none' : '1px solid var(--ds-border)', padding: '10px', borderRadius: '8px', fontSize: '12.5px', color: isMe ? '#000000' : '#fff' }}>
+                                <div style={{ background: isMe ? '#ffffff' : 'var(--surface-overlay)', border: isMe ? 'none' : '1px solid var(--surface-border)', padding: '10px', borderRadius: '8px', fontSize: '12.5px', color: isMe ? '#000000' : '#fff' }}>
                                   {m.content}
                                 </div>
                               </div>
@@ -1757,9 +2123,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                         </div>
 
                         {/* Send bar */}
-                        <form onSubmit={sendChatMessage} style={{ display: 'flex', gap: '8px', padding: '14px', borderTop: '1px solid var(--ds-border)', background: 'var(--ds-surface2)' }}>
-                          <input type="text" className="ds-input" value={chatMessage} onChange={e => setChatMessage(e.target.value)} placeholder="Type contribution to study plan chat..." style={{ flex: 1 }} />
-                          <button type="submit" className="ds-btn ds-btn-primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Send</button>
+                        <form onSubmit={sendChatMessage} style={{ display: 'flex', gap: '8px', padding: '14px', borderTop: '1px solid var(--surface-border)', background: 'var(--surface-overlay)' }}>
+                          <input type="text" className="filter-select" value={chatMessage} onChange={e => setChatMessage(e.target.value)} placeholder="Type contribution to study plan chat..." style={{ flex: 1 }} />
+                          <button type="submit" className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Send</button>
                         </form>
                       </>
                     ) : showNewEscalationForm ? (
@@ -1767,19 +2133,19 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                       <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                           <div>
-                            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--ds-text1)' }}>Start New Intervention</h3>
-                            <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--ds-text3)' }}>Select a student, assign mentor &amp; faculty, then create the 4-way thread.</p>
+                            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>Start New Intervention</h3>
+                            <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>Select a student, assign mentor &amp; faculty, then create the 4-way thread.</p>
                           </div>
-                          <button onClick={() => setShowNewEscalationForm(false)} style={{ background: 'transparent', border: '1px solid var(--ds-border)', borderRadius: '6px', color: 'var(--ds-text3)', padding: '4px 10px', cursor: 'pointer', fontSize: '11px' }}>✕ Cancel</button>
+                          <button onClick={() => setShowNewEscalationForm(false)} style={{ background: 'transparent', border: '1px solid var(--surface-border)', borderRadius: '6px', color: 'var(--text-muted)', padding: '4px 10px', cursor: 'pointer', fontSize: '11px' }}>✕ Cancel</button>
                         </div>
 
                         <form onSubmit={handleCreateNewEscalation} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
                           {/* ─ STUDENT SELECTOR (multi-select) ─ */}
-                          <div style={{ background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '12px', padding: '14px' }}>
+                          <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
-                              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--ds-text1)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Select Students</span>
+                              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Select Students</span>
                               {newEscRollNos.length > 0 && (
                                 <span style={{ marginLeft: 'auto', fontSize: '9px', background: 'rgba(59,130,246,0.15)', color: '#3b82f6', padding: '2px 7px', borderRadius: '4px', fontWeight: 800 }}>
                                   {newEscRollNos.length} selected
@@ -1788,7 +2154,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
                               {studentsList.length === 0 ? (
-                                <span style={{ fontSize: '12px', color: 'var(--ds-text3)', padding: '8px 0' }}>No students in department</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0' }}>No students in department</span>
                               ) : studentsList.map((s: any) => {
                                 const student = s.user;
                                 const rollNo = s.profile?.rollNo || '';
@@ -1796,15 +2162,15 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                 const toggle = () => setNewEscRollNos(prev => isSelected ? prev.filter(r => r !== rollNo) : [...prev, rollNo]);
                                 return (
                                   <button key={student.id} type="button" onClick={toggle}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', border: isSelected ? '1.5px solid #3b82f6' : '1px solid var(--ds-border)', background: isSelected ? 'rgba(59,130,246,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }}>
+                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', border: isSelected ? '1.5px solid #3b82f6' : '1px solid var(--surface-border)', background: isSelected ? 'rgba(59,130,246,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }}>
                                     {/* Checkbox */}
-                                    <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? 'none' : '1.5px solid var(--ds-border)', background: isSelected ? '#3b82f6' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? 'none' : '1.5px solid var(--surface-border)', background: isSelected ? '#3b82f6' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                       {isSelected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                                     </div>
                                     <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isSelected ? '#3b82f6' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>{student.fullName?.charAt(0) || '?'}</div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--ds-text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{student.fullName}</div>
-                                      <div style={{ fontSize: '10px', color: 'var(--ds-text3)' }}>Roll: {rollNo}</div>
+                                      <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{student.fullName}</div>
+                                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Roll: {rollNo}</div>
                                     </div>
                                   </button>
                                 );
@@ -1813,34 +2179,34 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           </div>
 
                           {/* ─ MENTOR SELECTOR (multi-select) ─ */}
-                          <div style={{ background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '12px', padding: '14px' }}>
+                          <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--ds-text1)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Assign Mentors</span>
+                              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Assign Mentors</span>
                               {newEscMentorIds.length > 0 ? (
                                 <span style={{ marginLeft: 'auto', fontSize: '9px', background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '2px 7px', borderRadius: '4px', fontWeight: 800 }}>
                                   {newEscMentorIds.length} selected
                                 </span>
                               ) : (
-                                <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'var(--ds-text3)' }}>optional</span>
+                                <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'var(--text-muted)' }}>optional</span>
                               )}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '130px', overflowY: 'auto' }}>
                               {facultyList.filter((f: any) => f.role === 'Mentor').length === 0 ? (
-                                <span style={{ fontSize: '12px', color: 'var(--ds-text3)', padding: '8px 0' }}>No mentors in department</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0' }}>No mentors in department</span>
                               ) : facultyList.filter((f: any) => f.role === 'Mentor').map((m: any) => {
                                 const isSelected = newEscMentorIds.includes(m.id);
                                 const toggle = () => setNewEscMentorIds(prev => isSelected ? prev.filter(id => id !== m.id) : [...prev, m.id]);
                                 return (
                                   <button key={m.id} type="button" onClick={toggle}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', border: isSelected ? '1.5px solid #10b981' : '1px solid var(--ds-border)', background: isSelected ? 'rgba(16,185,129,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }}>
-                                    <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? 'none' : '1.5px solid var(--ds-border)', background: isSelected ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', border: isSelected ? '1.5px solid #10b981' : '1px solid var(--surface-border)', background: isSelected ? 'rgba(16,185,129,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }}>
+                                    <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? 'none' : '1.5px solid var(--surface-border)', background: isSelected ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                       {isSelected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                                     </div>
                                     <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isSelected ? '#10b981' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>{m.fullName?.charAt(0) || '?'}</div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--ds-text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.fullName}</div>
-                                      <div style={{ fontSize: '10px', color: 'var(--ds-text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.email}</div>
+                                      <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.fullName}</div>
+                                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.email}</div>
                                     </div>
                                   </button>
                                 );
@@ -1849,34 +2215,34 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           </div>
 
                           {/* ─ FACULTY SELECTOR (multi-select) ─ */}
-                          <div style={{ background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '12px', padding: '14px' }}>
+                          <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--ds-text1)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Assign Faculty</span>
+                              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Assign Faculty</span>
                               {newEscFacultyIds.length > 0 ? (
                                 <span style={{ marginLeft: 'auto', fontSize: '9px', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '2px 7px', borderRadius: '4px', fontWeight: 800 }}>
                                   {newEscFacultyIds.length} selected
                                 </span>
                               ) : (
-                                <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'var(--ds-text3)' }}>optional</span>
+                                <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'var(--text-muted)' }}>optional</span>
                               )}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '130px', overflowY: 'auto' }}>
                               {facultyList.filter((f: any) => f.role === 'Faculty').length === 0 ? (
-                                <span style={{ fontSize: '12px', color: 'var(--ds-text3)', padding: '8px 0' }}>No faculty in department</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0' }}>No faculty in department</span>
                               ) : facultyList.filter((f: any) => f.role === 'Faculty').map((f: any) => {
                                 const isSelected = newEscFacultyIds.includes(f.id);
                                 const toggle = () => setNewEscFacultyIds(prev => isSelected ? prev.filter(id => id !== f.id) : [...prev, f.id]);
                                 return (
                                   <button key={f.id} type="button" onClick={toggle}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', border: isSelected ? '1.5px solid #f59e0b' : '1px solid var(--ds-border)', background: isSelected ? 'rgba(245,158,11,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }}>
-                                    <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? 'none' : '1.5px solid var(--ds-border)', background: isSelected ? '#f59e0b' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', border: isSelected ? '1.5px solid #f59e0b' : '1px solid var(--surface-border)', background: isSelected ? 'rgba(245,158,11,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }}>
+                                    <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? 'none' : '1.5px solid var(--surface-border)', background: isSelected ? '#f59e0b' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                       {isSelected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                                     </div>
                                     <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isSelected ? '#f59e0b' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>{f.fullName?.charAt(0) || '?'}</div>
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--ds-text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.fullName}</div>
-                                      <div style={{ fontSize: '10px', color: 'var(--ds-text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.email}</div>
+                                      <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.fullName}</div>
+                                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.email}</div>
                                     </div>
                                   </button>
                                 );
@@ -1885,24 +2251,24 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           </div>
 
                           {/* ─ SUBJECT CODE ─ */}
-                          <div style={{ background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '12px', padding: '14px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: 800, color: 'var(--ds-text1)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: '8px' }}>Subject / Course Code</label>
+                          <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '14px' }}>
+                            <label style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: '8px' }}>Subject / Course Code</label>
                             <input
                               type="text"
-                              className="ds-input"
+                              className="filter-select"
                               value={newEscSubjectCode}
                               onChange={e => setNewEscSubjectCode(e.target.value)}
                               placeholder="e.g. CS301 or GENERAL"
                               style={{ width: '100%', boxSizing: 'border-box' }}
                             />
-                            <p style={{ margin: '6px 0 0', fontSize: '10px', color: 'var(--ds-text3)' }}>Leave as GENERAL for a non-subject-specific review.</p>
+                            <p style={{ margin: '6px 0 0', fontSize: '10px', color: 'var(--text-muted)' }}>Leave as GENERAL for a non-subject-specific review.</p>
                           </div>
 
                           {/* ─ SUBMIT ─ */}
                           <button
                             type="submit"
                             disabled={newEscRollNos.length === 0 || creatingEscalation}
-                            style={{ padding: '12px 24px', borderRadius: '10px', border: 'none', background: newEscRollNos.length > 0 ? '#ffffff' : 'var(--ds-surface2)', color: newEscRollNos.length > 0 ? '#000000' : 'var(--ds-text3)', fontWeight: 800, fontSize: '13px', cursor: newEscRollNos.length > 0 ? 'pointer' : 'not-allowed', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                            style={{ padding: '12px 24px', borderRadius: '10px', border: 'none', background: newEscRollNos.length > 0 ? '#ffffff' : 'var(--surface-overlay)', color: newEscRollNos.length > 0 ? '#000000' : 'var(--text-muted)', fontWeight: 800, fontSize: '13px', cursor: newEscRollNos.length > 0 ? 'pointer' : 'not-allowed', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                           >
                             {creatingEscalation ? (
                               <><div style={{ width: '14px', height: '14px', border: '2px solid #000', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />Creating...</>
@@ -1914,42 +2280,42 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                         </form>
                       </div>
                     ) : (
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', color: 'var(--ds-text3)', padding: '24px' }}>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', color: 'var(--text-muted)', padding: '24px' }}>
                         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                        <span style={{ fontSize: '13px', textAlign: 'center' }}>Select a thread from the sidebar to open the 4-way intervention room, or click <strong style={{ color: 'var(--ds-text2)' }}>+ New</strong> to start one.</span>
+                        <span style={{ fontSize: '13px', textAlign: 'center' }}>Select a thread from the sidebar to open the 4-way intervention room, or click <strong style={{ color: 'var(--text-secondary)' }}>+ New</strong> to start one.</span>
                       </div>
                     )}
                   </div>
 
                   {/* Private Staff Case Notes Right (Security Restrictive Component) */}
-                  <div style={{ width: '280px', background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
+                  <div style={{ width: '280px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--ds-text2)' }}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                       <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--ds-text1)', margin: 0 }}>Private Case Notes</h3>
+                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                       <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Private Case Notes</h3>
                      </div>
-                    <span style={{ fontSize: '10px', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Staff Only — Hidden from Student</span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Staff Only — Hidden from Student</span>
 
                     {activeThread ? (
                       <>
                         <form onSubmit={addCaseNote} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <textarea className="ds-input" rows={2} value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Log confidential counseling comment..." style={{ resize: 'none', fontSize: '12px' }} />
-                          <button type="submit" className="ds-btn ds-btn-primary" style={{ background: '#10b981', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', fontWeight: 700, fontSize: '12px' }}>Save Note</button>
+                          <textarea className="filter-select" rows={2} value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Log confidential counseling comment..." style={{ resize: 'none', fontSize: '12px' }} />
+                          <button type="submit" className="btn-action primary" style={{ background: '#10b981', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', fontWeight: 700, fontSize: '12px' }}>Save Note</button>
                         </form>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, marginTop: '8px' }}>
                           {privateNotes.map((note: any) => (
-                            <div key={note.id} style={{ padding: '8px', background: 'var(--ds-surface2)', borderRadius: '8px', borderLeft: '2.5px solid #10b981' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--ds-text3)', marginBottom: '4px' }}>
+                            <div key={note.id} style={{ padding: '8px', background: 'var(--surface-overlay)', borderRadius: '8px', borderLeft: '2.5px solid #10b981' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px' }}>
                                 <span>By: {note.authorRole}</span>
                                 <span>{new Date(note.createdAt).toLocaleDateString()}</span>
                               </div>
-                              <p style={{ fontSize: '11.5px', color: 'var(--ds-text2)', margin: 0 }}>{note.content}</p>
+                              <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: 0 }}>{note.content}</p>
                             </div>
                           ))}
                         </div>
                       </>
                     ) : (
-                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ds-text3)', fontSize: '12px', textAlign: 'center' }}>
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center' }}>
                         Confidential case notes render once an active thread is selected.
                       </div>
                     )}
@@ -1960,33 +2326,33 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
               {activeTab === 'notifications' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 6px' }}>Faculty Portal Notifications</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--ds-text2)', margin: 0 }}>View audit updates, system-generated intervention warnings, and send manual alerts to students.</p>
+                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>Faculty Portal Notifications</h2>
+                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>View audit updates, system-generated intervention warnings, and send manual alerts to students.</p>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px', alignItems: 'start' }}>
                     {/* Left Column: Inbox */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 4px' }}>Inbox Alerts</h3>
+                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 4px' }}>Inbox Alerts</h3>
                       {hodNotifications.length === 0 ? (
-                        <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: 'var(--ds-text3)' }}>
+                        <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
                           No new notifications.
                         </div>
                       ) : (
                         hodNotifications.map((notif: any) => (
-                          <div key={notif.id} style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px', display: 'flex', gap: '16px', alignItems: 'flex-start', opacity: notif.read ? 0.7 : 1 }}>
-                            <div style={{ background: notif.read ? 'rgba(255, 255, 255, 0.04)' : 'rgba(59, 130, 246, 0.1)', color: notif.read ? 'var(--ds-text3)' : '#3b82f6', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <div key={notif.id} style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', display: 'flex', gap: '16px', alignItems: 'flex-start', opacity: notif.read ? 0.7 : 1 }}>
+                            <div style={{ background: notif.read ? 'rgba(255, 255, 255, 0.04)' : 'rgba(59, 130, 246, 0.1)', color: notif.read ? 'var(--text-muted)' : '#3b82f6', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                             </div>
                             <div style={{ flex: 1 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <h4 style={{ margin: 0, fontSize: '14.5px', fontWeight: 800, color: 'var(--ds-text1)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <h4 style={{ margin: 0, fontSize: '14.5px', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                   {notif.title}
                                   {!notif.read && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444' }} />}
                                 </h4>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                  <span style={{ fontSize: '11px', color: 'var(--ds-text3)' }}>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                     {notif.createdAt ? new Date(notif.createdAt).toLocaleDateString() : 'N/A'}
                                   </span>
                                   {!notif.read && (
@@ -1999,7 +2365,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                   )}
                                 </div>
                               </div>
-                              <p style={{ fontSize: '13px', color: 'var(--ds-text2)', margin: '6px 0 0', lineHeight: '1.4' }}>{notif.message}</p>
+                              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '6px 0 0', lineHeight: '1.4' }}>{notif.message}</p>
                             </div>
                           </div>
                         ))
@@ -2007,13 +2373,13 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                     </div>
 
                     {/* Right Column: Broadcast Form */}
-                    <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '24px' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 14px' }}>Manual Notification Broadcast</h3>
+                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '24px' }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 14px' }}>Manual Notification Broadcast</h3>
                       <form onSubmit={handleSendHODNotification} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Target Audience</label>
-                          <select className="ds-input" value={hodNotifTarget === 'ALL' ? 'ALL' : 'SPECIFIC'} onChange={e => setHodNotifTarget(e.target.value === 'ALL' ? 'ALL' : '')} style={{ padding: '10px', fontSize: '13px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Target Audience</label>
+                          <select className="filter-select" value={hodNotifTarget === 'ALL' ? 'ALL' : 'SPECIFIC'} onChange={e => setHodNotifTarget(e.target.value === 'ALL' ? 'ALL' : '')} style={{ padding: '10px', fontSize: '13px' }}>
                             <option value="ALL">Department Students (Global)</option>
                             <option value="SPECIFIC">Target Specific Roll Number</option>
                           </select>
@@ -2021,10 +2387,10 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
                         {hodNotifTarget !== 'ALL' && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Student Roll Number</label>
+                            <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Student Roll Number</label>
                             <input 
                               type="text" 
-                              className="ds-input" 
+                              className="filter-select" 
                               placeholder="e.g. 22B01A0501" 
                               value={hodNotifTarget} 
                               onChange={e => setHodNotifTarget(e.target.value)} 
@@ -2035,8 +2401,8 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                         )}
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Alert Category</label>
-                          <select className="ds-input" value={hodNotifType} onChange={e => setHodNotifType(e.target.value)} style={{ padding: '10px', fontSize: '13px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Alert Category</label>
+                          <select className="filter-select" value={hodNotifType} onChange={e => setHodNotifType(e.target.value)} style={{ padding: '10px', fontSize: '13px' }}>
                             <option value="SYSTEM">System Announcement</option>
                             <option value="ACADEMIC">Academic</option>
                             <option value="PLACEMENT">Placement Training</option>
@@ -2045,10 +2411,10 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Alert Title</label>
+                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Alert Title</label>
                           <input 
                             type="text" 
-                            className="ds-input" 
+                            className="filter-select" 
                             placeholder="Enter alert title..." 
                             value={hodNotifTitle} 
                             onChange={e => setHodNotifTitle(e.target.value)} 
@@ -2058,9 +2424,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Message Body</label>
+                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Message Body</label>
                           <textarea 
-                            className="ds-input" 
+                            className="filter-select" 
                             rows={3} 
                             placeholder="Enter warning details..." 
                             value={hodNotifMessage} 
@@ -2070,7 +2436,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           />
                         </div>
 
-                        <button type="submit" className="ds-btn ds-btn-primary" style={{ marginTop: '6px' }} disabled={sendingHodNotif}>
+                        <button type="submit" className="btn-action primary" style={{ marginTop: '6px' }} disabled={sendingHodNotif}>
                           {sendingHodNotif ? 'Broadcasting...' : 'Broadcast Alert'}
                         </button>
                       </form>
@@ -2085,16 +2451,16 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
               ══════════════════════════════════════════ */}
               {activeTab === 'messages' && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)', gap: '20px' }}>
-                  <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px', flexShrink: 0 }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 6px' }}>Direct Messages</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--ds-text2)', margin: 0 }}>Real-time counseling and support with students in your department.</p>
+                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', flexShrink: 0 }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>Direct Messages</h2>
+                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Real-time counseling and support with students in your department.</p>
                   </div>
 
                   <div style={{
                     display: 'flex',
                     flex: 1,
-                    background: 'var(--ds-surface)',
-                    border: '1px solid var(--ds-border)',
+                    background: 'var(--surface-overlay)',
+                    border: '1px solid var(--surface-border)',
                     borderRadius: '16px',
                     overflow: 'hidden',
                     height: '100%'
@@ -2102,14 +2468,14 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                     {/* Left Sidebar: Conversations & Contacts */}
                     <div style={{
                       width: '260px',
-                      borderRight: '1px solid var(--ds-border)',
+                      borderRight: '1px solid var(--surface-border)',
                       display: 'flex',
                       flexDirection: 'column',
-                      background: 'var(--ds-surface2)',
+                      background: 'var(--surface-overlay)',
                       flexShrink: 0
                     }}>
                       {/* Pill Tab Selector */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', padding: '12px', borderBottom: '1px solid var(--ds-border)' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', padding: '12px', borderBottom: '1px solid var(--surface-border)' }}>
                         {['chats', 'students', 'faculty', 'mentors'].map((tab) => {
                           const isAct = msgSidebarTab === tab;
                           return (
@@ -2121,7 +2487,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                 borderRadius: '6px',
                                 border: 'none',
                                 background: isAct ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
-                                color: isAct ? '#ffffff' : 'var(--ds-text3)',
+                                color: isAct ? '#ffffff' : 'var(--text-muted)',
                                 fontSize: '10px',
                                 fontWeight: 800,
                                 cursor: 'pointer',
@@ -2140,7 +2506,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                       <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {msgSidebarTab === 'chats' && (
                           staffConversations.length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--ds-text3)' }}>
+                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
                               No active chats
                             </div>
                           ) : (
@@ -2167,23 +2533,23 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                     borderLeft: isSelected ? '3px solid #ffffff' : '3px solid transparent'
                                   }}
                                 >
-                                  <div style={{ fontWeight: 700, fontSize: '13.5px', color: isSelected ? '#ffffff' : 'var(--ds-text1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                  <div style={{ fontWeight: 700, fontSize: '13.5px', color: isSelected ? '#ffffff' : 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                       <span>{c.studentName}</span>
                                       {c.role && c.role !== 'Student' && (
-                                        <span style={{ fontSize: '8.5px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--ds-text3)', textTransform: 'uppercase' }}>
+                                        <span style={{ fontSize: '8.5px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                                           {c.role}
                                         </span>
                                       )}
                                     </div>
                                     {c.role === 'Student' && (
-                                      <span style={{ fontSize: '10px', color: 'var(--ds-text3)' }}>{c.studentRollNo}</span>
+                                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{c.studentRollNo}</span>
                                     )}
                                   </div>
                                   {lastMsg && (
                                     <div style={{
                                       fontSize: '11.5px',
-                                      color: 'var(--ds-text3)',
+                                      color: 'var(--text-muted)',
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
                                       whiteSpace: 'nowrap',
@@ -2201,7 +2567,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
                         {msgSidebarTab === 'students' && (
                           studentsList.length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--ds-text3)' }}>
+                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
                               No students loaded
                             </div>
                           ) : (
@@ -2245,10 +2611,10 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                     {student.fullName ? student.fullName.substring(0, 1) : '?'}
                                   </div>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--ds-text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                       {student.fullName}
                                     </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--ds-text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                       Roll No: {rollNo}
                                     </span>
                                   </div>
@@ -2260,7 +2626,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
                         {msgSidebarTab === 'faculty' && (
                           facultyList.filter(f => f.role === 'Faculty' && f.email !== userSession.email).length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--ds-text3)' }}>
+                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
                               No faculty found
                             </div>
                           ) : (
@@ -2302,10 +2668,10 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                     {f.fullName ? f.fullName.substring(0, 1) : '?'}
                                   </div>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--ds-text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                       {f.fullName}
                                     </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--ds-text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                       {f.email}
                                     </span>
                                   </div>
@@ -2317,7 +2683,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
                         {msgSidebarTab === 'mentors' && (
                           facultyList.filter(f => f.role === 'Mentor' && f.email !== userSession.email).length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--ds-text3)' }}>
+                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
                               No mentors found
                             </div>
                           ) : (
@@ -2359,10 +2725,10 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                     {m.fullName ? m.fullName.substring(0, 1) : '?'}
                                   </div>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--ds-text1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                       {m.fullName}
                                     </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--ds-text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                       {m.email}
                                     </span>
                                   </div>
@@ -2375,18 +2741,18 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                     </div>
 
                     {/* Right: Chat Feed & Action Panel */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--ds-surface)' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--surface-overlay)' }}>
                       {selectedConversation ? (
                         <>
                           {/* Chat Header */}
-                          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--ds-border)', background: 'var(--ds-surface2)' }}>
+                          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--surface-border)', background: 'var(--surface-overlay)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--ds-text1)' }}>{selectedConversation.studentName}</span>
+                              <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-primary)' }}>{selectedConversation.studentName}</span>
                               <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', background: selectedConversation.role === 'Student' ? '#10b981' : selectedConversation.role === 'Faculty' ? '#f59e0b' : '#3b82f6', color: '#fff', fontWeight: 700, textTransform: 'uppercase' }}>
                                 {selectedConversation.role || 'Student'}
                               </span>
                             </div>
-                            <div style={{ fontSize: '11.5px', color: 'var(--ds-text3)', marginTop: '4px' }}>
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
                               {selectedConversation.role === 'Student' ? `Roll No: ${selectedConversation.studentRollNo}` : `Email: ${selectedConversation.studentEmail}`}
                             </div>
                           </div>
@@ -2406,16 +2772,16 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                   }}>
                                     <div style={{
                                       background: isMe ? 'var(--accent)' : 'var(--ds-surface3)',
-                                      color: isMe ? '#000000' : 'var(--ds-text1)',
+                                      color: isMe ? '#000000' : 'var(--text-primary)',
                                       borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
                                       padding: '10px 14px',
                                       fontSize: '13px',
                                       lineHeight: '1.45',
-                                      border: isMe ? 'none' : '1px solid var(--ds-border)'
+                                      border: isMe ? 'none' : '1px solid var(--surface-border)'
                                     }}>
                                       {msg.messageText}
                                     </div>
-                                    <span style={{ fontSize: '9.5px', color: 'var(--ds-text3)' }}>
+                                    <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
                                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </span>
                                   </div>
@@ -2425,10 +2791,10 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           </div>
 
                           {/* Chat Reply Form */}
-                          <form onSubmit={handleSendStaffMessage} style={{ padding: '16px 20px', borderTop: '1px solid var(--ds-border)', display: 'flex', gap: '12px', background: 'var(--ds-surface2)' }}>
+                          <form onSubmit={handleSendStaffMessage} style={{ padding: '16px 20px', borderTop: '1px solid var(--surface-border)', display: 'flex', gap: '12px', background: 'var(--surface-overlay)' }}>
                             <input
                               type="text"
-                              className="ds-input"
+                              className="filter-select"
                               placeholder={`Reply to ${selectedConversation.studentName}...`}
                               value={staffMsgInput}
                               onChange={e => setStaffMsgInput(e.target.value)}
@@ -2436,7 +2802,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                             />
                             <button
                               type="submit"
-                              className="ds-btn ds-btn-primary"
+                              className="btn-action primary"
                               disabled={!staffMsgInput.trim()}
                               style={{ padding: '10px 20px', background: '#ffffff', border: 'none', color: '#000000', fontWeight: 700 }}
                             >
@@ -2445,7 +2811,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           </form>
                         </>
                       ) : (
-                        <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--ds-text3)' }}>
+                        <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-muted)' }}>
                           <div style={{ fontSize: '32px', marginBottom: '10px' }}>💬</div>
                           <div style={{ fontWeight: 700 }}>Select a student conversation to view chat history</div>
                         </div>
@@ -2457,12 +2823,12 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
               {activeTab === 'settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
-                  <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 6px' }}>Faculty Profile Settings</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--ds-text2)', margin: 0 }}>Review your registered account profile status and update security parameters.</p>
+                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>Faculty Profile Settings</h2>
+                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Review your registered account profile status and update security parameters.</p>
                   </div>
 
-                  <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '24px' }}>
+                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '24px' }}>
                     <form onSubmit={handleSaveHODProfile} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       {/* Profile Picture Section */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
@@ -2478,7 +2844,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           color: '#fff',
                           fontSize: '24px',
                           overflow: 'hidden',
-                          border: '2px solid var(--ds-border)'
+                          border: '2px solid var(--surface-border)'
                         }}>
                           {profilePhotoUrl ? (
                             <img src={`${API_BASE_URL}${profilePhotoUrl}`} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -2487,37 +2853,37 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           )}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Profile Photo</label>
-                          <input type="file" accept="image/*" onChange={handleHODPhotoUpload} style={{ fontSize: '12px', color: 'var(--ds-text2)' }} />
+                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Profile Photo</label>
+                          <input type="file" accept="image/*" onChange={handleHODPhotoUpload} style={{ fontSize: '12px', color: 'var(--text-secondary)' }} />
                         </div>
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Full Name</label>
-                        <input type="text" className="ds-input" value={profileFullName} onChange={e => setProfileFullName(e.target.value)} required />
+                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Full Name</label>
+                        <input type="text" className="filter-select" value={profileFullName} onChange={e => setProfileFullName(e.target.value)} required />
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Email Address</label>
-                        <input type="email" className="ds-input" value={hodProfile?.email || userSession.email} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Email Address</label>
+                        <input type="email" className="filter-select" value={hodProfile?.email || userSession.email} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Contact Phone</label>
-                        <input type="text" className="ds-input" value={profilePhone} onChange={e => setProfilePhone(e.target.value)} placeholder="Enter mobile number..." />
+                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Contact Phone</label>
+                        <input type="text" className="filter-select" value={profilePhone} onChange={e => setProfilePhone(e.target.value)} placeholder="Enter mobile number..." />
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Account Authority Role</label>
-                        <input type="text" className="ds-input" value={hodProfile?.role || userSession.role} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Account Authority Role</label>
+                        <input type="text" className="filter-select" value={hodProfile?.role || userSession.role} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Change Password</label>
-                        <input type="password" className="ds-input" value={profilePassword} onChange={e => setProfilePassword(e.target.value)} placeholder="Type new password to modify..." />
+                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Change Password</label>
+                        <input type="password" className="filter-select" value={profilePassword} onChange={e => setProfilePassword(e.target.value)} placeholder="Type new password to modify..." />
                       </div>
 
-                      <button type="submit" className="ds-btn ds-btn-primary" style={{ marginTop: '10px' }}>
+                      <button type="submit" className="btn-action primary" style={{ marginTop: '10px' }}>
                         Save Settings
                       </button>
                     </form>
@@ -2529,31 +2895,32 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
           </AnimatePresence>
 
           {/* FOOTER */}
-          <footer className="ds-footer">
-            <div className="ds-footer-top">
-              <div className="ds-footer-brand">
+          <footer className="admin-footer">
+            <div className="admin-footer-top">
+              <div className="admin-footer-brand">
                 <LogoHeader imageStyle={{ height: '32px' }} />
               </div>
-              <div className="ds-footer-links">
+              <div className="admin-footer-links">
                 <div>
-                  <h5 className="ds-footer-col-title">Quick Contacts</h5>
-                  <ul className="ds-footer-list">
+                  <h5 className="admin-footer-col-title">Quick Contacts</h5>
+                  <ul className="admin-footer-list">
                     <li>📞 0863 - 2524112 / 113</li>
                     <li><a href="mailto:principal@chalapathiengg.ac.in">principal@chalapathiengg.ac.in</a></li>
                   </ul>
                 </div>
                 <div>
-                  <h5 className="ds-footer-col-title">Address</h5>
-                  <p className="ds-footer-addr">Chalapathi Nagar, Lam,<br />Guntur District, A.P. – 522 034</p>
+                  <h5 className="admin-footer-col-title">Address</h5>
+                  <p className="admin-footer-addr">Chalapathi Nagar, Lam,<br />Guntur District, A.P. – 522 034</p>
                 </div>
               </div>
             </div>
-            <div className="ds-footer-bottom">
+            <div className="admin-footer-bottom">
               <span>© {new Date().getFullYear()} CIET. All Rights Reserved.</span>
               <a href="http://chalapathiengg.ac.in" target="_blank" rel="noopener noreferrer">Official Portal →</a>
             </div>
           </footer>
-        </main>
+        </div>
+        </div>
       </div>
 
       {/* OVERLAY PROFILE DETAILS MODAL */}
@@ -2573,8 +2940,8 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
           padding: '20px'
         }}>
           <div style={{
-            background: 'var(--ds-surface)',
-            border: '1px solid var(--ds-border)',
+            background: 'var(--surface-overlay)',
+            border: '1px solid var(--surface-border)',
             borderRadius: '16px',
             width: '720px',
             maxWidth: '100%',
@@ -2585,14 +2952,14 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
             boxShadow: 'var(--ds-s3)'
           }}>
             {/* Modal Header */}
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--ds-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--ds-surface2)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface-overlay)' }}>
               <div>
-                <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--ds-text1)', margin: 0 }}>{selectedDetailUser.fullName}</h3>
-                <span style={{ fontSize: '12px', color: 'var(--ds-text3)' }}>{selectedDetailUser.role} &nbsp;|&nbsp; {selectedDetailUser.email}</span>
+                <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>{selectedDetailUser.fullName}</h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{selectedDetailUser.role} &nbsp;|&nbsp; {selectedDetailUser.email}</span>
               </div>
               <button
                 onClick={() => setSelectedDetailUser(null)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--ds-text2)', fontSize: '20px', cursor: 'pointer' }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '20px', cursor: 'pointer' }}
               >
                 ×
               </button>
@@ -2602,71 +2969,71 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
             <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {detailUserLoading ? (
                 <div style={{ margin: 'auto', padding: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                  <div className="ds-loading-spinner" />
-                  <span style={{ fontSize: '13px', color: 'var(--ds-text2)' }}>Syncing profile workspace records...</span>
+                  <div className="spinner" />
+                  <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Syncing profile workspace records...</span>
                 </div>
               ) : detailUserData ? (
                 <>
                   {/* General User Profile Details (Matches Admin layout style) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px', marginBottom: '24px', borderBottom: '1px solid var(--ds-border)', paddingBottom: '20px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--ds-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--ds-text3)', fontWeight: '600' }}>Email Address</span>
-                      <span style={{ fontWeight: '500', color: 'var(--ds-text1)' }}>{detailUserData.user?.email}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px', marginBottom: '24px', borderBottom: '1px solid var(--surface-border)', paddingBottom: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Email Address</span>
+                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{detailUserData.user?.email}</span>
                     </div>
 
                     {selectedDetailUser.role === 'Student' && detailUserData.profile?.rollNo && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--ds-border)', paddingBottom: '8px' }}>
-                        <span style={{ color: 'var(--ds-text3)', fontWeight: '600' }}>Register Number</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Register Number</span>
                         <span style={{ fontWeight: '700', color: 'var(--accent)', fontFamily: 'monospace', letterSpacing: '1px' }}>{detailUserData.profile.rollNo}</span>
                       </div>
                     )}
 
                     {selectedDetailUser.role === 'Student' && detailUserData.profile?.batch && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--ds-border)', paddingBottom: '8px' }}>
-                        <span style={{ color: 'var(--ds-text3)', fontWeight: '600' }}>Academic Batch</span>
-                        <span style={{ fontWeight: '500', color: 'var(--ds-text1)' }}>{detailUserData.profile.batch}</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Academic Batch</span>
+                        <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{detailUserData.profile.batch}</span>
                       </div>
                     )}
 
                     {selectedDetailUser.role === 'Student' && detailUserData.profile?.cgpa !== undefined && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--ds-border)', paddingBottom: '8px' }}>
-                        <span style={{ color: 'var(--ds-text3)', fontWeight: '600' }}>CGPA</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>CGPA</span>
                         <span style={{ fontWeight: '700', color: detailUserData.profile.cgpa >= 8 ? '#10b981' : detailUserData.profile.cgpa >= 6 ? '#f59e0b' : '#ef4444' }}>
                           {detailUserData.profile.cgpa.toFixed(2)} / 10.00
                         </span>
                       </div>
                     )}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--ds-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--ds-text3)', fontWeight: '600' }}>Phone Number</span>
-                      <span style={{ fontWeight: '500', color: 'var(--ds-text1)' }}>{detailUserData.user?.phone || 'Not Registered'}</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Phone Number</span>
+                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{detailUserData.user?.phone || 'Not Registered'}</span>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--ds-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--ds-text3)', fontWeight: '600' }}>Departments</span>
-                      <span style={{ fontWeight: '500', color: 'var(--ds-text1)' }}>{detailUserData.user?.departmentIds?.join(', ') || 'General / None'}</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Departments</span>
+                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{detailUserData.user?.departmentIds?.join(', ') || 'General / None'}</span>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--ds-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--ds-text3)', fontWeight: '600' }}>Portal Access</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Portal Access</span>
                       <span style={{ fontWeight: '700', color: detailUserData.user?.active ? '#10b981' : '#ef4444' }}>
                         {detailUserData.user?.active ? 'Granted / Active' : 'Revoked / Locked'}
                       </span>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--ds-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--ds-text3)', fontWeight: '600' }}>Date Enrolled</span>
-                      <span style={{ fontWeight: '500', color: 'var(--ds-text1)' }}>{detailUserData.user?.createdAt ? new Date(detailUserData.user.createdAt).toLocaleString() : 'N/A'}</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Date Enrolled</span>
+                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{detailUserData.user?.createdAt ? new Date(detailUserData.user.createdAt).toLocaleString() : 'N/A'}</span>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--ds-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--ds-text3)', fontWeight: '600' }}>Last IP Address</span>
-                      <span style={{ fontWeight: '500', fontFamily: 'monospace', color: 'var(--ds-text1)' }}>{detailUserData.user?.lastLoginIp || 'None'}</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Last IP Address</span>
+                      <span style={{ fontWeight: '500', fontFamily: 'monospace', color: 'var(--text-primary)' }}>{detailUserData.user?.lastLoginIp || 'None'}</span>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr' }}>
-                      <span style={{ color: 'var(--ds-text3)', fontWeight: '600' }}>Last Login Time</span>
-                      <span style={{ fontWeight: '500', color: 'var(--ds-text1)' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Last Login Time</span>
+                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>
                         {detailUserData.user?.lastLogin ? new Date(detailUserData.user.lastLogin).toLocaleString() : 'Never'}
                       </span>
                     </div>
@@ -2676,47 +3043,47 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                       {/* Semester Results */}
                       <div>
-                        <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Semester Results History</h4>
+                        <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Semester Results History</h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           {detailUserData.results && detailUserData.results.map((r: any) => (
-                            <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '8px', fontSize: '12.5px' }}>
-                              <span style={{ color: 'var(--ds-text1)', fontWeight: 600 }}>{r.subjectCode} - {r.subjectName}</span>
+                            <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '8px', fontSize: '12.5px' }}>
+                              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{r.subjectCode} - {r.subjectName}</span>
                               <span style={{ color: r.grade === 'F' ? 'var(--ds-red)' : 'var(--accent)', fontWeight: 800 }}>{r.grade} (Sem {r.semester})</span>
                             </div>
                           ))}
-                          {(!detailUserData.results || detailUserData.results.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--ds-text3)', margin: 0 }}>No results uploaded yet.</p>}
+                          {(!detailUserData.results || detailUserData.results.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>No results uploaded yet.</p>}
                         </div>
                       </div>
 
                       {/* Projects */}
                       <div>
-                        <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Student Portfolios & Projects</h4>
+                        <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Student Portfolios & Projects</h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           {detailUserData.projects && detailUserData.projects.map((p: any) => (
-                            <div key={p.id} style={{ padding: '12px', background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '10px' }}>
-                              <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--ds-text1)' }}>{p.title}</div>
-                              <div style={{ fontSize: '11px', color: 'var(--ds-text3)', marginTop: '2px' }}>Tech stack: {p.technologies}</div>
-                              <p style={{ fontSize: '12px', color: 'var(--ds-text2)', margin: '6px 0 0' }}>{p.description}</p>
+                            <div key={p.id} style={{ padding: '12px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '10px' }}>
+                              <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{p.title}</div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Tech stack: {p.technologies}</div>
+                              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '6px 0 0' }}>{p.description}</p>
                             </div>
                           ))}
-                          {(!detailUserData.projects || detailUserData.projects.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--ds-text3)', margin: 0 }}>No projects uploaded yet.</p>}
+                          {(!detailUserData.projects || detailUserData.projects.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>No projects uploaded yet.</p>}
                         </div>
                       </div>
 
                       {/* Certifications */}
                       <div>
-                        <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Professional Certifications</h4>
+                        <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Professional Certifications</h4>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           {detailUserData.certifications && detailUserData.certifications.map((c: any) => (
-                            <div key={c.id} style={{ padding: '12px', background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div key={c.id} style={{ padding: '12px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div>
-                                <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--ds-text1)' }}>{c.title}</div>
-                                <div style={{ fontSize: '11.5px', color: 'var(--ds-text3)', marginTop: '2px' }}>Issued by: {c.issuingAuthority}</div>
+                                <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{c.title}</div>
+                                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>Issued by: {c.issuingAuthority}</div>
                               </div>
                               {c.certUrl && <a href={c.certUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'var(--accent)', fontSize: '12px', fontWeight: 700 }}>Verify ↗</a>}
                             </div>
                           ))}
-                          {(!detailUserData.certifications || detailUserData.certifications.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--ds-text3)', margin: 0 }}>No certifications recorded.</p>}
+                          {(!detailUserData.certifications || detailUserData.certifications.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>No certifications recorded.</p>}
                         </div>
                       </div>
                     </div>
@@ -2724,16 +3091,16 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
                   {selectedDetailUser.role === 'Mentor' && (
                     <div>
-                      <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assigned Mentees</h4>
+                      <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assigned Mentees</h4>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {detailUserData.assignedStudents && detailUserData.assignedStudents.map((s: any) => (
-                          <div key={s.profile?.id} style={{ padding: '12px 16px', background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div key={s.profile?.id} style={{ padding: '12px 16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
-                              <strong style={{ fontSize: '13.5px', color: 'var(--ds-text1)' }}>{s.user?.fullName}</strong>
-                              <div style={{ fontSize: '11.5px', color: 'var(--ds-text3)', marginTop: '2px' }}>Roll No: {s.profile?.rollNo} | Batch: {s.profile?.batch}</div>
+                              <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)' }}>{s.user?.fullName}</strong>
+                              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>Roll No: {s.profile?.rollNo} | Batch: {s.profile?.batch}</div>
                             </div>
                             <button
-                              className="ds-btn ds-btn-ghost"
+                              className="btn-action secondary"
                               onClick={() => fetchUserDetailForHOD({ id: s.user?.id, fullName: s.user?.fullName, email: s.user?.email, role: 'Student' })}
                               style={{ padding: '4px 10px', fontSize: '11.5px', cursor: 'pointer', color: 'var(--accent)' }}
                             >
@@ -2741,31 +3108,31 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                             </button>
                           </div>
                         ))}
-                        {(!detailUserData.assignedStudents || detailUserData.assignedStudents.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--ds-text3)', textAlign: 'center', padding: '12px' }}>No student mentees assigned yet.</p>}
+                        {(!detailUserData.assignedStudents || detailUserData.assignedStudents.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No student mentees assigned yet.</p>}
                       </div>
                     </div>
                   )}
 
                   {selectedDetailUser.role === 'Faculty' && (
                     <div>
-                      <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--ds-text1)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Teaching Course Workload</h4>
+                      <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Teaching Course Workload</h4>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {detailUserData.courses && detailUserData.courses.map((c: any) => (
-                          <div key={c.id} style={{ padding: '12px 16px', background: 'var(--ds-surface2)', border: '1px solid var(--ds-border)', borderRadius: '10px' }}>
-                            <strong style={{ fontSize: '13.5px', color: 'var(--ds-text1)' }}>{c.courseName} ({c.courseCode})</strong>
-                            <div style={{ fontSize: '11.5px', color: 'var(--ds-text3)', marginTop: '2px' }}>Target: {c.targetYear} Year Sec-{c.targetSection} | Credits: {c.credits || 3}</div>
+                          <div key={c.id} style={{ padding: '12px 16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '10px' }}>
+                            <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)' }}>{c.courseName} ({c.courseCode})</strong>
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>Target: {c.targetYear} Year Sec-{c.targetSection} | Credits: {c.credits || 3}</div>
                           </div>
                         ))}
-                        {(!detailUserData.courses || detailUserData.courses.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--ds-text3)', textAlign: 'center', padding: '12px' }}>No courses assigned to teach.</p>}
+                        {(!detailUserData.courses || detailUserData.courses.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No courses assigned to teach.</p>}
                       </div>
                     </div>
                   )}
                 </>
               ) : (
                 <div style={{ padding: '24px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '13px', color: 'var(--ds-text3)', margin: '0 0 12px' }}>Failed to resolve profile dataset.</p>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 12px' }}>Failed to resolve profile dataset.</p>
                   <button
-                    className="ds-btn ds-btn-primary"
+                    className="btn-action primary"
                     onClick={() => fetchUserDetailForHOD(selectedDetailUser)}
                     style={{ padding: '6px 14px', fontSize: '12px', cursor: 'pointer' }}
                   >
@@ -2775,11 +3142,11 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
               )}
             </div>
             {/* Modal Footer */}
-            <div style={{ padding: '14px 20px', borderTop: '1px solid var(--ds-border)', display: 'flex', justifyContent: 'flex-end', background: 'var(--ds-surface2)' }}>
+            <div style={{ padding: '14px 20px', borderTop: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'flex-end', background: 'var(--surface-overlay)' }}>
               <button
-                className="ds-btn ds-btn-ghost"
+                className="btn-action secondary"
                 onClick={() => setSelectedDetailUser(null)}
-                style={{ padding: '8px 18px', cursor: 'pointer', border: '1px solid var(--ds-border)', background: 'transparent', borderRadius: '8px', color: 'var(--ds-text2)' }}
+                style={{ padding: '8px 18px', cursor: 'pointer', border: '1px solid var(--surface-border)', background: 'transparent', borderRadius: '8px', color: 'var(--text-secondary)' }}
               >
                 Close
               </button>
@@ -2788,8 +3155,168 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
         </div>
       )}
 
+      
+      {/* ── INJECTED MODALS ── */}
+      {dirActiveModal === 'view' && dirSelectedUser && (
+        <div className="admin-modal-overlay" onClick={() => setDirActiveModal(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="admin-modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+            <div className="admin-modal-header" style={{ padding: '20px', borderBottom: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '18px' }}>User Details</h2>
+              <button onClick={() => setDirActiveModal(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '24px', cursor: 'pointer', padding: 0 }}>&times;</button>
+            </div>
+            <div className="admin-modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', borderBottom: '1px solid var(--surface-border)', paddingBottom: '16px' }}>
+                <div style={{ width: '64px', height: '64px', borderRadius: '32px', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: '800', color: 'var(--accent)' }}>
+                  {dirSelectedUser.fullName?.[0]?.toUpperCase()}
+                </div>
+                <div>
+                  <h3 style={{ margin: '0 0 4px', fontSize: '20px', color: 'var(--text-primary)' }}>{dirSelectedUser.fullName}</h3>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span className="badge-pill outline">{dirSelectedUser.role}</span>
+                    <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{dirSelectedUser.email}</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Phone Number</strong><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>{dirSelectedUser.phone || 'N/A'}</div></div>
+                <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Departments</strong><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>{dirSelectedUser.departmentIds?.join(', ') || dirSelectedUser.departmentId || 'N/A'}</div></div>
+                {dirSelectedUser.role === 'Student' && (
+                  <>
+                    <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Roll Number</strong><div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--accent)' }}>{dirSelectedUser.rollNo}</div></div>
+                    <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Academic Year</strong><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>Year {dirSelectedUser.year}</div></div>
+                    <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Section</strong><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>{dirSelectedUser.sectionId}</div></div>
+                    <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Batch</strong><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>{dirSelectedUser.batch}</div></div>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="admin-modal-footer" style={{ padding: '20px', borderTop: '1px solid var(--surface-border)', display: 'flex', justifySelf: 'flex-end', justifyContent: 'flex-end' }}>
+              <button className="btn-action secondary" onClick={() => setDirActiveModal(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dirActiveModal === 'edit' && dirSelectedUser && (
+        <div className="admin-modal-overlay" onClick={() => setDirActiveModal(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="admin-modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+            <div className="admin-modal-header" style={{ padding: '20px', borderBottom: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '18px' }}>Edit User</h2>
+              <button onClick={() => setDirActiveModal(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '24px', cursor: 'pointer', padding: 0 }}>&times;</button>
+            </div>
+            <form onSubmit={handleEditDirUserSubmit}>
+              <div className="admin-modal-body" style={{ padding: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Full Name</label>
+                  <input type="text" className="filter-select" value={dirFormFullName} onChange={e => setDirFormFullName(e.target.value)} required style={{ width: '100%', padding: '10px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Email Address</label>
+                  <input type="email" className="filter-select" value={dirFormEmail} onChange={e => setDirFormEmail(e.target.value)} required style={{ width: '100%', padding: '10px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Phone Number</label>
+                  <input type="tel" className="filter-select" value={dirFormPhone} onChange={e => setDirFormPhone(e.target.value)} style={{ width: '100%', padding: '10px' }} />
+                </div>
+                {dirSelectedUser.role === 'Student' && (
+                  <>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Roll Number</label>
+                      <input type="text" className="filter-select" value={dirFormRollNo} onChange={e => setDirFormRollNo(e.target.value)} style={{ width: '100%', padding: '10px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Academic Year</label>
+                      <select className="filter-select" value={dirFormYear} onChange={e => setDirFormYear(e.target.value)} style={{ width: '100%', padding: '10px' }}>
+                        <option value="1">1st Year</option><option value="2">2nd Year</option><option value="3">3rd Year</option><option value="4">4th Year</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Section</label>
+                      <input type="text" className="filter-select" value={dirFormSectionId} onChange={e => setDirFormSectionId(e.target.value)} placeholder="e.g. A" style={{ width: '100%', padding: '10px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Batch</label>
+                      <input type="text" className="filter-select" value={dirFormBatch} onChange={e => setDirFormBatch(e.target.value)} placeholder="e.g. 2023-2027" style={{ width: '100%', padding: '10px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>CGPA</label>
+                      <input type="number" step="0.01" className="filter-select" value={dirFormCgpa} onChange={e => setDirFormCgpa(e.target.value)} style={{ width: '100%', padding: '10px' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Academic Status</label>
+                      <select className="filter-select" value={dirFormAcademicStatus} onChange={e => setDirFormAcademicStatus(e.target.value)} style={{ width: '100%', padding: '10px' }}>
+                        <option value="ACTIVE">Active</option><option value="GRADUATED">Graduated</option><option value="DROPOUT">Drop-out</option><option value="SUSPENDED">Suspended</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="admin-modal-footer" style={{ padding: '20px', borderTop: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <button type="button" className="btn-action secondary" onClick={() => setDirActiveModal(null)}>Cancel</button>
+                <button type="submit" className="btn-action primary">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showBroadcastModal && selectedBroadcast && (
+        <div className="admin-modal-overlay" onClick={() => setShowBroadcastModal(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="admin-modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+            <div className="admin-modal-header" style={{ padding: '20px', borderBottom: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '18px' }}>Broadcast Message Details</h2>
+              <button onClick={() => setShowBroadcastModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '24px', cursor: 'pointer', padding: 0 }}>&times;</button>
+            </div>
+            <div className="admin-modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
+              <div>
+                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Title</strong>
+                <div style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>{selectedBroadcast.title}</div>
+              </div>
+              <div style={{ display: 'flex', gap: '24px' }}>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Sent By</strong>
+                  <div style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{selectedBroadcast.senderName} ({selectedBroadcast.senderRole})</div>
+                </div>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Date</strong>
+                  <div style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{new Date(selectedBroadcast.createdAt).toLocaleString()}</div>
+                </div>
+              </div>
+              <div>
+                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Target Scope</strong>
+                <div style={{ fontSize: '13px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--surface-border)', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {selectedBroadcast.specificTarget ? (
+                    <span>Specific Target: <strong>{selectedBroadcast.specificTarget}</strong></span>
+                  ) : (
+                    <>
+                      <span>Roles: <strong>{selectedBroadcast.targetRoles?.join(', ') || 'ALL'}</strong></span>
+                      <span>Dept: <strong>{selectedBroadcast.targetDepartment || 'ALL'}</strong></span>
+                      <span>Year: <strong>{selectedBroadcast.targetYear || 'ALL'}</strong></span>
+                      <span>Section: <strong>{selectedBroadcast.targetSection || 'ALL'}</strong></span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div>
+                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Recipients Delivered To</strong>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--accent)' }}>{selectedBroadcast.recipientCount} users</div>
+              </div>
+              <div>
+                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Message</strong>
+                <div style={{ fontSize: '14px', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--surface-border)', whiteSpace: 'pre-wrap', lineHeight: '1.6', color: 'var(--text-primary)' }}>
+                  {selectedBroadcast.message}
+                </div>
+              </div>
+            </div>
+            <div className="admin-modal-footer" style={{ padding: '20px', borderTop: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn-action secondary" onClick={() => setShowBroadcastModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MOBILE BOTTOM NAV */}
-      <nav className="ds-bottom-nav">
+      <nav className="admin-bottom-nav">
         {([
           { key: 'overview' as Tab, label: 'Home', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
           { key: 'documents' as Tab, label: 'Docs', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> },
@@ -2799,13 +3326,13 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
         ] as { key: Tab; label: string; icon: React.ReactNode }[]).map(item => (
           <button
             key={item.key}
-            className={`ds-bottom-nav-item ${activeTab === item.key ? 'active' : ''}`}
+            className={`admin-bottom-nav-item ${activeTab === item.key ? 'active' : ''}`}
             onClick={() => setActiveTab(item.key)}
           >
             {item.icon}
             <span>{item.label}</span>
             {item.key === 'notifications' && hodNotifications.filter((n: any) => !n.read).length > 0 && (
-              <span className="ds-bottom-badge">{hodNotifications.filter((n: any) => !n.read).length}</span>
+              <span className="admin-bottom-badge">{hodNotifications.filter((n: any) => !n.read).length}</span>
             )}
           </button>
         ))}

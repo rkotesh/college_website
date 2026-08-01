@@ -30,6 +30,13 @@ public class User {
     private List<String> departmentIds;
     private String photoUrl;
     
+    // Additional fields for student/staff profile parity
+    private String departmentId; // Single shorthand for the primary department
+    private String year;
+    private String sectionId;
+    private String rollNo;
+    private String batch;
+    
     @Builder.Default
     private boolean isActive = true;
     

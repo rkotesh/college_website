@@ -18,23 +18,24 @@ public class ErpApplication {
                 envPath = Paths.get(".env");
             }
             if (Files.exists(envPath)) {
-                Files.lines(envPath)
-                        .map(String::trim)
-                        .filter(line -> !line.isEmpty() && !line.startsWith("#") && line.contains("="))
-                        .forEach(line -> {
-                            int eqIdx = line.indexOf('=');
-                            String key = line.substring(0, eqIdx).trim();
-                            String val = line.substring(eqIdx + 1).trim();
-                            
-                            // Remove wrapping quotes if present
-                            if (val.startsWith("\"") && val.endsWith("\"")) {
-                                val = val.substring(1, val.length() - 1);
-                            } else if (val.startsWith("'") && val.endsWith("'")) {
-                                val = val.substring(1, val.length() - 1);
-                            }
-                            
-                            System.setProperty(key, val);
-                        });
+                try (java.util.stream.Stream<String> lines = Files.lines(envPath)) {
+                    lines.map(String::trim)
+                            .filter(line -> !line.isEmpty() && !line.startsWith("#") && line.contains("="))
+                            .forEach(line -> {
+                                int eqIdx = line.indexOf('=');
+                                String key = line.substring(0, eqIdx).trim();
+                                String val = line.substring(eqIdx + 1).trim();
+                                
+                                // Remove wrapping quotes if present
+                                if (val.startsWith("\"") && val.endsWith("\"")) {
+                                    val = val.substring(1, val.length() - 1);
+                                } else if (val.startsWith("'") && val.endsWith("'")) {
+                                    val = val.substring(1, val.length() - 1);
+                                }
+                                
+                                System.setProperty(key, val);
+                            });
+                }
                 System.out.println("[ENV] Loaded environment variables from: " + envPath.toAbsolutePath());
             } else {
                 System.out.println("[ENV] No .env file found. Using default environment properties.");

@@ -729,111 +729,102 @@ public class HODController {
     }
 
     @PostMapping("/notification")
-    public ResponseEntity<?> sendHODNotification(Authentication auth, @RequestBody Map<String, String> body) {
-        String target = body.get("rollNo"); // "ALL" or specific rollNo
-        String title = body.get("title");
-        String message = body.get("message");
-        String type = body.get("type");
+    public ResponseEntity<?> sendHODNotification(Authentication auth, @RequestBody Map<String, Object> body) {
+        String title = (String) body.get("title");
+        String message = (String) body.get("message");
+        String type = (String) body.get("type");
+        String targetRollNo = (String) body.get("rollNo");
 
-        if (target == null || title == null || message == null || type == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Missing fields"));
+        if (title == null || title.isBlank() || message == null || message.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Title and message are required"));
         }
 
-        String deptId = resolveDepartmentId(auth);
+        @SuppressWarnings("unchecked")
+        List<String> targetRoles = (List<String>) body.get("targetRoles");
+        String yearFilter = (String) body.get("year");
+        String deptFilter = (String) body.get("departmentId");
+        String sectionFilter = (String) body.get("sectionId");
 
-        if (target.equalsIgnoreCase("ALL")) {
-            String deptCode = deptId;
-            Optional<Department> dOpt = departmentRepository.findById(deptId);
-            if (dOpt.isPresent()) {
-                deptCode = dOpt.get().getCode();
-            }
-            final String finalDeptCode = deptCode;
-            List<StudentProfile> students = studentProfileRepository.findAll().stream()
-                    .filter(s -> s.getDepartmentId() != null && 
-                        (s.getDepartmentId().equalsIgnoreCase(deptId) || s.getDepartmentId().equalsIgnoreCase(finalDeptCode)))
-                    .toList();
-            for (StudentProfile s : students) {
-                Notification notif = Notification.builder()
-                        .rollNo(s.getRollNo())
-                        .title(title)
-                        .message(message)
-                        .type(type)
-                        .read(false)
-                        .createdAt(LocalDateTime.now())
-                        .build();
-                notificationRepository.save(notif);
-            }
-            List<User> staff = userRepository.findAll().stream()
-                    .filter(u -> u.getRole() == Role.Faculty || u.getRole() == Role.Mentor || u.getRole() == Role.HOD)
-                    .filter(u -> isUserInDepartment(u, deptId))
-                    .toList();
-            for (User u : staff) {
-                Notification notif = Notification.builder()
-                        .rollNo(u.getEmail())
-                        .title(title)
-                        .message(message)
-                        .type(type)
-                        .read(false)
-                        .createdAt(LocalDateTime.now())
-                        .build();
-                notificationRepository.save(notif);
-            }
-        } else {
-            String targetId = null;
-            Optional<StudentProfile> profileOpt = studentProfileRepository.findByRollNoIgnoreCase(target.trim());
-            if (profileOpt.isPresent()) {
-                targetId = profileOpt.get().getRollNo();
-            } else {
-                Optional<User> userOpt = userRepository.findByEmailIgnoreCase(target.trim());
-                if (userOpt.isPresent()) {
-                    targetId = userOpt.get().getEmail();
-                } else {
-                    // Try by user ID (24-char hex or standard ID)
-                    try {
-                        Optional<User> uOpt = userRepository.findById(target.trim());
-                        if (uOpt.isPresent()) {
-                            User u = uOpt.get();
-                            if (u.getRole() == Role.Student) {
-                                Optional<StudentProfile> sp = studentProfileRepository.findByUserId(u.getId());
-                                if (sp.isPresent()) {
-                                    targetId = sp.get().getRollNo();
-                                }
-                            } else {
-                                targetId = u.getEmail();
-                            }
-                        }
-                    } catch (Exception e) {
-                        // ignore malformed ID formats
+        Set<String> recipientIds = new HashSet<>();
+
+        if (targetRoles != null && !targetRoles.isEmpty()) {
+            // Audience targeting mode
+            boolean includeStudents = targetRoles.stream().anyMatch("Student"::equalsIgnoreCase);
+            boolean includeFaculty = targetRoles.stream().anyMatch("Faculty"::equalsIgnoreCase);
+            boolean includeMentor = targetRoles.stream().anyMatch("Mentor"::equalsIgnoreCase);
+            boolean includeHOD = targetRoles.stream().anyMatch("HOD"::equalsIgnoreCase);
+
+            if (includeStudents) {
+                List<StudentProfile> profiles = studentProfileRepository.findAll();
+                for (StudentProfile p : profiles) {
+                    if (deptFilter != null && !deptFilter.isBlank() && !"ALL".equalsIgnoreCase(deptFilter)) {
+                        if (p.getDepartmentId() == null || !p.getDepartmentId().equalsIgnoreCase(deptFilter)) continue;
                     }
+                    if (sectionFilter != null && !sectionFilter.isBlank() && !"ALL".equalsIgnoreCase(sectionFilter)) {
+                        if (p.getSectionId() == null || !p.getSectionId().equalsIgnoreCase(sectionFilter)) continue;
+                    }
+                    if (yearFilter != null && !yearFilter.isBlank() && !"ALL".equalsIgnoreCase(yearFilter)) {
+                        String computedYear = p.getYear();
+                        if (computedYear == null || computedYear.isBlank()) {
+                            if (p.getBatch() != null && p.getBatch().contains("-")) {
+                                try {
+                                    int startYr = Integer.parseInt(p.getBatch().split("-")[0].trim());
+                                    int currentYr = java.time.Year.now().getValue();
+                                    int calc = (currentYr - startYr) + 1;
+                                    computedYear = String.valueOf(Math.min(Math.max(calc, 1), 4));
+                                } catch (Exception e) { computedYear = "1"; }
+                            } else { computedYear = "1"; }
+                        }
+                        if (!computedYear.equalsIgnoreCase(yearFilter)) continue;
+                    }
+                    recipientIds.add(p.getRollNo());
                 }
             }
-            if (targetId == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Target Roll No or Email " + target + " not found"));
-            }
-            Notification notif = Notification.builder()
-                    .rollNo(targetId)
-                    .title(title)
-                    .message(message)
-                    .type(type)
-                    .read(false)
-                    .createdAt(LocalDateTime.now())
-                    .build();
-            notificationRepository.save(notif);
 
-            // Also copy to sender HOD
-            String hodEmail = auth.getName();
-            Notification hodCopy = Notification.builder()
-                    .rollNo(hodEmail)
-                    .title(title)
-                    .message("[Sent to " + targetId + "] " + message)
-                    .type(type)
-                    .read(false)
-                    .createdAt(LocalDateTime.now())
-                    .build();
-            notificationRepository.save(hodCopy);
+            if (includeFaculty || includeMentor || includeHOD) {
+                List<User> staffUsers = userRepository.findAll().stream()
+                        .filter(u -> (includeFaculty && u.getRole() == Role.Faculty) ||
+                                     (includeMentor && u.getRole() == Role.Mentor) ||
+                                     (includeHOD && u.getRole() == Role.HOD))
+                        .toList();
+
+                for (User u : staffUsers) {
+                    if (deptFilter != null && !deptFilter.isBlank() && !"ALL".equalsIgnoreCase(deptFilter)) {
+                        if (u.getDepartmentIds() == null || u.getDepartmentIds().stream().noneMatch(d -> d.equalsIgnoreCase(deptFilter))) {
+                            continue;
+                        }
+                    }
+                    recipientIds.add(u.getEmail());
+                }
+            }
+        } else if ("ALL".equalsIgnoreCase(targetRollNo) || targetRollNo == null || targetRollNo.isBlank()) {
+            List<StudentProfile> profiles = studentProfileRepository.findAll();
+            for (StudentProfile p : profiles) recipientIds.add(p.getRollNo());
+            List<User> staffUsers = userRepository.findAll().stream()
+                    .filter(u -> u.getRole() == Role.HOD || u.getRole() == Role.Faculty || u.getRole() == Role.Mentor)
+                    .toList();
+            for (User u : staffUsers) recipientIds.add(u.getEmail());
+        } else {
+            // Single target rollNo or email
+            recipientIds.add(targetRollNo.trim());
         }
 
-        return ResponseEntity.ok(Map.of("message", "Notification broadcast successfully"));
+        int sentCount = 0;
+        for (String id : recipientIds) {
+            Notification notif = Notification.builder()
+                    .rollNo(id)
+                    .title(title)
+                    .message(message)
+                    .type(type != null ? type : "SYSTEM")
+                    .read(false)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            notificationRepository.save(notif);
+            sentCount++;
+        }
+
+        return ResponseEntity.ok(Map.of("message", "Notification broadcast successfully", "recipientCount", sentCount));
     }
 
     @GetMapping("/messages/conversations")

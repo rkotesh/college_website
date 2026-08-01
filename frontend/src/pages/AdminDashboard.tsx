@@ -16,17 +16,17 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({ userSession, handleLogout }: AdminDashboardProps) {
-  const getInitialTab = (): 'uploads' | 'directory' | 'otp' | 'results' | 'departments' | 'certifications' | 'notifications' => {
+  const getInitialTab = (): 'uploads' | 'directory' | 'otp' | 'results' | 'departments' | 'certifications' | 'notifications' | 'ongoing' => {
     const parts = window.location.pathname.split('/');
     const tabFromUrl = parts[parts.length - 1];
-    const validTabs = ['uploads', 'directory', 'otp', 'results', 'departments', 'certifications', 'notifications'];
+    const validTabs = ['uploads', 'directory', 'otp', 'results', 'departments', 'certifications', 'notifications', 'ongoing'];
     if (validTabs.includes(tabFromUrl)) {
       return tabFromUrl as any;
     }
     return 'directory';
   };
 
-  const [adminTab, setAdminTab] = useState<'uploads' | 'directory' | 'otp' | 'results' | 'departments' | 'certifications' | 'notifications'>(getInitialTab());
+  const [adminTab, setAdminTab] = useState<'uploads' | 'directory' | 'otp' | 'results' | 'departments' | 'certifications' | 'notifications' | 'ongoing'>(getInitialTab());
 
   // Whenever adminTab changes, update history URL and title
   useEffect(() => {
@@ -39,6 +39,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
       case 'departments': tabLabel = 'Academic Departments'; break;
       case 'certifications': tabLabel = 'External Certifications'; break;
       case 'notifications': tabLabel = 'Broadcast Notifications'; break;
+      case 'ongoing': tabLabel = 'Ongoing Activities'; break;
       default: {
         const tabStr = adminTab as string;
         tabLabel = tabStr.charAt(0).toUpperCase() + tabStr.slice(1);
@@ -124,10 +125,45 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     errorsCount: number;
   } | null>(null);
 
-  // Search filter options
+  // Search & Combinable filter options
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  // statusFilter setter kept but filtered client-side only
+  const [statusFilter] = useState<string>('ALL');
   const [deptFilter, setDeptFilter] = useState<string>('ALL');
+  
+  // Requirement 1 & 2 combinable sub-filters
+  const [yearFilter, setYearFilter] = useState<string>('ALL');
+  const [batchFilter, setBatchFilter] = useState<string>('ALL');
+  const [sectionFilter, setSectionFilter] = useState<string>('ALL');
+  const [academicStatusFilter, setAcademicStatusFilter] = useState<string>('ALL');
+
+  // Requirement 3 Student Headcount state
+  const [studentCounts, setStudentCounts] = useState<Record<string, Record<string, number>>>({});
+
+  // Requirement 4 Ongoing Activities state
+  const [ongoingActivities, setOngoingActivities] = useState<any[]>([]);
+  const [activityStatusFilter, setActivityStatusFilter] = useState<string>('ONGOING');
+  const [loadingActivities, setLoadingActivities] = useState(false);
+
+  // Requirement 5 Portfolio Modal state
+  const [portfolioModalSlug, setPortfolioModalSlug] = useState<string | null>(null);
+  const [portfolioModalData, setPortfolioModalData] = useState<any | null>(null);
+  const [loadingPortfolioModal, setLoadingPortfolioModal] = useState(false);
+
+  // Requirement 6 Audience Broadcast Notification state
+  const [notifTargetRoles, setNotifTargetRoles] = useState<string[]>(['Student']);
+  const [notifYearFilter, setNotifYearFilter] = useState<string>('ALL');
+  const [notifDeptFilter, setNotifDeptFilter] = useState<string>('ALL');
+  const [notifSectionFilter, setNotifSectionFilter] = useState<string>('ALL');
+  
+  // Broadcast History state
+  const [broadcastHistory, setBroadcastHistory] = useState<any[]>([]);
+  const [selectedBroadcast, setSelectedBroadcast] = useState<any | null>(null);
+  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+
+  // Requirement 7 Certifications Sub-filters
+  const [certYearFilter, setCertYearFilter] = useState<string>('ALL');
+  const [certSectionFilter, setCertSectionFilter] = useState<string>('ALL');
 
   // CRUD Modal States
   const [activeModal, setActiveModal] = useState<'create' | 'edit' | 'view' | null>(null);
@@ -144,6 +180,8 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
   const [formBatch, setFormBatch] = useState('');
   const [formCgpa, setFormCgpa] = useState('0.0');
   const [formSectionId, setFormSectionId] = useState('');
+  const [formYear, setFormYear] = useState('');
+  const [formAcademicStatus, setFormAcademicStatus] = useState('ACTIVE');
 
   // Results CRUD Modal States
   // const [activeResultModal, setActiveResultModal] = useState<'create' | 'edit' | null>(null);
@@ -191,30 +229,57 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     }
     try {
       setSendingNotif(true);
+      const payload: any = {
+        title: notifTitle,
+        message: notifMessage,
+        type: notifType
+      };
+
+      if (notifTarget === 'AUDIENCE') {
+        payload.targetRoles = notifTargetRoles;
+        payload.year = notifYearFilter;
+        payload.departmentId = notifDeptFilter;
+        payload.sectionId = notifSectionFilter;
+      } else {
+        payload.rollNo = notifTarget;
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/v1/admin/notification`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${userSession.accessToken}`
         },
-        body: JSON.stringify({
-          rollNo: notifTarget,
-          title: notifTitle,
-          message: notifMessage,
-          type: notifType
-        })
+        body: JSON.stringify(payload)
       });
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Failed to send notification.');
+        alert('Failed to send notification');
+        return;
       }
-      alert('Notification dispatched successfully!');
+      const data = await res.json();
+      alert(data.message);
       setNotifTitle('');
       setNotifMessage('');
-    } catch (err: any) {
-      alert(err.message);
+      fetchBroadcastHistory();
+    } catch (e) {
+      console.error(e);
+      alert('Error sending notification');
     } finally {
       setSendingNotif(false);
+    }
+  };
+
+  const fetchBroadcastHistory = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/admin/broadcasts/history`, {
+        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBroadcastHistory(data);
+      }
+    } catch (e) {
+      console.error('Error fetching broadcast history:', e);
     }
   };
 
@@ -223,7 +288,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
   const [loadingCerts, setLoadingCerts] = useState(false);
   const [certSearchQuery, setCertSearchQuery] = useState('');
   const [certDomainFilter, setCertDomainFilter] = useState('ALL');
-  const [certTypeFilterTab, setCertTypeFilterTab] = useState('ALL');
+  const [certTypeFilterTab] = useState('ALL');
   const [certStatusFilter, setCertStatusFilter] = useState('ALL');
 
   const fetchAllStudentCertifications = async () => {
@@ -288,17 +353,144 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     }
   };
 
+  const fetchUsers = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (userSearch) params.append('q', userSearch);
+      if (roleFilter !== 'ALL') params.append('role', roleFilter);
+      if (yearFilter !== 'ALL') params.append('year', yearFilter);
+      if (deptFilter !== 'ALL') params.append('departmentId', deptFilter);
+      if (batchFilter !== 'ALL') params.append('batch', batchFilter);
+      if (sectionFilter !== 'ALL') params.append('sectionId', sectionFilter);
+      if (academicStatusFilter !== 'ALL') params.append('academicStatus', academicStatusFilter);
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/admin/users?${params.toString()}`, { 
+        credentials: 'include', 
+        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
+      });
+      const data = await handleResponse(response);
+      setUsersList(data);
+    } catch (err) {
+      console.error("Failed to fetch users", err);
+    }
+  };
+
+  const fetchStudentCounts = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (academicStatusFilter !== 'ALL') params.append('academicStatus', academicStatusFilter);
+      const res = await fetch(`${API_BASE_URL}/api/v1/admin/analytics/student-counts?${params.toString()}`, {
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStudentCounts(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch student counts", err);
+    }
+  };
+
+  const fetchOngoingActivities = async () => {
+    setLoadingActivities(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/admin/ongoing-activities?filter=${activityStatusFilter}`, {
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOngoingActivities(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch ongoing activities", err);
+    } finally {
+      setLoadingActivities(false);
+    }
+  };
+
+  const openPortfolioModal = async (slugOrRollNo: string) => {
+    setPortfolioModalSlug(slugOrRollNo);
+    setLoadingPortfolioModal(true);
+    setPortfolioModalData(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/admin/students/${slugOrRollNo}/portfolio-override`, {
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPortfolioModalData(data);
+      }
+    } catch (e) {
+      console.error("Failed to load student portfolio override metadata", e);
+    } finally {
+      setLoadingPortfolioModal(false);
+    }
+  };
+
+  const handleUpdateStudentAcademicStatus = async (userId: string, newStatus: string, newYear?: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/admin/students/${userId}/academic-status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userSession.accessToken}`
+        },
+        body: JSON.stringify({ academicStatus: newStatus, year: newYear })
+      });
+      if (res.ok) {
+        fetchUsers();
+        fetchStudentCounts();
+      } else {
+        const err = await res.json();
+        alert("Failed to update status: " + (err.error || 'Unknown error'));
+      }
+    } catch (e) {
+      alert("Network error updating student status.");
+    }
+  };
+
+  const fetchAllStudentCertificationsFiltered = async () => {
+    setLoadingCerts(true);
+    try {
+      const params = new URLSearchParams();
+      if (certYearFilter !== 'ALL') params.append('year', certYearFilter);
+      if (certDomainFilter !== 'ALL') params.append('departmentId', certDomainFilter);
+      if (certSectionFilter !== 'ALL') params.append('sectionId', certSectionFilter);
+
+      const res = await fetch(`${API_BASE_URL}/api/v1/admin/certifications?${params.toString()}`, { 
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAllStudentCertifications(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch certifications", e);
+    } finally {
+      setLoadingCerts(false);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchStudentCounts();
     fetchDiagnostics();
     fetchDepartments();
+    fetchBroadcastHistory();
     if (userSession.role === 'Director') {
       fetchOtpRecords();
     }
     if (adminTab === 'certifications') {
-      fetchAllStudentCertifications();
+      fetchAllStudentCertificationsFiltered();
     }
-  }, [userSession, adminTab, userSearch]);
+    if (adminTab === 'ongoing') {
+      fetchOngoingActivities();
+    }
+  }, [userSession, adminTab, userSearch, roleFilter, yearFilter, deptFilter, batchFilter, sectionFilter, academicStatusFilter, certYearFilter, certDomainFilter, certSectionFilter, activityStatusFilter]);
 
   const logSystemAction = (message: string, type: 'info' | 'warn' | 'error' = 'info') => {
     const newLog = {
@@ -472,17 +664,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     }
   };
 
-  const fetchUsers = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/admin/users?q=${userSearch}`, { credentials: 'include', 
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      const data = await handleResponse(response);
-      setUsersList(data);
-    } catch (err) {
-      console.error("Failed to fetch users", err);
-    }
-  };
+
 
   const fetchOtpRecords = async () => {
     try {
@@ -516,6 +698,8 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     setFormBatch('');
     setFormCgpa('0.0');
     setFormSectionId('');
+    setFormYear('');
+    setFormAcademicStatus('ACTIVE');
     setActiveModal('create');
   };
 
@@ -531,6 +715,8 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     setFormBatch(u.batch || '');
     setFormCgpa(u.cgpa !== undefined ? String(u.cgpa) : '0.0');
     setFormSectionId(u.sectionId || '');
+    setFormYear(u.year || '');
+    setFormAcademicStatus(u.academicStatus || 'ACTIVE');
     setActiveModal('edit');
   };
 
@@ -583,7 +769,9 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
           roll_no: formRollNo,
           batch: formBatch,
           cgpa: formCgpa,
-          sectionId: formSectionId
+          sectionId: formSectionId,
+          year: formYear || undefined,
+          academicStatus: formAcademicStatus || 'ACTIVE'
         })
       });
       const data = await response.json();
@@ -621,7 +809,9 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
           department_code: formDeptCode,
           cgpa: formCgpa,
           batch: formBatch,
-          sectionId: formSectionId
+          sectionId: formSectionId,
+          year: formYear || undefined,
+          academicStatus: formAcademicStatus || undefined
         })
       });
       const data = await response.json();
@@ -1218,6 +1408,9 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
           </button>
 
           <div className="sidebar-section-label" style={{ marginTop: '8px' }}>Management</div>
+          <button className={`sidebar-item ${adminTab === 'ongoing' ? 'active' : ''}`} onClick={() => { setAdminTab('ongoing'); setErrorMsg(''); setUploadStatus(''); }}>
+            Ongoing Activities
+          </button>
           <button className={`sidebar-item ${adminTab === 'departments' ? 'active' : ''}`} onClick={() => { setAdminTab('departments'); setErrorMsg(''); setUploadStatus(''); }}>
             Departments &amp; Sections
           </button>
@@ -1244,7 +1437,89 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
             {errorMsg && <div className="status-msg error" style={{ marginBottom: '20px' }}>{errorMsg}</div>}
             {uploadStatus && <div className="status-msg success" style={{ marginBottom: '20px' }}>{uploadStatus}</div>}
 
-            {adminTab === 'directory' ? (
+            {adminTab === 'ongoing' ? (
+              <div style={{ marginBottom: '50px' }}>
+                <div className="page-header">
+                  <div className="page-header-left">
+                    <h2>Ongoing Activities &amp; Monitoring</h2>
+                    <p>Track active Courses, Trainings, Workshops, and Events in real time</p>
+                  </div>
+                </div>
+
+                {/* Filter chips */}
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                  {['ONGOING', 'UPCOMING', 'COMPLETED', 'ALL'].map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setActivityStatusFilter(f)}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '20px',
+                        border: '1px solid',
+                        borderColor: activityStatusFilter === f ? 'var(--accent)' : 'var(--surface-border)',
+                        background: activityStatusFilter === f ? 'var(--accent)' : 'var(--surface-raised)',
+                        color: activityStatusFilter === f ? '#FFF' : 'var(--text-secondary)',
+                        fontSize: '12px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {f === 'ONGOING' ? 'Currently Ongoing' : f === 'UPCOMING' ? ' Upcoming' : f === 'COMPLETED' ? '✓ Completed' : 'All Activities'}
+                    </button>
+                  ))}
+                </div>
+
+                {loadingActivities ? (
+                  <div style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>Loading activities...</div>
+                ) : ongoingActivities.length === 0 ? (
+                  <div style={{ padding: '30px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    No active programs found matching filter status "{activityStatusFilter}".
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '18px' }}>
+                    {ongoingActivities.map((act) => (
+                      <div key={act.id} style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '100px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            {act.category}
+                          </span>
+                          <span style={{ fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '100px', background: act.status === 'ONGOING' ? 'rgba(34, 197, 94, 0.15)' : act.status === 'UPCOMING' ? 'rgba(217, 119, 6, 0.15)' : 'var(--surface-raised)', color: act.status === 'ONGOING' ? '#22c55e' : act.status === 'UPCOMING' ? '#d97706' : 'var(--text-muted)' }}>
+                            {act.status}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>{act.title}</h3>
+                          <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>{act.description}</p>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', background: 'var(--surface-raised)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--surface-border)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>Target Audience:</span>
+                            <span style={{ fontWeight: '700', color: 'var(--accent)' }}>
+                              Dept: {act.departmentId} | Years: {act.targetYears?.join(', ')}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>Duration:</span>
+                            <span style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
+                              {act.startDate} to {act.endDate} ({act.durationDays} {act.durationDays === 1 ? 'day' : 'days'})
+                            </span>
+                          </div>
+                          {act.venue && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <span style={{ color: 'var(--text-muted)' }}>Venue:</span>
+                              <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{act.venue}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : adminTab === 'directory' ? (
             <div>
               <div className="page-header">
                 <div className="page-header-left">
@@ -1280,38 +1555,61 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                 </div>
               </div>
 
-              {/* Analytics charts */}
-              <div className="charts-grid">
-                <div className="chart-card">
-                  <div className="chart-title">Department Enrollment</div>
-                  {departments.map((d) => {
-                    const count = usersList.filter(u => u.departmentIds?.includes(d.code)).length;
-                    const pct = Math.round((count / Math.max(1, usersList.length)) * 100) || 0;
-                    return (
-                      <div className="bar-row" key={d.code}>
-                        <div className="bar-label">{d.code}</div>
-                        <div className="bar-track"><div className="bar-fill" style={{ width: `${pct}%` }} /></div>
-                        <div className="bar-count">{count}</div>
+              {/* Requirement 3: Department x Year Headcount Matrix (Visible ONLY under Students tab) */}
+              {roleFilter === 'Student' && (
+                <div className="charts-grid" style={{ marginBottom: '24px' }}>
+                  <div className="chart-card" style={{ gridColumn: 'span 2' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                      <div>
+                        <h3 className="chart-title" style={{ margin: 0 }}>Student Headcount Matrix</h3>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Distribution of scholars across Departments &amp; Academic Years (1st – 4th)</span>
                       </div>
-                    );
-                  })}
-                </div>
-                <div className="chart-card">
-                  <div className="chart-title">CGPA Score Tiers</div>
-                  {[
-                    { label: '9–10', pct: 35, cls: 'tier-a' },
-                    { label: '8–9',  pct: 45, cls: 'tier-b' },
-                    { label: '7–8',  pct: 15, cls: 'tier-c' },
-                    { label: '<7',   pct: 5,  cls: 'tier-d' },
-                  ].map(t => (
-                    <div className="bar-row" key={t.label}>
-                      <div className="bar-label">{t.label}</div>
-                      <div className="bar-track"><div className={`bar-fill ${t.cls}`} style={{ width: `${t.pct}%` }} /></div>
-                      <div className="bar-count">{t.pct}%</div>
+                      {academicStatusFilter !== 'ALL' && (
+                        <span className="status-badge" style={{ background: 'rgba(217, 119, 6, 0.15)', color: '#d97706', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' }}>
+                          Filter: {academicStatusFilter}
+                        </span>
+                      )}
                     </div>
-                  ))}
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                      {departments.length === 0 ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Loading department headcounts...</div>
+                      ) : (
+                        departments.map(d => {
+                          const counts = studentCounts[d.code] || studentCounts[d.code.toUpperCase()] || { "1": 0, "2": 0, "3": 0, "4": 0 };
+                          const totalDept = (counts["1"] || 0) + (counts["2"] || 0) + (counts["3"] || 0) + (counts["4"] || 0);
+                          return (
+                            <div key={d.code} style={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '12px 14px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--surface-border)', paddingBottom: '6px' }}>
+                                <span style={{ fontWeight: '800', color: 'var(--accent)', fontSize: '13px' }}>{d.code} ({d.name})</span>
+                                <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)' }}>Total: {totalDept}</span>
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '11.5px' }}>
+                                <div style={{ background: 'var(--surface-overlay)', padding: '4px 8px', borderRadius: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span style={{ color: 'var(--text-secondary)' }}>Yr 1:</span>
+                                  <strong style={{ color: 'var(--text-primary)' }}>{counts["1"] || 0}</strong>
+                                </div>
+                                <div style={{ background: 'var(--surface-overlay)', padding: '4px 8px', borderRadius: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span style={{ color: 'var(--text-secondary)' }}>Yr 2:</span>
+                                  <strong style={{ color: 'var(--text-primary)' }}>{counts["2"] || 0}</strong>
+                                </div>
+                                <div style={{ background: 'var(--surface-overlay)', padding: '4px 8px', borderRadius: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span style={{ color: 'var(--text-secondary)' }}>Yr 3:</span>
+                                  <strong style={{ color: 'var(--text-primary)' }}>{counts["3"] || 0}</strong>
+                                </div>
+                                <div style={{ background: 'var(--surface-overlay)', padding: '4px 8px', borderRadius: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span style={{ color: 'var(--text-secondary)' }}>Yr 4:</span>
+                                  <strong style={{ color: 'var(--text-primary)' }}>{counts["4"] || 0}</strong>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {selectedUserIds.length > 0 && (
                 <div className="bulk-action-bar">
@@ -1325,57 +1623,111 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                 </div>
               )}
 
-              <div className="toolbar-row">
-                <div className="search-input-wrapper" style={{ position: 'relative' }}>
-                  <input 
-                    type="text" 
-                    className="search-input" 
-                    style={{ paddingLeft: '14px', paddingRight: '36px' }} 
-                    placeholder="Search users by name, email, or role..." 
-                    value={userSearch} 
-                    onChange={(e) => setUserSearch(e.target.value)} 
-                  />
-                  {userSearch && (
+              {/* Requirement 1 & 2: Sub-section Combinable Filter Bar */}
+              <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '16px 20px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {roleFilter === 'Student' ? 'Student Multi-Filters' : roleFilter === 'ALL' ? 'Directory Search & Filters' : `${roleFilter} Staff Filters`}
+                  </span>
+                  
+                  {(yearFilter !== 'ALL' || deptFilter !== 'ALL' || batchFilter !== 'ALL' || sectionFilter !== 'ALL' || academicStatusFilter !== 'ALL' || userSearch) && (
                     <button 
                       type="button" 
-                      onClick={() => setUserSearch('')} 
-                      style={{ 
-                        position: 'absolute', 
-                        right: '12px', 
-                        top: '50%', 
-                        transform: 'translateY(-50%)', 
-                        background: 'none', 
-                        border: 'none', 
-                        color: 'var(--text-muted)', 
-                        cursor: 'pointer', 
-                        fontSize: '14px', 
-                        fontWeight: 'bold',
-                        padding: '4px'
-                      }}
+                      onClick={() => {
+                        setYearFilter('ALL');
+                        setDeptFilter('ALL');
+                        setBatchFilter('ALL');
+                        setSectionFilter('ALL');
+                        setAcademicStatusFilter('ALL');
+                        setUserSearch('');
+                      }} 
+                      style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '4px 12px', borderRadius: '6px', fontSize: '11.5px', fontWeight: '700', cursor: 'pointer' }}
                     >
-                      ✕
+                      Clear all filters
                     </button>
                   )}
                 </div>
-                <select className="filter-select" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-                  <option value="ALL">All Roles</option>
-                  <option value="Student">Student</option>
-                  <option value="Faculty">Faculty</option>
-                  <option value="Mentor">Mentor</option>
-                  <option value="HOD">HOD</option>
-                  <option value="Director">Director</option>
-                </select>
-                <select className="filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                  <option value="ALL">All Status</option>
-                  <option value="ACTIVE">Active</option>
-                  <option value="LOCKED">Locked</option>
-                </select>
-                <select className="filter-select" value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
-                  <option value="ALL">All Depts</option>
-                  {departments.map(d => (
-                    <option key={d.code} value={d.code}>{d.code}</option>
-                  ))}
-                </select>
+
+                <div className="toolbar-row" style={{ flexWrap: 'wrap', gap: '10px' }}>
+                  <div className="search-input-wrapper" style={{ position: 'relative', flex: '1 1 200px' }}>
+                    <input 
+                      type="text" 
+                      className="search-input" 
+                      style={{ paddingLeft: '14px', paddingRight: '36px', width: '100%' }} 
+                      placeholder="Search name, email, roll no..." 
+                      value={userSearch} 
+                      onChange={(e) => setUserSearch(e.target.value)} 
+                    />
+                    {userSearch && (
+                      <button 
+                        type="button" 
+                        onClick={() => setUserSearch('')} 
+                        style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold' }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <select className="filter-select" value={deptFilter} onChange={(e) => { setDeptFilter(e.target.value); setSectionFilter('ALL'); }}>
+                    <option value="ALL">All Departments</option>
+                    {departments.map(d => (
+                      <option key={d.code} value={d.code}>{d.code} - {d.name}</option>
+                    ))}
+                  </select>
+
+                  {/* Student-specific filters: Year, Section, Batch, Academic Status */}
+                  {(roleFilter === 'Student' || roleFilter === 'ALL') && (
+                    <>
+                      <select className="filter-select" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
+                        <option value="ALL">All Academic Years</option>
+                        <option value="1">1st Year</option>
+                        <option value="2">2nd Year</option>
+                        <option value="3">3rd Year</option>
+                        <option value="4">4th Year</option>
+                      </select>
+
+                      <select className="filter-select" value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)}>
+                        <option value="ALL">All Sections</option>
+                        {deptFilter !== 'ALL' && departments.find(d => d.code === deptFilter)?.sections ? (
+                          departments.find(d => d.code === deptFilter)?.sections.map(sec => (
+                            <option key={sec} value={sec}>Section {sec}</option>
+                          ))
+                        ) : (
+                          ['A', 'B', 'C', 'D'].map(sec => <option key={sec} value={sec}>Section {sec}</option>)
+                        )}
+                      </select>
+
+                      <select className="filter-select" value={batchFilter} onChange={(e) => setBatchFilter(e.target.value)}>
+                        <option value="ALL">All Batches</option>
+                        <option value="2021-2025">2021-2025</option>
+                        <option value="2022-2026">2022-2026</option>
+                        <option value="2023-2027">2023-2027</option>
+                        <option value="2024-2028">2024-2028</option>
+                      </select>
+
+                      {/* Requirement 2: Dropout / Detained Filters */}
+                      <select className="filter-select" value={academicStatusFilter} onChange={(e) => setAcademicStatusFilter(e.target.value)} style={{ fontWeight: '700', color: academicStatusFilter === 'DROPOUT' ? '#ef4444' : academicStatusFilter === 'DETAINED' ? '#d97706' : 'inherit' }}>
+                        <option value="ALL">All Academic Statuses</option>
+                        <option value="ACTIVE">Active Scholars</option>
+                        <option value="DROPOUT">Dropout Scholars</option>
+                        <option value="DETAINED">Detained Scholars</option>
+                      </select>
+                    </>
+                  )}
+                </div>
+
+                {/* Active Filter Chips */}
+                {(yearFilter !== 'ALL' || deptFilter !== 'ALL' || batchFilter !== 'ALL' || sectionFilter !== 'ALL' || academicStatusFilter !== 'ALL') && (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', borderTop: '1px solid var(--surface-border)', paddingTop: '10px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '700' }}>ACTIVE FILTERS:</span>
+                    {deptFilter !== 'ALL' && <span className="status-badge" style={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', padding: '2px 8px', borderRadius: '100px', fontSize: '11px' }}>Dept: {deptFilter} <button onClick={() => setDeptFilter('ALL')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', marginLeft: '4px' }}>✕</button></span>}
+                    {yearFilter !== 'ALL' && <span className="status-badge" style={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', padding: '2px 8px', borderRadius: '100px', fontSize: '11px' }}>Year: {yearFilter} <button onClick={() => setYearFilter('ALL')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', marginLeft: '4px' }}>✕</button></span>}
+                    {sectionFilter !== 'ALL' && <span className="status-badge" style={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', padding: '2px 8px', borderRadius: '100px', fontSize: '11px' }}>Section: {sectionFilter} <button onClick={() => setSectionFilter('ALL')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', marginLeft: '4px' }}>✕</button></span>}
+                    {batchFilter !== 'ALL' && <span className="status-badge" style={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', padding: '2px 8px', borderRadius: '100px', fontSize: '11px' }}>Batch: {batchFilter} <button onClick={() => setBatchFilter('ALL')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', marginLeft: '4px' }}>✕</button></span>}
+                    {academicStatusFilter !== 'ALL' && <span className="status-badge" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '2px 8px', borderRadius: '100px', fontSize: '11px', fontWeight: '700' }}>Status: {academicStatusFilter} <button onClick={() => setAcademicStatusFilter('ALL')} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', marginLeft: '4px' }}>✕</button></span>}
+                  </div>
+                )}
               </div>
 
               {/* Role splits as tabs at the top of the table data */}
@@ -1481,15 +1833,46 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                           <span className={`role-badge ${u.role}`}>{u.role}</span>
                         </td>
                         <td>
-                          <span className={`status-pill ${u.isActive ? 'active' : 'inactive'}`}>
-                            <span className="status-dot" />
-                            {u.isActive ? 'Active' : 'Locked'}
-                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <span className={`status-pill ${u.isActive ? 'active' : 'inactive'}`}>
+                              <span className="status-dot" />
+                              {u.isActive ? 'Active' : 'Locked'}
+                            </span>
+                            {u.role === 'Student' && (
+                              <select 
+                                value={u.academicStatus || 'ACTIVE'} 
+                                onChange={(e) => handleUpdateStudentAcademicStatus(u.id, e.target.value)}
+                                style={{ 
+                                  fontSize: '11px', 
+                                  fontWeight: '700', 
+                                  padding: '2px 4px', 
+                                  borderRadius: '4px',
+                                  border: '1px solid var(--surface-border)',
+                                  background: u.academicStatus === 'DROPOUT' ? 'rgba(239, 68, 68, 0.15)' : u.academicStatus === 'DETAINED' ? 'rgba(217, 119, 6, 0.15)' : 'var(--surface-raised)',
+                                  color: u.academicStatus === 'DROPOUT' ? '#ef4444' : u.academicStatus === 'DETAINED' ? '#d97706' : 'var(--text-secondary)',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <option value="ACTIVE">ACTIVE</option>
+                                <option value="DROPOUT">DROPOUT</option>
+                                <option value="DETAINED">DETAINED</option>
+                              </select>
+                            )}
+                          </div>
                         </td>
                         <td>{u.departmentIds?.join(', ') || 'General / None'}</td>
                         <td>
                           <div style={{ display: 'flex', gap: '7px', flexWrap: 'wrap' }}>
                             <button className="btn-row-action" onClick={() => openViewModal(u)}>View</button>
+                            {u.role === 'Student' && (
+                              <button 
+                                className="btn-row-action" 
+                                style={{ color: 'var(--accent)', fontWeight: '700' }}
+                                onClick={() => openPortfolioModal(u.slug || u.rollNo || u.id)}
+                              >
+                                Portfolio ↗
+                              </button>
+                            )}
                             <button className="btn-row-action" onClick={() => openEditModal(u)}>Edit</button>
                             <button className="btn-row-action" onClick={() => handleToggleUser(u.id)}>{u.isActive ? 'Lock' : 'Unlock'}</button>
                             <button className="btn-row-action" onClick={() => handleDeleteUser(u.id)} style={{ color: 'var(--danger)' }}>Delete</button>
@@ -1666,56 +2049,71 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
               </div>
 
               {/* Filters Panel */}
-              <div className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px', background: 'var(--surface-overlay)', padding: '16px', borderRadius: '8px', border: '1px solid var(--surface-border)' }}>
-                <div className="stat-card" style={{ padding: '0', background: 'transparent', border: 'none', boxShadow: 'none' }}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Search Certificates</label>
+              <div className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '22px 18px', marginBottom: '24px', background: 'var(--surface-overlay)', padding: '20px 22px', borderRadius: '12px', border: '1px solid var(--surface-border)' }}>
+                <div className="stat-card" style={{ padding: '5px', background: 'transparent', border: 'none', boxShadow: 'none' }}>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.5px', marginBottom: '5px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Search Certificates</label>
                   <input
                     type="text"
                     className="ds-input"
-                    placeholder="Search title, roll number, student name..."
+                    placeholder="Search title, roll number, student..."
                     value={certSearchQuery}
                     onChange={(e) => setCertSearchQuery(e.target.value)}
                     style={{ width: '100%', padding: '10px', fontSize: '13px' }}
                   />
                 </div>
 
-                <div className="stat-card" style={{ padding: '0', background: 'transparent', border: 'none', boxShadow: 'none', marginTop: '10px', marginBottom: '10px' }}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Filter by Domain (Branch)</label>
+                <div className="stat-card" style={{ padding: '5px', background: 'transparent', border: 'none', boxShadow: 'none' }}>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.5px', marginBottom: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Academic Year</label>
+                  <select
+                    className="ds-input"
+                    value={certYearFilter}
+                    onChange={(e) => setCertYearFilter(e.target.value)}
+                    style={{ width: '100%', padding: '10px', fontSize: '13px' }}
+                  >
+                    <option value="ALL">All Years</option>
+                    <option value="1">1st Year</option>
+                    <option value="2">2nd Year</option>
+                    <option value="3">3rd Year</option>
+                    <option value="4">4th Year</option>
+                  </select>
+                </div>
+
+                <div className="stat-card" style={{ padding: '5px', background: 'transparent', border: 'none', boxShadow: 'none' }}>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.5px', marginBottom: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Department</label>
                   <select
                     className="ds-input"
                     value={certDomainFilter}
-                    onChange={(e) => setCertDomainFilter(e.target.value)}
+                    onChange={(e) => { setCertDomainFilter(e.target.value); setCertSectionFilter('ALL'); }}
                     style={{ width: '100%', padding: '10px', fontSize: '13px' }}
                   >
-                    <option value="ALL">All Domains / Branches</option>
-                    <option value="CSE">CSE</option>
-                    <option value="AIML">AIML</option>
-                    <option value="ECE">ECE</option>
-                    <option value="EEE">EEE</option>
-                    <option value="MECH">MECH</option>
-                    <option value="CIVIL">CIVIL</option>
+                    <option value="ALL">All Departments</option>
+                    {departments.map(d => (
+                      <option key={d.code} value={d.code}>{d.code}</option>
+                    ))}
                   </select>
                 </div>
 
-                <div className="stat-card" style={{ padding: '0', background: 'transparent', border: 'none', boxShadow: 'none', marginTop: '10px', marginBottom: '10px'  }}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Filter by Type</label>
+                <div className="stat-card" style={{ padding: '5px', background: 'transparent', border: 'none', boxShadow: 'none' }}>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.5px', marginBottom: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Section</label>
                   <select
                     className="ds-input"
-                    value={certTypeFilterTab}
-                    onChange={(e) => setCertTypeFilterTab(e.target.value)}
+                    value={certSectionFilter}
+                    onChange={(e) => setCertSectionFilter(e.target.value)}
                     style={{ width: '100%', padding: '10px', fontSize: '13px' }}
                   >
-                    <option value="ALL">All Types</option>
-                    <option value="Technical">Technical</option>
-                    <option value="Soft Skills">Soft Skills</option>
-                    <option value="Workshop / Seminar">Workshop / Seminar</option>
-                    <option value="Award / Achievement">Award / Achievement</option>
-                    <option value="Other">Other</option>
+                    <option value="ALL">All Sections</option>
+                    {certDomainFilter !== 'ALL' && departments.find(d => d.code === certDomainFilter)?.sections ? (
+                      departments.find(d => d.code === certDomainFilter)?.sections.map(sec => (
+                        <option key={sec} value={sec}>Section {sec}</option>
+                      ))
+                    ) : (
+                      ['A', 'B', 'C', 'D'].map(sec => <option key={sec} value={sec}>Section {sec}</option>)
+                    )}
                   </select>
                 </div>
 
-                <div className="stat-card" style={{ padding: '0', background: 'transparent', border: 'none', boxShadow: 'none' }}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', marginBottom: '6px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Verification Status</label>
+                <div className="stat-card" style={{ padding: '5px', background: 'transparent', border: 'none', boxShadow: 'none' }}>
+                  <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', letterSpacing: '0.5px', marginBottom: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Verification Status</label>
                   <select
                     className="ds-input"
                     value={certStatusFilter}
@@ -1878,24 +2276,101 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                 </div>
               </div>
 
-              <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '24px', maxWidth: '640px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px', alignItems: 'start' }}>
+                <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '24px' }}>
                 <form onSubmit={handleSendAdminNotification} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Target Audience</label>
-                    <select className="ds-input" value={notifTarget === 'ALL' ? 'ALL' : 'SPECIFIC'} onChange={e => setNotifTarget(e.target.value === 'ALL' ? 'ALL' : '')} style={{ padding: '10px', fontSize: '13px' }}>
-                      <option value="ALL">Broadcast to All Students</option>
-                      <option value="SPECIFIC">Target Specific Roll Number</option>
+                    <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Audience Mode</label>
+                    <select className="ds-input" value={notifTarget === 'AUDIENCE' ? 'AUDIENCE' : notifTarget === 'ALL' ? 'ALL' : 'SPECIFIC'} onChange={e => setNotifTarget(e.target.value === 'AUDIENCE' ? 'AUDIENCE' : e.target.value === 'ALL' ? 'ALL' : '')} style={{ padding: '10px', fontSize: '13px' }}>
+                      <option value="AUDIENCE">Targeted Audience (Roles, Dept, Year, Section)</option>
+                      <option value="ALL">Global Broadcast (All Students &amp; Staff)</option>
+                      <option value="SPECIFIC">Single Roll No / Staff Email</option>
                     </select>
                   </div>
 
-                  {notifTarget !== 'ALL' && (
+                  {notifTarget === 'AUDIENCE' && (
+                    <div style={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', marginBottom: '8px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Target Roles</label>
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                          {['Student', 'Faculty', 'Mentor', 'HOD'].map(role => {
+                            const isChecked = notifTargetRoles.includes(role);
+                            return (
+                              <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: isChecked ? '700' : '500', color: isChecked ? 'var(--accent)' : 'var(--text-primary)' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) setNotifTargetRoles([...notifTargetRoles, role]);
+                                    else setNotifTargetRoles(notifTargetRoles.filter(r => r !== role));
+                                  }}
+                                />
+                                {role}s
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)' }}>Department</label>
+                          <select className="ds-input" value={notifDeptFilter} onChange={e => setNotifDeptFilter(e.target.value)} style={{ padding: '8px', fontSize: '12.5px' }}>
+                            <option value="ALL">All Departments</option>
+                            {departments.map(d => (
+                              <option key={d.code} value={d.code}>{d.code}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {notifTargetRoles.includes('Student') && (
+                          <>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)' }}>Academic Year (Students)</label>
+                              <select className="ds-input" value={notifYearFilter} onChange={e => setNotifYearFilter(e.target.value)} style={{ padding: '8px', fontSize: '12.5px' }}>
+                                <option value="ALL">All Academic Years</option>
+                                <option value="1">1st Year</option>
+                                <option value="2">2nd Year</option>
+                                <option value="3">3rd Year</option>
+                                <option value="4">4th Year</option>
+                              </select>
+                            </div>
+
+                            <div style={{ gridColumn: 'span 2' }}>
+                              <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)' }}>Section (Students)</label>
+                              <select className="ds-input" value={notifSectionFilter} onChange={e => setNotifSectionFilter(e.target.value)} style={{ padding: '8px', fontSize: '12.5px' }}>
+                                <option value="ALL">All Sections</option>
+                                {notifDeptFilter !== 'ALL' && departments.find(d => d.code === notifDeptFilter)?.sections ? (
+                                  departments.find(d => d.code === notifDeptFilter)?.sections.map(sec => (
+                                    <option key={sec} value={sec}>Section {sec}</option>
+                                  ))
+                                ) : (
+                                  ['A', 'B', 'C', 'D'].map(sec => <option key={sec} value={sec}>Section {sec}</option>)
+                                )}
+                              </select>
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Recipient summary badge */}
+                      <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '10px 14px', borderRadius: '6px', fontSize: '12px', color: '#38bdf8', fontWeight: '600' }}>
+                        Broadcast Scope Summary: Targeting <strong>{notifTargetRoles.join(', ') || 'No roles selected'}</strong>
+                        {notifDeptFilter !== 'ALL' ? ` in ${notifDeptFilter}` : ' across all departments'}
+                        {notifTargetRoles.includes('Student') && notifYearFilter !== 'ALL' ? ` (Year ${notifYearFilter})` : ''}
+                        {notifTargetRoles.includes('Student') && notifSectionFilter !== 'ALL' ? ` (Section ${notifSectionFilter})` : ''}.
+                      </div>
+                    </div>
+                  )}
+
+                  {notifTarget !== 'ALL' && notifTarget !== 'AUDIENCE' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Student Roll Number</label>
+                      <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Target Roll No / Staff Email</label>
                       <input 
                         type="text" 
                         className="ds-input" 
-                        placeholder="Enter Student Roll Number (e.g. Y23CSM051)" 
+                        placeholder="Enter Student Roll No or Staff Email (e.g. Y23CSM051)" 
                         value={notifTarget} 
                         onChange={e => setNotifTarget(e.target.value)} 
                         style={{ padding: '10px', fontSize: '13px' }}
@@ -1944,8 +2419,39 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                     {sendingNotif ? 'Broadcasting...' : 'Broadcast Notification Now'}
                   </button>
                 </form>
+                </div>
+
+                <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '24px' }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px' }}>Broadcast History</h3>
+                {broadcastHistory.length === 0 ? (
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>No broadcasts sent yet.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {broadcastHistory.map((log: any) => (
+                      <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--surface-raised)', borderRadius: '6px', border: '1px solid var(--surface-border)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{log.title}</span>
+                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            Sent by {log.senderName} • {new Date(log.createdAt).toLocaleString()} • {log.recipientCount} recipients
+                          </span>
+                        </div>
+                        <button 
+                          className="btn-row-action" 
+                          style={{ fontSize: '12px', padding: '6px 12px' }}
+                          onClick={() => {
+                            setSelectedBroadcast(log);
+                            setShowBroadcastModal(true);
+                          }}
+                        >
+                          View Message
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                  </div>
+                </div>
               </div>
-            </div>
           ) : (
             <div>
               <div className="admin-view-header">
@@ -2469,58 +2975,91 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                 </div>
 
                 {formRole === 'Student' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', borderTop: '1px solid var(--surface-raised)', paddingTop: '15px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                      <label style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)' }}>Academic Batch</label>
-                      <input 
-                        type="text"
-                        className="form-input"
-                        style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', marginLeft: '3px',
-    paddingLeft: '6px' }}
-                        value={formBatch}
-                        onChange={(e) => setFormBatch(e.target.value)}
-                        placeholder="e.g. 2024-2028"
-                      />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                      <label style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)' }}>Cumulative CGPA</label>
-                      <input 
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="10"
-                        className="form-input"
-                        style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', marginLeft: '3px',
-    paddingLeft: '6px' }}
-                        value={formCgpa}
-                        onChange={(e) => setFormCgpa(e.target.value)}
-                        placeholder="e.g. 8.50"
-                      />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                      <label style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)' }}>Section ID</label>
-                      {formDeptCode && departments.find(d => d.code === formDeptCode)?.sections?.length ? (
-                        <select
-                          className="form-input"
-                          style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', padding: '10px' }}
-                          value={formSectionId}
-                          onChange={(e) => setFormSectionId(e.target.value)}
-                        >
-                          {departments.find(d => d.code === formDeptCode)?.sections.map(sec => (
-                            <option key={sec} value={sec}>{sec}</option>
-                          ))}
-                        </select>
-                      ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid var(--surface-raised)', paddingTop: '15px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <label style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)' }}>Academic Batch</label>
                         <input 
                           type="text"
                           className="form-input"
-                          style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', marginLeft: '1px',
-    paddingLeft: '2px' }}
-                          value={formSectionId}
-                          onChange={(e) => setFormSectionId(e.target.value)}
-                          placeholder="e.g. A"
+                          style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', marginLeft: '3px',
+    paddingLeft: '6px' }}
+                          value={formBatch}
+                          onChange={(e) => setFormBatch(e.target.value)}
+                          placeholder="e.g. 2024-2028"
                         />
-                      )}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <label style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)' }}>Cumulative CGPA</label>
+                        <input 
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="10"
+                          className="form-input"
+                          style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', marginLeft: '3px',
+    paddingLeft: '6px' }}
+                          value={formCgpa}
+                          onChange={(e) => setFormCgpa(e.target.value)}
+                          placeholder="e.g. 8.50"
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <label style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)' }}>Section ID</label>
+                        {formDeptCode && departments.find(d => d.code === formDeptCode)?.sections?.length ? (
+                          <select
+                            className="form-input"
+                            style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', padding: '10px' }}
+                            value={formSectionId}
+                            onChange={(e) => setFormSectionId(e.target.value)}
+                          >
+                            {departments.find(d => d.code === formDeptCode)?.sections.map(sec => (
+                              <option key={sec} value={sec}>{sec}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input 
+                            type="text"
+                            className="form-input"
+                            style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', marginLeft: '1px',
+    paddingLeft: '2px' }}
+                            value={formSectionId}
+                            onChange={(e) => setFormSectionId(e.target.value)}
+                            placeholder="e.g. A"
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <label style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)' }}>Academic Year</label>
+                        <select
+                          className="form-input"
+                          style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', padding: '10px' }}
+                          value={formYear}
+                          onChange={(e) => setFormYear(e.target.value)}
+                        >
+                          <option value="">Derive from Batch</option>
+                          <option value="1">1st Year</option>
+                          <option value="2">2nd Year</option>
+                          <option value="3">3rd Year</option>
+                          <option value="4">4th Year</option>
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <label style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)' }}>Academic Status</label>
+                        <select
+                          className="form-input"
+                          style={{ background: 'var(--surface-base)', color: 'var(--text-primary)', border: '1px solid var(--card-border)', padding: '10px' }}
+                          value={formAcademicStatus}
+                          onChange={(e) => setFormAcademicStatus(e.target.value)}
+                        >
+                          <option value="ACTIVE">Active</option>
+                          <option value="DROPOUT">Dropout</option>
+                          <option value="DETAINED">Detained</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2652,6 +3191,142 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Requirement 5: Student Public Portfolio Quick View Modal Overlay */}
+      {portfolioModalSlug && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(8px)',
+          zIndex: 120,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'var(--surface-overlay)',
+            color: 'var(--text-primary)',
+            borderRadius: '16px',
+            width: '96vw',
+            maxWidth: '1580px',
+            height: '93vh',
+            boxShadow: '0 25px 50px rgba(0,0,0,0.4)',
+            border: '1px solid var(--card-border)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 24px', borderBottom: '1px solid var(--surface-border)', background: 'var(--surface-raised)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800' }}>Student Public Portfolio Preview</h3>
+                {portfolioModalData && (
+                  portfolioModalData.isPublic ? (
+                    <span style={{ fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '100px', background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                      Public Portfolio
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '100px', background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                      Not Public — Admin Override Mode
+                    </span>
+                  )
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <a
+                  href={`/portfolio/${portfolioModalSlug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-action primary"
+                  style={{ fontSize: '12px', padding: '6px 14px', textDecoration: 'none' }}
+                >
+                  Open in New Tab ↗
+                </a>
+                <button
+                  type="button"
+                  onClick={() => { setPortfolioModalSlug(null); setPortfolioModalData(null); }}
+                  style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', color: 'var(--text-muted)' }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, position: 'relative', background: '#eef2f6' }}>
+              {loadingPortfolioModal ? (
+                <div style={{ display: 'flex', height: '100%', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)' }}>
+                  Loading portfolio preview...
+                </div>
+              ) : (
+                <iframe
+                  src={`/portfolio/${portfolioModalSlug}`}
+                  title="Student Portfolio Preview"
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBroadcastModal && selectedBroadcast && (
+        <div className="ds-modal-overlay" onClick={() => setShowBroadcastModal(false)}>
+          <div className="ds-modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%' }}>
+            <div className="ds-modal-header">
+              <h2>Broadcast Message Details</h2>
+              <button className="ds-modal-close" onClick={() => setShowBroadcastModal(false)}>&times;</button>
+            </div>
+            <div className="ds-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Title</strong>
+                <div style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>{selectedBroadcast.title}</div>
+              </div>
+              <div style={{ display: 'flex', gap: '24px' }}>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Sent By</strong>
+                  <div style={{ fontSize: '14px' }}>{selectedBroadcast.senderName} ({selectedBroadcast.senderRole})</div>
+                </div>
+                <div>
+                  <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Date</strong>
+                  <div style={{ fontSize: '14px' }}>{new Date(selectedBroadcast.createdAt).toLocaleString()}</div>
+                </div>
+              </div>
+              <div>
+                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Target Scope</strong>
+                <div style={{ fontSize: '13px', background: 'var(--surface-raised)', padding: '10px', borderRadius: '6px', border: '1px solid var(--surface-border)' }}>
+                  {selectedBroadcast.specificTarget ? (
+                    <span>Specific Target: <strong>{selectedBroadcast.specificTarget}</strong></span>
+                  ) : (
+                    <>
+                      <span>Roles: <strong>{selectedBroadcast.targetRoles?.join(', ') || 'ALL'}</strong></span><br/>
+                      <span>Dept: <strong>{selectedBroadcast.targetDepartment || 'ALL'}</strong></span><br/>
+                      <span>Year: <strong>{selectedBroadcast.targetYear || 'ALL'}</strong></span><br/>
+                      <span>Section: <strong>{selectedBroadcast.targetSection || 'ALL'}</strong></span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div>
+                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Recipients Delivered To</strong>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--accent)' }}>{selectedBroadcast.recipientCount} users</div>
+              </div>
+              <div>
+                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Message</strong>
+                <div style={{ fontSize: '14px', background: 'var(--surface-overlay)', padding: '16px', borderRadius: '6px', border: '1px solid var(--surface-border)', whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>
+                  {selectedBroadcast.message}
+                </div>
+              </div>
+            </div>
+            <div className="ds-modal-footer">
+              <button className="ds-btn ds-btn-outline" onClick={() => setShowBroadcastModal(false)}>Close</button>
+            </div>
           </div>
         </div>
       )}

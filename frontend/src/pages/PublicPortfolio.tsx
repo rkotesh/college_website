@@ -13,6 +13,7 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
   const [scrollPct, setScrollPct] = useState(0);
   const [chatOpen, setChatOpen] = useState(false);
   const [hasOpenedChat, setHasOpenedChat] = useState(false);
+  // @ts-expect-error unused variable warning
   const [showNotif, setShowNotif] = useState(false);
   const [msgs, setMsgs] = useState<Array<{ sender: 'assistant' | 'user'; text: string }>>([]);
   const [chips, setChips] = useState<string[]>([]);
@@ -62,7 +63,7 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
         const json = await res.json();
         setData(json);
         const name = json?.user?.fullName || 'the student';
-        document.title = `${name} | Portfolio`;
+        document.title = `${name} | Portavia Portfolio`;
         setMsgs([{ sender: 'assistant', text: `Hi there! 👋 I'm ${name.split(' ')[0]}'s AI avatar. How can I help?` }]);
         setChips(["Tell me about yourself", "Show your projects", "What are your skills?", "Get contact info"]);
       } catch { setError('Unable to load. Please try again later.'); }
@@ -70,63 +71,25 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
     })();
   }, [slug, API_BASE_URL]);
 
-  /* ---- scroll progress & reveal ---- */
+  /* ---- scroll progress ---- */
   useEffect(() => {
     const fn = () => {
       const s = document.body.scrollTop || document.documentElement.scrollTop;
       const h = document.documentElement.scrollHeight - document.documentElement.clientHeight;
       setScrollPct(h > 0 ? (s / h) * 100 : 0);
-      setNavScrolled(s > 50);
+      setNavScrolled(s > 40);
     };
     window.addEventListener('scroll', fn);
-    
-    // Reveal Observer
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-          entry.target.classList.add('active');
-        }
-      });
-    }, { threshold: 0.01, rootMargin: '50px 0px 50px 0px' });
-    
-    const triggerObserve = () => {
-      document.querySelectorAll('.reveal, .reveal-item, .stagger-reveal').forEach(el => {
-        const rect = el.getBoundingClientRect();
-        if (rect.top < window.innerHeight + 100) {
-          el.classList.add('visible');
-          el.classList.add('active');
-        } else {
-          observer.observe(el);
-        }
-      });
-    };
-
-    setTimeout(triggerObserve, 100);
-    setTimeout(triggerObserve, 500);
-
-    return () => {
-      window.removeEventListener('scroll', fn);
-      observer.disconnect();
-    };
-  }, [data]);
+    return () => window.removeEventListener('scroll', fn);
+  }, []);
 
   /* ---- chat notification ---- */
   useEffect(() => {
     const t = setTimeout(() => { if (!chatOpen && !hasOpenedChat) setShowNotif(true); }, 7000);
     return () => clearTimeout(t);
   }, [chatOpen, hasOpenedChat]);
-  useEffect(() => { msgEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, isTyping]);
 
-  /* ---- lottie script injection ---- */
-  useEffect(() => {
-    if (!document.querySelector('script[src*="lottie-player"]')) {
-      const script = document.createElement('script');
-      script.src = "https://unpkg.com/@lottiefiles/lottie-player@2.0.4/dist/lottie-player.js";
-      script.defer = true;
-      document.body.appendChild(script);
-    }
-  }, []);
+  useEffect(() => { msgEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [msgs, isTyping]);
 
   /* ---- chatbot logic ---- */
   const has = (q: string, terms: string[]) => terms.some(t => q.includes(t));
@@ -155,20 +118,36 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
       const r = reply(q);
       setMsgs(m => [...m, { sender: 'assistant', text: r.text }]);
       if (r.chips) setChips(r.chips);
-    }, 900 + Math.random() * 700);
+    }, 800 + Math.random() * 500);
   };
 
   const md = (t: string) => t.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
 
   /* ============ LOADING & ERROR ============ */
-  if (loading) return <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center' }}>Loading...</div>;
-  if (error || !data) return <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center' }}>{error}</div>;
+  if (loading) return (
+    <div className="portfolio-root" style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', color: '#94a3b8' }}>
+      Loading Portavia portfolio...
+    </div>
+  );
+  if (error || !data) return (
+    <div className="portfolio-root" style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', color: '#ef4444' }}>
+      {error || 'Portfolio not found'}
+    </div>
+  );
 
   const { user, profile, education=[], certifications=[], projects=[], internships=[], skills=[] } = data;
-  const firstName = user?.fullName?.split(' ')[0] || 'Student';
-  const lastName = user?.fullName?.split(' ').slice(1).join(' ') || '';
-  const photo = profile?.photoUrl || 'https://github.com/rkotesh.png';
+  const fullName = user?.fullName || 'Student';
+  const firstName = fullName.split(' ')[0] || 'Student';
+  const lastName = fullName.split(' ').slice(1).join(' ') || '';
+
+  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=1e1b4b&color=a78bfa&size=512&font-size=0.38&bold=true`;
   
+  let photo = defaultAvatar;
+  const rawPhoto = profile?.photoUrl || user?.photoUrl;
+  if (rawPhoto && rawPhoto.trim() !== '') {
+    photo = rawPhoto.startsWith('http') ? rawPhoto : `${API_BASE_URL}${rawPhoto}`;
+  }
+
   const groupedSkills = skills.reduce((acc: any, skill: any) => {
     const cat = skill.category || 'Others';
     if (!acc[cat]) acc[cat] = [];
@@ -176,300 +155,285 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
     return acc;
   }, {});
 
+  const connectedPlatformsList = [
+    { key: 'leetcodeUrl', label: 'LeetCode', icon: '🧠', desc: 'Solved problems & coding skills' },
+    { key: 'githubUrl', label: 'GitHub', icon: '⌨️', desc: 'Repositories & open-source contributions' },
+    { key: 'hackerrankUrl', label: 'HackerRank', icon: '🏆', desc: 'Verified badges & certifications' },
+    { key: 'linkedinUrl', label: 'LinkedIn', icon: '💼', desc: 'Professional network & profile' },
+    { key: 'codechefUrl', label: 'CodeChef', icon: '⭐', desc: 'Competitive programming & ratings' },
+    { key: 'spokenTutorialUrl', label: 'Spoken Tutorial', icon: '🎓', desc: 'IIT Bombay spoken tutorial certifications' },
+    { key: 'prepinstaUrl', label: 'PrepInsta', icon: '🚀', desc: 'Placement preparation & coding resources' },
+  ].filter(plat => !!profile?.[plat.key]);
+
   /* ============ RENDER ============ */
   return (
-    <>
-      <div className="scroll-progress" style={{ width: `${scrollPct}%` }}></div>
-      
-      <nav className={navScrolled ? 'scrolled' : ''}>
-        <div className="nav-container">
-          <a href="#" className="nav-logo">
-            <img src={photo} alt={user?.fullName} />
-            {firstName} <span>{lastName}</span>
-          </a>
-          <div className="nav-links" id="navLinks">
-            <a href="#about">About</a>
-            {internships.length > 0 && <a href="#experience">Experience</a>}
-            {education.length > 0 && <a href="#education">Education</a>}
-            {certifications.length > 0 && <a href="#certificates">Certificates</a>}
-            {skills.length > 0 && <a href="#brands">Technologies</a>}
-            {projects.length > 0 && <a href="#projects">Projects</a>}
-            <a href="#contact" className="nav-cta">Contact</a>
-          </div>
-        </div>
-      </nav>
+    <div className="portfolio-root">
+      <div className="pv-scroll-progress" style={{ width: `${scrollPct}%` }}></div>
+      <div className="pv-ambient-glow-1"></div>
 
-      <section className="hero">
-        <div className="hero-content">
-          <div className="hero-text-col">
-            <div className="hero-eyebrow">
-              <span className="dot"></span> Open to Opportunities
-            </div>
-            <h1>
-              <span style={{ animationDelay: '0.15s' }}>{firstName}</span>{' '}
-              <span className="highlight" style={{ animationDelay: '0.3s' }}>{lastName}</span>
-            </h1>
-            <p className="hero-description">
-              {profile?.profileSummary || 'Python & Django Developer | Ex-Flipkart Intern | REST APIs · React · MERN | Open to Full-Time Roles'}
-            </p>
-            <div className="hero-actions">
-              <a href="#contact" className="btn-primary">Get in Touch →</a>
-              {profile?.resumeUrl && profile?.showResumeOnProfile && (
-                <a href={profile.resumeUrl} className="btn-secondary" target="_blank" rel="noreferrer">Download Resume</a>
-              )}
-            </div>
-            <div className="hero-stats">
-              <div className="stat"><h3>{projects.length}+</h3><p>Projects</p></div>
-              <div className="stat"><h3>{skills.length}+</h3><p>Tech Skills</p></div>
-              {profile?.cgpa && <div className="stat"><h3>{profile.cgpa}</h3><p>CGPA</p></div>}
-            </div>
+      {/* Floating Glass Pill Navbar */}
+      <div className="pv-navbar-wrapper">
+        <nav className={`pv-navbar ${navScrolled ? 'scrolled' : ''}`}>
+          <a href="#" className="pv-nav-brand">
+            <img 
+              src={photo} 
+              alt={fullName} 
+              className="pv-nav-avatar"
+              onError={(e) => { (e.target as HTMLImageElement).src = defaultAvatar; }}
+            />
+            <span>{firstName} {lastName}</span>
+          </a>
+          <div className="pv-nav-links">
+            <a href="#about" className="pv-nav-link">About</a>
+            {connectedPlatformsList.length > 0 && <a href="#platforms" className="pv-nav-link">Integrations</a>}
+            {internships.length > 0 && <a href="#experience" className="pv-nav-link">Experience</a>}
+            {education.length > 0 && <a href="#education" className="pv-nav-link">Education</a>}
+            {certifications.length > 0 && <a href="#certificates" className="pv-nav-link">Credentials</a>}
+            {skills.length > 0 && <a href="#technologies" className="pv-nav-link">Skills</a>}
+            {projects.length > 0 && <a href="#projects" className="pv-nav-link">Projects</a>}
           </div>
-          <div className="hero-image-col">
-            <div className="hero-image-wrapper">
-              <div className="hero-image-card">
-                <img src={photo} alt={user?.fullName} />
+          <a href="#contact" className="pv-nav-cta">Get in Touch</a>
+        </nav>
+      </div>
+
+      {/* Hero Section */}
+      <section className="pv-section pv-hero-section">
+        <div className="pv-container">
+          <div className="pv-hero-grid">
+            <div>
+              <div className="pv-hero-status-pill">
+                <span className="pv-status-dot"></span> Open to Opportunities
+              </div>
+              <h1 className="pv-hero-name">
+                {firstName} <span className="pv-gradient-text">{lastName}</span>
+              </h1>
+              <p className="pv-hero-summary">
+                {profile?.profileSummary || 'Software Engineer & Full Stack Developer | Open to Full-Time & Internship Opportunities'}
+              </p>
+              <div className="pv-hero-actions">
+                <a href="#contact" className="pv-btn-primary">Get in Touch →</a>
+                {profile?.resumeUrl && profile?.showResumeOnProfile && (
+                  <a href={profile.resumeUrl} className="pv-btn-secondary" target="_blank" rel="noreferrer">
+                    Download Resume ↗
+                  </a>
+                )}
+              </div>
+              <div className="pv-hero-stats-grid">
+                <div className="pv-stat-item">
+                  <div className="pv-stat-val">{projects.length}+</div>
+                  <div className="pv-stat-lbl">Projects Built</div>
+                </div>
+                <div className="pv-stat-item">
+                  <div className="pv-stat-val">{skills.length}+</div>
+                  <div className="pv-stat-lbl">Tech Skills</div>
+                </div>
+                {profile?.cgpa && (
+                  <div className="pv-stat-item">
+                    <div className="pv-stat-val">{profile.cgpa}</div>
+                    <div className="pv-stat-lbl">CGPA Score</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="pv-hero-photo-card">
+                <div className="pv-photo-img-wrapper">
+                  <img 
+                    src={photo} 
+                    alt={fullName} 
+                    onError={(e) => { (e.target as HTMLImageElement).src = defaultAvatar; }}
+                  />
+                </div>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <section id="about">
-        <div className="section-header">
-          <div>
-            <p className="section-label">Who I Am</p>
-            <h2 className="section-title">About Me</h2>
+      {/* About Section */}
+      <section id="about" className="pv-section">
+        <div className="pv-container">
+          <div className="pv-section-header">
+            <span className="pv-section-eyebrow">WHO I AM</span>
+            <h2 className="pv-section-title">About Me</h2>
+          </div>
+          <div className="pv-card">
+            <p style={{ fontSize: '1.05rem', color: 'var(--pv-text-sub)', marginBottom: '1.5rem' }}>
+              I'm <strong style={{ color: '#fff' }}>{user?.fullName}</strong>. {profile?.profileSummary}
+            </p>
+            <div style={{ marginTop: '2rem' }}>
+              <h4 style={{ fontSize: '0.9rem', color: 'var(--pv-accent-light)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1rem' }}>Technical Competencies</h4>
+              <div className="pv-bento-grid-2">
+                {Object.keys(groupedSkills).map((cat: string) => (
+                  <div key={cat} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--pv-border)', borderRadius: '12px', padding: '1.25rem' }}>
+                    <h5 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', color: '#fff' }}>{cat}</h5>
+                    <div className="pv-skills-flex">
+                      {groupedSkills[cat].map((s: string, i: number) => (
+                        <span key={i} className="pv-skill-chip">{s}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
-        <div className="about-grid">
-          <div className="about-text reveal">
-            <p>I'm <strong>{user?.fullName}</strong>. {profile?.profileSummary}</p>
-            <div className="skills-categories stagger-reveal">
-              {Object.keys(groupedSkills).map((cat: string) => (
-                <div key={cat} className="skills-category reveal-item">
-                  <h5>{cat}</h5>
-                  <div className="skills-tags">
-                    {groupedSkills[cat].map((s: string, i: number) => (
-                      <span key={i} className="skill-tag">{s}</span>
-                    ))}
+      </section>
+
+      {/* Connected Platforms Bento Section */}
+      {connectedPlatformsList.length > 0 && (
+        <section id="platforms" className="pv-section">
+          <div className="pv-container">
+            <div className="pv-section-header">
+              <span className="pv-section-eyebrow">INTEGRATIONS</span>
+              <h2 className="pv-section-title">Developer Profiles</h2>
+              <p className="pv-section-desc">Verified coding activity, repository contributions, and professional platforms.</p>
+            </div>
+            <div className="pv-bento-grid-4">
+              {connectedPlatformsList.map((plat) => {
+                const url = profile[plat.key];
+                return (
+                  <div key={plat.key} className="pv-card pv-platform-card">
+                    <div className="pv-platform-top">
+                      <span className="pv-platform-icon">{plat.icon}</span>
+                      <span className="pv-connected-tag">CONNECTED</span>
+                    </div>
+                    <div className="pv-platform-name">{plat.label}</div>
+                    <div className="pv-platform-desc">{plat.desc}</div>
+                    <div className="pv-platform-stat">
+                      {(() => {
+                        switch (plat.key) {
+                          case 'leetcodeUrl':
+                            const easy = profile?.leetcodeEasySolved || 0;
+                            const med = profile?.leetcodeMediumSolved || 0;
+                            const hard = profile?.leetcodeHardSolved || 0;
+                            return `Solved: ${easy + med + hard} (${easy}E · ${med}M · ${hard}H)`;
+                          case 'githubUrl':
+                            return `Repos: ${profile?.githubReposCount || 0} · Commits: ${profile?.githubCommitsCount || 0}`;
+                          case 'codechefUrl':
+                            return `Rating: ${profile?.codechefRating || 0} · Stars: ${profile?.codechefStars || '1★'}`;
+                          case 'hackerrankUrl':
+                            return `Badges: ${profile?.hackerrankBadgesCount || 0} verified`;
+                          case 'spokenTutorialUrl':
+                            return 'IIT Bombay Spoken Tutorial Synced';
+                          case 'prepinstaUrl':
+                            return 'PrepInsta Prime Profile Synced';
+                          case 'linkedinUrl':
+                            return 'Professional Connection Verified';
+                          default:
+                            return 'Platform Connected';
+                        }
+                      })()}
+                    </div>
+                    <a href={url} target="_blank" rel="noreferrer" className="pv-link-arrow">
+                      View Profile ↗
+                    </a>
                   </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Experience Section */}
+      {internships.length > 0 && (
+        <section id="experience" className="pv-section">
+          <div className="pv-container">
+            <div className="pv-section-header">
+              <span className="pv-section-eyebrow">CAREER PATH</span>
+              <h2 className="pv-section-title">Work Experience</h2>
+            </div>
+            <div className="pv-bento-grid-2">
+              {internships.map((intern: any) => (
+                <div key={intern.id} className="pv-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--pv-accent-light)' }}>{intern.organization || intern.companyName}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--pv-text-dim)' }}>{intern.startDate} – {intern.endDate || 'Present'}</span>
+                  </div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.5rem', color: '#fff' }}>{intern.role}</h3>
+                  <p style={{ fontSize: '0.88rem', color: 'var(--pv-text-sub)', marginBottom: '1rem', lineHeight: '1.5' }}>{intern.description}</p>
+                  {intern.certificateUrl && (
+                    <a href={intern.certificateUrl} target="_blank" rel="noreferrer" className="pv-link-arrow">
+                      View Certificate ↗
+                    </a>
+                  )}
                 </div>
               ))}
             </div>
           </div>
-        </div>
-        {(() => {
-          const platforms = [
-            { key: 'leetcodeUrl', label: 'LeetCode', icon: '🧠', desc: 'Solved problems & coding skills' },
-            { key: 'githubUrl', label: 'GitHub', icon: '⌨️', desc: 'Repositories & open-source contributions' },
-            { key: 'hackerrankUrl', label: 'HackerRank', icon: '🏆', desc: 'Verified badges & certifications' },
-            { key: 'linkedinUrl', label: 'LinkedIn', icon: '💼', desc: 'Professional network & profile' },
-            { key: 'codechefUrl', label: 'CodeChef', icon: '⭐', desc: 'Competitive programming & ratings' },
-            { key: 'spokenTutorialUrl', label: 'Spoken Tutorial', icon: '🎓', desc: 'IIT Bombay spoken tutorial certifications' },
-            { key: 'prepinstaUrl', label: 'PrepInsta', icon: '🚀', desc: 'Placement preparation & coding resources' },
-          ].filter(plat => !!profile?.[plat.key]);
-
-          if (platforms.length === 0) return null;
-
-          return (
-            <div style={{ marginTop: '3.5rem' }}>
-              <div style={{ marginBottom: '1.25rem' }}>
-                <p className="section-label">Connected Platforms</p>
-                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', fontWeight: 700 }}>Developer Profiles</h3>
-              </div>
-              <div className="about-highlights stagger-reveal" style={{ marginTop: '0', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-                {platforms.map((plat) => {
-                  const url = profile[plat.key];
-                  return (
-                    <div key={plat.key} className="highlight-card reveal-item" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '160px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <span style={{ fontSize: '1.25rem' }}>{plat.icon}</span>
-                        <span style={{
-                          fontSize: '9.5px',
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          padding: '3px 8px',
-                          borderRadius: '100px',
-                          background: 'rgba(153, 102, 255, 0.12)',
-                          color: 'var(--highlight-dark)',
-                          border: '1px solid rgba(153, 102, 255, 0.3)'
-                        }}>
-                          CONNECTED
-                        </span>
-                      </div>
-                      <h4 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700, marginBottom: '4px' }}>{plat.label}</h4>
-                      <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0 0 10px 0', flexGrow: 1, lineHeight: '1.4' }}>{plat.desc}</p>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text)', fontWeight: 600, margin: '0 0 12px 0' }}>
-                        {(() => {
-                          switch (plat.key) {
-                            case 'leetcodeUrl':
-                              const easy = profile?.leetcodeEasySolved || 0;
-                              const med = profile?.leetcodeMediumSolved || 0;
-                              const hard = profile?.leetcodeHardSolved || 0;
-                              return `Solved: ${easy + med + hard} (${easy}E · ${med}M · ${hard}H)`;
-                            case 'githubUrl':
-                              return `Repos: ${profile?.githubReposCount || 0} · Commits: ${profile?.githubCommitsCount || 0}`;
-                            case 'codechefUrl':
-                              return `Rating: ${profile?.codechefRating || 0} · Stars: ${profile?.codechefStars || '1★'}`;
-                            case 'hackerrankUrl':
-                              return `Badges: ${profile?.hackerrankBadgesCount || 0} verified`;
-                            case 'spokenTutorialUrl':
-                              return 'IIT Bombay Spoken Tutorial Synced';
-                            case 'prepinstaUrl':
-                              return 'PrepInsta Prime Profile Synced';
-                            case 'linkedinUrl':
-                              return 'Professional Connection Verified';
-                            default:
-                              return 'Platform Connected';
-                          }
-                        })()}
-                      </div>
-                      <a href={url} target="_blank" rel="noreferrer" className="project-link" style={{ marginTop: 'auto', alignSelf: 'flex-start' }}>
-                        View Profile ↗
-                      </a>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
-      </section>
-
-      {internships.length > 0 && (
-        <section id="experience">
-          <div className="section-header">
-            <div>
-              <p className="section-label">Professional Experience</p>
-              <h2 className="section-title">Work Experience</h2>
-              <p className="section-headline">My professional roles and internships.</p>
-            </div>
-          </div>
-          <div className="experience-timeline stagger-reveal">
-            {internships.map((intern: any) => (
-              <div key={intern.id} className="experience-card reveal-item">
-                <div className="experience-meta">
-                  <span className="company">{intern.organization || intern.companyName}</span>
-                  {intern.startDate} – {intern.endDate || 'Present'}
-                  <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{intern.internshipType || intern.mode || 'Remote'}</div>
-                </div>
-                <div className="experience-body">
-                  <h4>{intern.role}</h4>
-                  <p>{intern.description}</p>
-                  {intern.certificateUrl && (
-                    <div style={{ marginTop: '1.15rem' }}>
-                      <a href={intern.certificateUrl} target="_blank" rel="noreferrer" className="project-link">View Certificate ↗</a>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
         </section>
       )}
 
+      {/* Education Section */}
       {education.length > 0 && (
-        <section id="education">
-          <div className="section-header">
-            <div>
-              <p className="section-label">My Journey</p>
-              <h2 className="section-title">Education & Training</h2>
+        <section id="education" className="pv-section">
+          <div className="pv-container">
+            <div className="pv-section-header">
+              <span className="pv-section-eyebrow">ACADEMICS</span>
+              <h2 className="pv-section-title">Education</h2>
             </div>
-          </div>
-          <div className="education-timeline stagger-reveal">
-            {education.map((edu: any) => (
-              <div key={edu.id} className="education-card reveal-item">
-                <div className="education-meta">
-                  <span className="institution">{edu.institution || edu.boardUniversity}</span>
-                  {edu.startDate || edu.yearOfPassing || ''}
-                </div>
-                <div className="education-body">
-                  <h4>{edu.eduType || edu.degree}</h4>
-                  <p>{edu.description}</p>
-                  <div className="education-tags">
-                    <span>Score: {edu.score} {edu.scoreType}</span>
+            <div className="pv-bento-grid-2">
+              {education.map((edu: any) => (
+                <div key={edu.id} className="pv-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--pv-accent-light)' }}>{edu.institution || edu.boardUniversity}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--pv-text-dim)' }}>{edu.startDate || edu.yearOfPassing || ''}</span>
                   </div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.5rem', color: '#fff' }}>{edu.eduType || edu.degree}</h3>
+                  <p style={{ fontSize: '0.88rem', color: 'var(--pv-text-sub)', marginBottom: '0.75rem' }}>{edu.description}</p>
+                  <span className="pv-skill-chip">Score: {edu.score} {edu.scoreType}</span>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </section>
       )}
 
+      {/* Certifications Section */}
       {certifications.length > 0 && (
-        <section id="certificates">
-          <div className="section-header">
-            <div>
-              <p className="section-label">Credentials</p>
-              <h2 className="section-title">Certifications</h2>
-              <p className="section-headline">Verified accomplishments, internship completions, and specialized credentials.</p>
+        <section id="certificates" className="pv-section">
+          <div className="pv-container">
+            <div className="pv-section-header">
+              <span className="pv-section-eyebrow">CREDENTIALS</span>
+              <h2 className="pv-section-title">Certifications</h2>
             </div>
-          </div>
-          <div className="certificates-grid stagger-reveal">
-            {certifications.map((cert: any, idx: number) => {
-              const url = cert.certUrl || cert.credentialUrl || cert.certificateUrl || cert.fileUrl || cert.url;
-              const img = cert.imageUrl || cert.photoUrl || cert.previewUrl;
-              const org = cert.issuer || cert.issuingOrganization || cert.organization || cert.certType || 'Certification';
-              const date = cert.issuedDate || cert.issueDate || cert.year || cert.date || '';
-
-              return (
-                <div key={cert.id || cert._id || idx} className="certificate-card reveal-item">
-              <div className="certificate-image-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #f5f5f7, #eaeaef)', position: 'relative' }}>
-                    {img ? (
-                      <img src={img} alt={cert.title || cert.name} />
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '1.5rem' }}>
-                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--highlight)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '0.4rem', opacity: 0.7 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                        <div style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.8px', color: 'var(--highlight-dark)', textTransform: 'uppercase' }}>
-                          {cert.certType || 'Verified Credential'}
-                        </div>
-                      </div>
-                    )}
+            <div className="pv-bento-grid-3">
+              {certifications.map((cert: any, idx: number) => {
+                const url = cert.certUrl || cert.credentialUrl || cert.certificateUrl || cert.fileUrl || cert.url;
+                const org = cert.issuer || cert.issuingOrganization || cert.organization || 'Certification';
+                return (
+                  <div key={cert.id || cert._id || idx} className="pv-card" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--pv-accent-light)', marginBottom: '0.4rem' }}>{org}</div>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.5rem', color: '#fff' }}>{cert.title || cert.name}</h3>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--pv-text-sub)', marginBottom: '1.25rem', flexGrow: 1 }}>{cert.description || 'Verified credential program completion.'}</p>
                     {url && (
-                      <div className="certificate-overlay">
-                        <a href={url} target="_blank" rel="noreferrer" className="btn-cert-view">View PDF Version ↗</a>
-                      </div>
+                      <a href={url} target="_blank" rel="noreferrer" className="pv-link-arrow">
+                        View Credential PDF ↗
+                      </a>
                     )}
                   </div>
-
-                  <div className="certificate-info">
-                    <div className="cert-meta">
-                      <span className="cert-org">{org}</span>
-                      {date && <span className="cert-date">{date}</span>}
-                    </div>
-                    <h3>{cert.title || cert.name}</h3>
-                    <p>{cert.description || 'Awarded for successful completion and verification of program requirements.'}</p>
-                    {url && (
-                      <div className="certificate-links">
-                        <a href={url} target="_blank" rel="noreferrer" className="project-link">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                          View Full PDF ↗
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </section>
       )}
 
+      {/* Technologies Marquee */}
       {skills.length > 0 && (
-        <section id="brands">
-          <div className="section-header">
-            <div>
-              <p className="section-label">Expertise</p>
-              <h2 className="section-title">Technologies & Tools</h2>
-            </div>
+        <section id="technologies" className="pv-section" style={{ paddingBottom: '3.5rem' }}>
+          <div className="pv-container" style={{ marginBottom: '1.5rem' }}>
+            <span className="pv-section-eyebrow">STACK</span>
+            <h2 className="pv-section-title">Technologies & Tools</h2>
           </div>
-          <div className="brands-marquee-wrapper reveal">
-            <div className="brands-marquee">
+          <div className="pv-marquee-outer">
+            <div className="pv-marquee-track">
               {[...skills, ...skills, ...skills, ...skills].map((s: any, i: number) => (
                 <React.Fragment key={i}>
-                  <span className="brand-item">{s.name}</span>
-                  <span className="brand-sep">·</span>
+                  <span className="pv-marquee-item">{s.name}</span>
+                  <span style={{ color: 'var(--pv-border-hi)' }}>•</span>
                 </React.Fragment>
               ))}
             </div>
@@ -477,184 +441,155 @@ export default function PublicPortfolio({ slug, API_BASE_URL }: PublicPortfolioP
         </section>
       )}
 
+      {/* Featured Projects Bento Section */}
       {projects.length > 0 && (
-        <section id="projects">
-          <div className="section-header">
-            <div>
-              <p className="section-label">Featured Work</p>
-              <h2 className="section-title">Projects</h2>
-              <p className="section-headline">Real projects built utilizing python automation, web dev, and AI/chatbot integrations.</p>
+        <section id="projects" className="pv-section">
+          <div className="pv-container">
+            <div className="pv-section-header">
+              <span className="pv-section-eyebrow">FEATURED WORK</span>
+              <h2 className="pv-section-title">Projects</h2>
             </div>
-          </div>
-          <div className="projects-grid stagger-reveal">
-            {projects.map((proj: any, idx: number) => {
-              const isFeatured = !!proj.isFeatured;
-              const github = proj.githubLink || proj.repoUrl || proj.githubUrl;
-              const live = proj.liveLink || proj.demoUrl || proj.projectUrl;
-              
-              let tags: string[] = [];
-              if (proj.technologies) {
-                tags = typeof proj.technologies === 'string' ? proj.technologies.split(',').map((t: string) => t.trim()) : proj.technologies;
-              } else if (proj.techStack) {
-                tags = typeof proj.techStack === 'string' ? proj.techStack.split(',').map((t: string) => t.trim()) : proj.techStack;
-              } else if (proj.tags) {
-                tags = Array.isArray(proj.tags) ? proj.tags : [proj.tags];
-              } else {
-                tags = ['Python', 'Web Dev'];
-              }
+            <div className="pv-bento-grid-3">
+              {projects.map((proj: any, idx: number) => {
+                const isFeatured = !!proj.isFeatured;
+                const github = proj.githubLink || proj.repoUrl || proj.githubUrl;
+                const live = proj.liveLink || proj.demoUrl || proj.projectUrl;
+                
+                let tags: string[] = [];
+                if (proj.technologies) {
+                  tags = typeof proj.technologies === 'string' ? proj.technologies.split(',').map((t: string) => t.trim()) : proj.technologies;
+                } else if (proj.techStack) {
+                  tags = typeof proj.techStack === 'string' ? proj.techStack.split(',').map((t: string) => t.trim()) : proj.techStack;
+                } else {
+                  tags = ['Software Dev'];
+                }
 
-              return (
-                <div key={proj.id || proj._id || idx} className="project-card reveal-item">
-                  <div className="project-info">
-                    {isFeatured && (
-                      <div className="featured-badge-red">
-                        FEATURED PROJECT
-                      </div>
-                    )}
-                    
-                    <h4>{proj.title}</h4>
-                    <p>{proj.description || 'Custom software and web development project.'}</p>
-                    
-                    {tags.length > 0 && (
-                      <div className="project-tags">
-                        {tags.map((tag: string, tIdx: number) => (
-                          <span key={tIdx}>{tag}</span>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="project-links" style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
+                return (
+                  <div key={proj.id || proj._id || idx} className="pv-card pv-project-card">
+                    {isFeatured && <span className="pv-featured-tag">FEATURED PROJECT</span>}
+                    <div className="pv-project-title">{proj.title}</div>
+                    <div className="pv-project-desc">{proj.description || 'Custom web application.'}</div>
+                    <div className="pv-tag-list">
+                      {tags.map((tag: string, tIdx: number) => (
+                        <span key={tIdx} className="pv-tag-pill">{tag}</span>
+                      ))}
+                    </div>
+                    <div className="pv-project-links">
                       {github && (
-                        <a href={github} target="_blank" rel="noreferrer" className="project-link-pill">
+                        <a href={github} target="_blank" rel="noreferrer" className="pv-btn-pill">
                           Source Code ↗
                         </a>
                       )}
                       {live && (
-                        <a href={live} target="_blank" rel="noreferrer" className="project-link-pill" style={{ background: 'rgba(153, 102, 255, 0.1)', color: 'var(--highlight-dark)', borderColor: 'rgba(153, 102, 255, 0.3)' }}>
+                        <a href={live} target="_blank" rel="noreferrer" className="pv-btn-pill" style={{ background: 'var(--pv-accent)', borderColor: 'var(--pv-accent)', color: '#fff' }}>
                           Live Demo ↗
                         </a>
                       )}
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </section>
       )}
 
-      <section id="contact">
-        <div className="section-header">
-          <div>
-            <p className="section-label">Get in Touch</p>
-            <h2 className="section-title">Contact</h2>
-            <p className="section-headline">Have an internship, project collaboration, or just want to connect? I'd love to hear from you.</p>
+      {/* Contact Section */}
+      <section id="contact" className="pv-section">
+        <div className="pv-container">
+          <div className="pv-section-header">
+            <span className="pv-section-eyebrow">GET IN TOUCH</span>
+            <h2 className="pv-section-title">Contact</h2>
           </div>
-        </div>
-        <div className="contact-grid">
-          <div className="contact-info reveal">
-            <h3>Let's connect and create<br/>something awesome.</h3>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '2rem' }}>
-              Whether you're looking for an AI & ML engineer, a frontend developer, or just want to chat about tech, feel free to reach out.
-            </p>
-            {profile?.personalEmail && <a href={`mailto:${profile.personalEmail}`} className="contact-email">{profile.personalEmail}</a>}
-            <div className="socials-grid stagger-reveal" style={{ marginTop: '2rem' }}>
-              {profile?.linkedinUrl && (
-                <a href={profile.linkedinUrl} target="_blank" rel="noreferrer" className="social-link reveal-item">
-                  <span className="s-icon">in</span><div><div className="s-name">LinkedIn</div><div className="s-handle">@profile</div></div>
-                </a>
-              )}
-              {profile?.githubUrl && (
-                <a href={profile.githubUrl} target="_blank" rel="noreferrer" className="social-link reveal-item">
-                  <span className="s-icon">⌨</span><div><div className="s-name">GitHub</div><div className="s-handle">@github</div></div>
-                </a>
+          <div className="pv-contact-grid">
+            <div className="pv-card">
+              <h3 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '1rem', color: '#fff' }}>Let's build something together.</h3>
+              <p style={{ color: 'var(--pv-text-sub)', fontSize: '0.92rem', marginBottom: '2rem' }}>
+                Feel free to send a direct inquiry regarding employment, project collaborations, or technical opportunities.
+              </p>
+              {profile?.personalEmail && (
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--pv-text-dim)', fontWeight: 700 }}>EMAIL</div>
+                  <a href={`mailto:${profile.personalEmail}`} style={{ color: 'var(--pv-accent-light)', textDecoration: 'none', fontWeight: 700, fontSize: '1.05rem' }}>
+                    {profile.personalEmail}
+                  </a>
+                </div>
               )}
               {profile?.personalPhone && (
-                <a href={`tel:${profile.personalPhone}`} className="social-link reveal-item">
-                  <span className="s-icon">📞</span><div><div className="s-name">Phone</div><div className="s-handle">{profile.personalPhone}</div></div>
-                </a>
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--pv-text-dim)', fontWeight: 700 }}>PHONE</div>
+                  <div style={{ color: '#fff', fontWeight: 600 }}>{profile.personalPhone}</div>
+                </div>
               )}
-              <a href="https://maps.google.com/?q=Bapatla,+Andhra+Pradesh,+India" target="_blank" rel="noreferrer" className="social-link reveal-item">
-                <span className="s-icon">📍</span><div><div className="s-name">Location</div><div className="s-handle">Bapatla, AP, India</div></div>
-              </a>
             </div>
-          </div>
-          <div className="contact-form-wrapper reveal">
-            <div className="contact-form-card">
-              <h4>Send me a message</h4>
+
+            <div className="pv-contact-card">
+              <h4 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1.25rem', color: '#fff' }}>Send a Message</h4>
               <form onSubmit={handleContactSubmit}>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Name</label>
-                    <input type="text" placeholder="Your name" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-                  </div>
-                  <div className="form-group">
-                    <label>Email</label>
-                    <input type="email" placeholder="you@example.com" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-                  </div>
+                <div className="pv-form-group">
+                  <label>Name</label>
+                  <input type="text" className="pv-form-input" placeholder="Your name" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
                 </div>
-                <div className="form-group">
+                <div className="pv-form-group">
+                  <label>Email</label>
+                  <input type="email" className="pv-form-input" placeholder="you@example.com" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                </div>
+                <div className="pv-form-group">
                   <label>Subject</label>
-                  <input type="text" placeholder="What's this about?" required value={formData.subject} onChange={e => setFormData({...formData, subject: e.target.value})} />
+                  <input type="text" className="pv-form-input" placeholder="What's this about?" required value={formData.subject} onChange={e => setFormData({...formData, subject: e.target.value})} />
                 </div>
-                <div className="form-group">
+                <div className="pv-form-group">
                   <label>Message</label>
-                  <textarea rows={5} placeholder="Tell me more..." required value={formData.message} onChange={e => setFormData({...formData, message: e.target.value})}></textarea>
+                  <textarea className="pv-form-input" rows={4} placeholder="Your message..." required value={formData.message} onChange={e => setFormData({...formData, message: e.target.value})}></textarea>
                 </div>
-                <button type="submit" className="form-submit">{formSent ? 'Sent Successfully!' : 'Send Message →'}</button>
+                <button type="submit" className="pv-form-submit">{formSent ? 'Sent Successfully! ✓' : 'Send Message →'}</button>
               </form>
             </div>
           </div>
         </div>
       </section>
 
-      <footer>
-        <p>© {new Date().getFullYear()} {user?.fullName || 'Student'}. Built with ❤️</p>
-        <a href="#">Back to top ↑</a>
+      <footer className="pv-footer">
+        <div className="pv-container">
+          <p>© {new Date().getFullYear()} {user?.fullName || 'Student'}. Portavia Portfolio Design.</p>
+        </div>
       </footer>
 
-      {/* Floating Chat */}
-      <button className="rolla-fab" onClick={() => { setChatOpen(!chatOpen); setHasOpenedChat(true); setShowNotif(false); }} aria-label="Open AI Assistant">
-        <div className="rolla-fab-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', background: 'linear-gradient(135deg, #111111, #9966ff)', color: '#fff', fontSize: '24px' }}>
-          🤖
-        </div>
-        {showNotif && <span className="rolla-notification"></span>}
+      {/* Floating AI Assistant Drawer & FAB */}
+      <button className="pv-chat-fab" onClick={() => { setChatOpen(!chatOpen); setHasOpenedChat(true); setShowNotif(false); }} aria-label="Open AI Assistant">
+        🤖
       </button>
 
-      <div className={`rolla-chat-window ${chatOpen ? 'active' : ''}`} aria-hidden={!chatOpen}>
-        <div className="rolla-chat-header">
-          <div className="rolla-header-info">
-            <div className="rolla-avatar-wrapper">
-              <span className="rolla-status-dot"></span>
-            </div>
-            <div>
-              <h4>Kotesh AI</h4>
-              <p style={{ margin: 0, fontSize: '11px', color: '#99a0b5' }}>Virtual Assistant • Online</p>
-            </div>
+      <div className={`pv-chat-drawer ${chatOpen ? 'active' : ''}`}>
+        <div className="pv-chat-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }}></span>
+            <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff' }}>{firstName} AI Assistant</span>
           </div>
-          <button className="rolla-close-btn" onClick={() => setChatOpen(false)}>&times;</button>
+          <button onClick={() => setChatOpen(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}>✕</button>
         </div>
-        
-        <div className="rolla-messages">
+
+        <div className="pv-chat-body">
           {msgs.map((m, i) => (
-            <div key={i} className={`rolla-message ${m.sender === 'user' ? 'user-message' : 'bot-message'}`} dangerouslySetInnerHTML={{ __html: md(m.text) }} />
+            <div key={i} className={`pv-chat-msg ${m.sender === 'user' ? 'user' : 'bot'}`} dangerouslySetInnerHTML={{ __html: md(m.text) }} />
           ))}
-          {isTyping && <div className="rolla-message bot-message">...</div>}
+          {isTyping && <div className="pv-chat-msg bot">Thinking...</div>}
           <div ref={msgEnd} />
         </div>
-        
-        <div className="rolla-suggestions">
-          {chips.map((c, i) => <button key={i} className="rolla-chip" onClick={() => sendChat(c)}>{c}</button>)}
+
+        <div style={{ padding: '0.5rem 0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.3rem', background: 'rgba(13,17,26,0.6)' }}>
+          {chips.map((c, i) => (
+            <button key={i} className="pv-skill-chip" style={{ cursor: 'pointer', fontSize: '0.72rem' }} onClick={() => sendChat(c)}>
+              {c}
+            </button>
+          ))}
         </div>
-        
-        <form className="rolla-input-area" onSubmit={e => { e.preventDefault(); sendChat(); }}>
-          <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Ask me anything..." required />
-          <button type="submit" className="rolla-send-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-          </button>
+
+        <form className="pv-chat-input-row" onSubmit={e => { e.preventDefault(); sendChat(); }}>
+          <input type="text" className="pv-form-input" style={{ padding: '0.5rem 0.75rem', fontSize: '0.82rem' }} value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Ask me anything..." required />
+          <button type="submit" className="pv-btn-primary" style={{ padding: '0.5rem 0.9rem', fontSize: '0.8rem' }}>Send</button>
         </form>
       </div>
-
-    </>
+    </div>
   );
 }

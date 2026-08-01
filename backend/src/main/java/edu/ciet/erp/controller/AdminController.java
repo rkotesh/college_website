@@ -41,6 +41,8 @@ public class AdminController {
     private final EventRepository eventRepository;
     private final CourseRepository courseRepository;
     private final SkillRepository skillRepository;
+    private final TrainingProgramRepository trainingProgramRepository;
+    private final BroadcastLogRepository broadcastLogRepository;
 
     @GetMapping("/otp-records")
     public ResponseEntity<?> getAllOtpRecords() {
@@ -68,11 +70,25 @@ public class AdminController {
     }
 
     @GetMapping("/users")
-    public ResponseEntity<?> getAllUsers(@RequestParam(value = "q", defaultValue = "") String query) {
+    public ResponseEntity<?> getAllUsers(
+            @RequestParam(value = "q", defaultValue = "") String query,
+            @RequestParam(value = "role", required = false) String roleParam,
+            @RequestParam(value = "year", required = false) String yearParam,
+            @RequestParam(value = "departmentId", required = false) String deptParam,
+            @RequestParam(value = "batch", required = false) String batchParam,
+            @RequestParam(value = "sectionId", required = false) String sectionParam,
+            @RequestParam(value = "academicStatus", required = false) String statusParam) {
+
         List<User> users = userRepository.findAll();
         List<Map<String, Object>> response = new ArrayList<>();
         
         for (User u : users) {
+            if (roleParam != null && !roleParam.isBlank() && !"ALL".equalsIgnoreCase(roleParam)) {
+                if (!u.getRole().name().equalsIgnoreCase(roleParam)) {
+                    continue;
+                }
+            }
+
             if (!query.isBlank()) {
                 boolean emailMatch = u.getEmail() != null && u.getEmail().toLowerCase().contains(query.toLowerCase());
                 boolean nameMatch = u.getFullName() != null && u.getFullName().toLowerCase().contains(query.toLowerCase());
@@ -94,17 +110,87 @@ public class AdminController {
             map.put("departmentIds", u.getDepartmentIds());
             
             if (u.getRole() == Role.Student) {
-                studentProfileRepository.findByUserId(u.getId())
-                        .ifPresent(p -> {
-                            map.put("rollNo", p.getRollNo());
-                            map.put("cgpa", p.getCgpa());
-                            map.put("batch", p.getBatch());
-                            map.put("sectionId", p.getSectionId());
-                            if (p.getDepartmentId() != null) {
-                                map.put("departmentIds", List.of(p.getDepartmentId().toUpperCase()));
+                Optional<StudentProfile> pOpt = studentProfileRepository.findByUserId(u.getId());
+                if (pOpt.isPresent()) {
+                    StudentProfile p = pOpt.get();
+                    
+                    // ASSUMPTION: derive year from batch if year field is null/blank (e.g., batch "2022-2026" or "2023-2027")
+                    String computedYear = p.getYear();
+                    if (computedYear == null || computedYear.isBlank()) {
+                        if (p.getBatch() != null && p.getBatch().contains("-")) {
+                            try {
+                                int startYr = Integer.parseInt(p.getBatch().split("-")[0].trim());
+                                int currentYr = java.time.Year.now().getValue();
+                                int calc = (currentYr - startYr) + 1;
+                                computedYear = String.valueOf(Math.min(Math.max(calc, 1), 4));
+                            } catch (Exception e) {
+                                computedYear = "1";
                             }
-                        });
+                        } else {
+                            computedYear = "1";
+                        }
+                    }
+                    
+                    AcademicStatus status = p.getAcademicStatus() != null ? p.getAcademicStatus() : AcademicStatus.ACTIVE;
+
+                    // Apply Student Filters server-side
+                    if (yearParam != null && !yearParam.isBlank() && !"ALL".equalsIgnoreCase(yearParam)) {
+                        if (!yearParam.equalsIgnoreCase(computedYear)) {
+                            continue;
+                        }
+                    }
+
+                    if (deptParam != null && !deptParam.isBlank() && !"ALL".equalsIgnoreCase(deptParam)) {
+                        if (p.getDepartmentId() == null || !p.getDepartmentId().equalsIgnoreCase(deptParam)) {
+                            continue;
+                        }
+                    }
+
+                    if (batchParam != null && !batchParam.isBlank() && !"ALL".equalsIgnoreCase(batchParam)) {
+                        if (p.getBatch() == null || !p.getBatch().equalsIgnoreCase(batchParam)) {
+                            continue;
+                        }
+                    }
+
+                    if (sectionParam != null && !sectionParam.isBlank() && !"ALL".equalsIgnoreCase(sectionParam)) {
+                        if (p.getSectionId() == null || !p.getSectionId().equalsIgnoreCase(sectionParam)) {
+                            continue;
+                        }
+                    }
+
+                    if (statusParam != null && !statusParam.isBlank() && !"ALL".equalsIgnoreCase(statusParam)) {
+                        if (!status.name().equalsIgnoreCase(statusParam)) {
+                            continue;
+                        }
+                    }
+
+                    map.put("rollNo", p.getRollNo());
+                    map.put("cgpa", p.getCgpa());
+                    map.put("batch", p.getBatch());
+                    map.put("sectionId", p.getSectionId());
+                    map.put("year", computedYear);
+                    map.put("academicStatus", status.name());
+                    map.put("slug", p.getSlug());
+                    map.put("isPublic", p.isPublic());
+                    if (p.getDepartmentId() != null) {
+                        map.put("departmentIds", List.of(p.getDepartmentId().toUpperCase()));
+                    }
+                } else if ((yearParam != null && !"ALL".equalsIgnoreCase(yearParam)) ||
+                           (deptParam != null && !"ALL".equalsIgnoreCase(deptParam)) ||
+                           (statusParam != null && !"ALL".equalsIgnoreCase(statusParam))) {
+                    // Filtered student profile missing
+                    continue;
+                }
+            } else {
+                // For Staff roles (HOD, Faculty, Mentor), filter by department
+                if (deptParam != null && !deptParam.isBlank() && !"ALL".equalsIgnoreCase(deptParam)) {
+                    List<String> depts = u.getDepartmentIds();
+                    if (depts == null || depts.stream().noneMatch(d -> d.equalsIgnoreCase(deptParam))) {
+                        continue;
+                    }
+                }
             }
+
             response.add(map);
         }
         
@@ -171,7 +257,7 @@ public class AdminController {
 
         List<String> departmentIds = new ArrayList<>();
         if (deptCode != null && !deptCode.isEmpty()) {
-            if ((role == Role.Faculty || role == Role.Mentor) &&
+            if ((role == Role.Faculty || role == Role.Mentor || role == Role.HOD) &&
                 (deptCode.equalsIgnoreCase("AI") || deptCode.equalsIgnoreCase("AIML"))) {
                 departmentIds.add("AI");
                 departmentIds.add("AIML");
@@ -180,6 +266,10 @@ public class AdminController {
             }
         }
 
+        String batch = role == Role.Student ? body.getOrDefault("batch", "2024-2028") : null;
+        String sectionId = body.get("sectionId");
+        String yearVal = body.get("year");
+
         User user = User.builder()
                 .email(email.toLowerCase())
                 .passwordHash(passwordEncoder.encode(rawPassword))
@@ -187,13 +277,22 @@ public class AdminController {
                 .phone(phone)
                 .role(role)
                 .departmentIds(departmentIds)
+                .departmentId(deptCode != null ? deptCode.toUpperCase() : null)
+                .year(yearVal)
+                .sectionId(sectionId)
+                .rollNo(role == Role.Student ? rollNo : null)
+                .batch(batch)
                 .isActive(true)
                 .build();
         User savedUser = userRepository.save(user);
 
         if (role == Role.Student) {
-            String batch = body.getOrDefault("batch", "2024-2028");
-            String sectionId = body.get("sectionId");
+            String statusStr = body.get("academicStatus");
+            AcademicStatus academicStatus = AcademicStatus.ACTIVE;
+            if (statusStr != null && !statusStr.isBlank()) {
+                try { academicStatus = AcademicStatus.valueOf(statusStr.toUpperCase()); } catch (Exception ignored) {}
+            }
+
             double cgpa = 0.0;
             try { cgpa = Double.parseDouble(body.getOrDefault("cgpa", "0.0")); } catch (Exception ignored) {}
 
@@ -203,6 +302,8 @@ public class AdminController {
                     .departmentId(deptCode != null ? deptCode.toUpperCase() : "")
                     .batch(batch)
                     .sectionId(sectionId)
+                    .year(yearVal)
+                    .academicStatus(academicStatus)
                     .cgpa(cgpa)
                     .slug(rollNo.toLowerCase())
                     .personalPhone(phone)
@@ -248,7 +349,7 @@ public class AdminController {
 
         if (deptCode != null) {
             List<String> departmentIds = new ArrayList<>();
-            if ((user.getRole() == Role.Faculty || user.getRole() == Role.Mentor) &&
+            if ((user.getRole() == Role.Faculty || user.getRole() == Role.Mentor || user.getRole() == Role.HOD) &&
                 (deptCode.equalsIgnoreCase("AI") || deptCode.equalsIgnoreCase("AIML"))) {
                 departmentIds.add("AI");
                 departmentIds.add("AIML");
@@ -256,6 +357,14 @@ public class AdminController {
                 departmentIds.add(deptCode.toUpperCase());
             }
             user.setDepartmentIds(departmentIds);
+            user.setDepartmentId(deptCode.toUpperCase());
+        }
+
+        if (body.containsKey("year")) user.setYear(body.get("year"));
+        if (body.containsKey("sectionId")) user.setSectionId(body.get("sectionId"));
+        if (body.containsKey("batch")) user.setBatch(body.get("batch"));
+        if (user.getRole() == Role.Student && body.containsKey("roll_no")) {
+            user.setRollNo(body.get("roll_no").toUpperCase());
         }
 
         user.setUpdatedAt(LocalDateTime.now());
@@ -278,11 +387,60 @@ public class AdminController {
                 if (body.containsKey("sectionId")) {
                     p.setSectionId(body.get("sectionId"));
                 }
+                if (body.containsKey("year")) {
+                    p.setYear(body.get("year"));
+                }
+                if (body.containsKey("academicStatus")) {
+                    try {
+                        p.setAcademicStatus(AcademicStatus.valueOf(body.get("academicStatus").toUpperCase()));
+                    } catch (Exception e) {}
+                }
+                p.setUpdatedAt(LocalDateTime.now());
                 studentProfileRepository.save(p);
             });
         }
 
         return ResponseEntity.ok(Map.of("message", "User updated successfully"));
+    }
+
+    @PutMapping("/students/{userId}/academic-status")
+    public ResponseEntity<?> updateStudentAcademicStatus(@PathVariable("userId") String userId, @RequestBody Map<String, String> body) {
+        String statusStr = body.get("academicStatus");
+        String yearVal = body.get("year");
+        if (statusStr == null && yearVal == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "academicStatus or year is required"));
+        }
+        
+        Optional<StudentProfile> profileOpt = studentProfileRepository.findByUserId(userId);
+        if (profileOpt.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Student profile not found for userId: " + userId));
+        }
+        
+        StudentProfile profile = profileOpt.get();
+        // Null-safety: existing documents pre-dating the field will have null academicStatus
+        if (profile.getAcademicStatus() == null) {
+            profile.setAcademicStatus(AcademicStatus.ACTIVE);
+        }
+
+        if (statusStr != null && !statusStr.isBlank()) {
+            try {
+                profile.setAcademicStatus(AcademicStatus.valueOf(statusStr.toUpperCase()));
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid academic status: " + statusStr));
+            }
+        }
+        if (yearVal != null && !yearVal.isBlank()) {
+            profile.setYear(yearVal.trim());
+        }
+        profile.setUpdatedAt(LocalDateTime.now());
+        studentProfileRepository.save(profile);
+
+        AcademicStatus finalStatus = profile.getAcademicStatus() != null ? profile.getAcademicStatus() : AcademicStatus.ACTIVE;
+        return ResponseEntity.ok(Map.of(
+            "message", "Academic status updated successfully",
+            "academicStatus", finalStatus.name(),
+            "year", profile.getYear() != null ? profile.getYear() : ""
+        ));
     }
 
     @DeleteMapping("/users/{id}")
@@ -967,12 +1125,271 @@ public class AdminController {
         return ResponseEntity.ok(data);
     }
 
+    @GetMapping("/analytics/student-counts")
+    public ResponseEntity<?> getStudentCountsByYearAndDepartment(
+            @RequestParam(value = "academicStatus", required = false) String statusParam) {
+
+        List<StudentProfile> profiles = studentProfileRepository.findAll();
+        List<User> studentUsers = userRepository.findAllByRole(Role.Student);
+
+        // Pre-initialize department map with known departments
+        Map<String, Map<String, Integer>> departmentCounts = new HashMap<>();
+        List<Department> allDepts = departmentRepository.findAll();
+        for (Department d : allDepts) {
+            if (d.getCode() != null) {
+                departmentCounts.put(d.getCode().toUpperCase(), new HashMap<>(Map.of("1", 0, "2", 0, "3", 0, "4", 0)));
+            }
+        }
+
+        Set<String> processedUserIds = new HashSet<>();
+
+        for (StudentProfile p : profiles) {
+            if (p.getUserId() != null) {
+                processedUserIds.add(p.getUserId());
+            }
+
+            AcademicStatus status = p.getAcademicStatus() != null ? p.getAcademicStatus() : AcademicStatus.ACTIVE;
+            if (statusParam != null && !statusParam.isBlank() && !"ALL".equalsIgnoreCase(statusParam)) {
+                if (!status.name().equalsIgnoreCase(statusParam)) {
+                    continue;
+                }
+            }
+
+            String rollNo = p.getRollNo() != null ? p.getRollNo().toUpperCase() : "";
+            String dept = p.getDepartmentId() != null && !p.getDepartmentId().isBlank() ? p.getDepartmentId().toUpperCase() : "";
+
+            // Fallback: Infer department from rollNo
+            if (dept.isBlank() || dept.length() > 10) {
+                if (rollNo.contains("CSM") || rollNo.contains("AIML")) dept = "AIML";
+                else if (rollNo.contains("CSE")) dept = "CSE";
+                else if (rollNo.contains("ECE")) dept = "ECE";
+                else if (rollNo.contains("EEE")) dept = "EEE";
+                else if (rollNo.contains("CSD") || rollNo.contains("CDS")) dept = "CDS";
+                else if (rollNo.contains("CSC")) dept = "CSC";
+                else if (rollNo.contains("CAI") || rollNo.contains("AI")) dept = "AI";
+            }
+
+            // Fallback: Check associated User's departmentIds list
+            if ((dept.isBlank() || dept.length() > 10) && p.getUserId() != null) {
+                Optional<User> uOpt = userRepository.findById(p.getUserId());
+                if (uOpt.isPresent() && uOpt.get().getDepartmentIds() != null && !uOpt.get().getDepartmentIds().isEmpty()) {
+                    String userDept = uOpt.get().getDepartmentIds().get(0);
+                    if (userDept != null && !userDept.isBlank()) {
+                        dept = userDept.toUpperCase();
+                    }
+                }
+            }
+
+            if (dept.isBlank()) {
+                dept = "AIML"; // Default fallback
+            }
+
+            String year = p.getYear();
+            if (year == null || year.isBlank()) {
+                if (rollNo.contains("25")) year = "1";
+                else if (rollNo.contains("24")) year = "2";
+                else if (rollNo.contains("23")) year = "3";
+                else if (rollNo.contains("22")) year = "4";
+                else if (p.getBatch() != null && p.getBatch().contains("-")) {
+                    try {
+                        int startYr = Integer.parseInt(p.getBatch().split("-")[0].trim());
+                        int currentYr = java.time.Year.now().getValue();
+                        int calc = (currentYr - startYr) + 1;
+                        year = String.valueOf(Math.min(Math.max(calc, 1), 4));
+                    } catch (Exception e) {
+                        year = "3";
+                    }
+                } else {
+                    year = "3";
+                }
+            }
+
+            departmentCounts.putIfAbsent(dept, new HashMap<>(Map.of("1", 0, "2", 0, "3", 0, "4", 0)));
+            Map<String, Integer> yearMap = departmentCounts.get(dept);
+            yearMap.put(year, yearMap.getOrDefault(year, 0) + 1);
+        }
+
+        // Include any Student users who have no profile yet — use their departmentIds list
+        for (User u : studentUsers) {
+            if (processedUserIds.contains(u.getId())) continue;
+
+            String dept = "AIML"; // Default
+            if (u.getDepartmentIds() != null && !u.getDepartmentIds().isEmpty()) {
+                String d = u.getDepartmentIds().get(0);
+                if (d != null && !d.isBlank()) {
+                    dept = d.toUpperCase();
+                }
+            }
+
+            String year = "3"; // Default for profileless students
+            departmentCounts.putIfAbsent(dept, new HashMap<>(Map.of("1", 0, "2", 0, "3", 0, "4", 0)));
+            Map<String, Integer> yearMap = departmentCounts.get(dept);
+            yearMap.put(year, yearMap.getOrDefault(year, 0) + 1);
+        }
+
+        return ResponseEntity.ok(departmentCounts);
+    }
+
+
+    @GetMapping("/ongoing-activities")
+    public ResponseEntity<?> getOngoingActivities(
+            @RequestParam(value = "filter", defaultValue = "ONGOING") String filter) {
+        
+        List<Map<String, Object>> activities = new ArrayList<>();
+        java.time.LocalDate today = java.time.LocalDate.now();
+
+        // 1. TrainingPrograms
+        List<TrainingProgram> programs = trainingProgramRepository.findAll();
+        for (TrainingProgram tp : programs) {
+            java.time.LocalDate start = tp.getStartDate() != null ? tp.getStartDate() : today;
+            java.time.LocalDate end = tp.getEndDate() != null ? tp.getEndDate() : today.plusDays(1);
+            
+            String status = "ONGOING";
+            if (today.isBefore(start)) {
+                status = "UPCOMING";
+            } else if (today.isAfter(end)) {
+                status = "COMPLETED";
+            }
+
+            if (!"ALL".equalsIgnoreCase(filter) && !status.equalsIgnoreCase(filter)) {
+                continue;
+            }
+
+            long durationDays = java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1;
+
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", tp.getId());
+            map.put("title", tp.getTitle());
+            map.put("description", tp.getDescription());
+            map.put("category", tp.getCategory() != null ? tp.getCategory() : "Training");
+            map.put("venue", tp.getVenue());
+            map.put("startDate", start.toString());
+            map.put("endDate", end.toString());
+            map.put("durationDays", durationDays);
+            map.put("departmentId", tp.getDepartmentId() != null ? tp.getDepartmentId().toUpperCase() : "ALL");
+            map.put("targetYears", tp.getTargetYears() != null && !tp.getTargetYears().isEmpty() ? tp.getTargetYears() : List.of("1", "2", "3", "4"));
+            map.put("status", status);
+            activities.add(map);
+        }
+
+        // 2. Events & Courses as activities if available
+        List<Event> events = eventRepository.findAll();
+        for (Event ev : events) {
+            String status = "ONGOING";
+            java.time.LocalDate eventDate = today;
+            if (ev.getEventDate() != null && !ev.getEventDate().isBlank()) {
+                try { eventDate = java.time.LocalDate.parse(ev.getEventDate()); } catch (Exception ignored) {}
+            }
+            if (eventDate.isBefore(today)) status = "COMPLETED";
+            else if (eventDate.isAfter(today)) status = "UPCOMING";
+
+            if (!"ALL".equalsIgnoreCase(filter) && !status.equalsIgnoreCase(filter)) {
+                continue;
+            }
+
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", ev.getId());
+            map.put("title", ev.getName());
+            map.put("description", "Organizer: " + (ev.getOrganizer() != null ? ev.getOrganizer() : "Internal") + " | Scope: " + ev.getScope());
+            map.put("category", "Event");
+            map.put("venue", ev.getLocation());
+            map.put("startDate", eventDate.toString());
+            map.put("endDate", eventDate.toString());
+            map.put("durationDays", 1);
+            map.put("departmentId", "ALL");
+            map.put("targetYears", List.of("1", "2", "3", "4"));
+            map.put("status", status);
+            activities.add(map);
+        }
+
+        return ResponseEntity.ok(activities);
+    }
+
+    @GetMapping("/students/{slug}/portfolio-override")
+    public ResponseEntity<?> getStudentPortfolioForAdmin(@PathVariable("slug") String slug) {
+        Optional<StudentProfile> profileOpt = studentProfileRepository.findBySlug(slug);
+        if (profileOpt.isEmpty()) {
+            profileOpt = studentProfileRepository.findByRollNoIgnoreCase(slug);
+        }
+        if (profileOpt.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Student profile not found for slug/rollNo: " + slug));
+        }
+
+        StudentProfile profile = profileOpt.get();
+        Optional<User> userOpt = userRepository.findById(profile.getUserId());
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "User account not found"));
+        }
+
+        User user = userOpt.get();
+        String rollNo = profile.getRollNo();
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("user", Map.of("fullName", user.getFullName(), "email", user.getEmail(), "phone", user.getPhone()));
+        data.put("profile", profile);
+        data.put("isPublic", profile.isPublic());
+        data.put("isPublicOverride", true);
+        data.put("education", educationBackgroundRepository.findAllByRollNoIgnoreCase(rollNo));
+        data.put("certifications", certificationRepository.findAllByRollNoIgnoreCase(rollNo));
+        data.put("projects", projectRepository.findAllByRollNoIgnoreCase(rollNo));
+        data.put("internships", internshipRepository.findAllByRollNoIgnoreCase(rollNo));
+        data.put("research", researchRepository.findAllByRollNoIgnoreCase(rollNo));
+        data.put("events", eventRepository.findAllByRollNoIgnoreCase(rollNo));
+        data.put("courses", courseRepository.findAllByRollNoIgnoreCase(rollNo));
+        data.put("skills", skillRepository.findAllByRollNoIgnoreCase(rollNo));
+
+        return ResponseEntity.ok(data);
+    }
+
     @GetMapping("/certifications")
-    public ResponseEntity<?> getAllCertifications() {
+    public ResponseEntity<?> getAllCertifications(
+            @RequestParam(value = "year", required = false) String yearParam,
+            @RequestParam(value = "departmentId", required = false) String deptParam,
+            @RequestParam(value = "sectionId", required = false) String sectionParam) {
+        
         List<Certification> certifications = certificationRepository.findAll();
         List<Map<String, Object>> response = new ArrayList<>();
         
         for (Certification c : certifications) {
+            Optional<StudentProfile> profileOpt = studentProfileRepository.findByRollNoIgnoreCase(c.getRollNo());
+            if (profileOpt.isEmpty()) {
+                if ((yearParam != null && !"ALL".equalsIgnoreCase(yearParam)) ||
+                    (deptParam != null && !"ALL".equalsIgnoreCase(deptParam)) ||
+                    (sectionParam != null && !"ALL".equalsIgnoreCase(sectionParam))) {
+                    continue;
+                }
+            } else {
+                StudentProfile profile = profileOpt.get();
+                
+                String computedYear = profile.getYear();
+                if (computedYear == null || computedYear.isBlank()) {
+                    if (profile.getBatch() != null && profile.getBatch().contains("-")) {
+                        try {
+                            int startYr = Integer.parseInt(profile.getBatch().split("-")[0].trim());
+                            int currentYr = java.time.Year.now().getValue();
+                            int calc = (currentYr - startYr) + 1;
+                            computedYear = String.valueOf(Math.min(Math.max(calc, 1), 4));
+                        } catch (Exception e) {
+                            computedYear = "1";
+                        }
+                    } else {
+                        computedYear = "1";
+                    }
+                }
+
+                if (yearParam != null && !yearParam.isBlank() && !"ALL".equalsIgnoreCase(yearParam)) {
+                    if (!computedYear.equalsIgnoreCase(yearParam)) continue;
+                }
+
+                if (deptParam != null && !deptParam.isBlank() && !"ALL".equalsIgnoreCase(deptParam)) {
+                    if (profile.getDepartmentId() == null || !profile.getDepartmentId().equalsIgnoreCase(deptParam)) continue;
+                }
+
+                if (sectionParam != null && !sectionParam.isBlank() && !"ALL".equalsIgnoreCase(sectionParam)) {
+                    if (profile.getSectionId() == null || !profile.getSectionId().equalsIgnoreCase(sectionParam)) continue;
+                }
+            }
+
             Map<String, Object> map = new HashMap<>();
             map.put("id", c.getId());
             map.put("rollNo", c.getRollNo());
@@ -989,12 +1406,12 @@ public class AdminController {
             map.put("createdAt", c.getCreatedAt() != null ? c.getCreatedAt().toString() : null);
             map.put("updatedAt", c.getUpdatedAt() != null ? c.getUpdatedAt().toString() : null);
             
-            // Fetch student profile and user details
-            Optional<StudentProfile> profileOpt = studentProfileRepository.findByRollNoIgnoreCase(c.getRollNo());
             if (profileOpt.isPresent()) {
                 StudentProfile profile = profileOpt.get();
                 map.put("studentDepartment", profile.getDepartmentId() != null ? profile.getDepartmentId().toUpperCase() : "");
                 map.put("studentBatch", profile.getBatch());
+                map.put("studentSection", profile.getSectionId());
+                map.put("studentYear", profile.getYear());
                 
                 Optional<User> studentUserOpt = userRepository.findById(profile.getUserId());
                 if (studentUserOpt.isPresent()) {
@@ -1094,88 +1511,135 @@ public class AdminController {
     }
 
     @PostMapping("/notification")
-    public ResponseEntity<?> sendManualNotification(@RequestBody Map<String, String> body) {
-        String targetRollNo = body.get("rollNo");
-        String title = body.get("title");
-        String message = body.get("message");
-        String type = body.get("type");
+    public ResponseEntity<?> sendManualNotification(@RequestBody Map<String, Object> body, org.springframework.security.core.Authentication authentication) {
+        String title = (String) body.get("title");
+        String message = (String) body.get("message");
+        String type = (String) body.get("type");
+        String targetRollNo = (String) body.get("rollNo");
 
         if (title == null || title.isBlank() || message == null || message.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Title and message are required"));
         }
 
-        if ("ALL".equalsIgnoreCase(targetRollNo) || targetRollNo == null || targetRollNo.isBlank()) {
-            List<StudentProfile> profiles = studentProfileRepository.findAll();
-            for (StudentProfile p : profiles) {
-                Notification notif = Notification.builder()
-                        .rollNo(p.getRollNo())
-                        .title(title)
-                        .message(message)
-                        .type(type != null ? type : "SYSTEM")
-                        .read(false)
-                        .createdAt(LocalDateTime.now())
-                        .updatedAt(LocalDateTime.now())
-                        .build();
-                notificationRepository.save(notif);
+        @SuppressWarnings("unchecked")
+        List<String> targetRoles = (List<String>) body.get("targetRoles");
+        String yearFilter = (String) body.get("year");
+        String deptFilter = (String) body.get("departmentId");
+        String sectionFilter = (String) body.get("sectionId");
+
+        Set<String> recipientIds = new HashSet<>();
+
+        if (targetRoles != null && !targetRoles.isEmpty()) {
+            // Audience targeting mode
+            boolean includeStudents = targetRoles.stream().anyMatch("Student"::equalsIgnoreCase);
+            boolean includeFaculty = targetRoles.stream().anyMatch("Faculty"::equalsIgnoreCase);
+            boolean includeMentor = targetRoles.stream().anyMatch("Mentor"::equalsIgnoreCase);
+            boolean includeHOD = targetRoles.stream().anyMatch("HOD"::equalsIgnoreCase);
+
+            if (includeStudents) {
+                List<StudentProfile> profiles = studentProfileRepository.findAll();
+                for (StudentProfile p : profiles) {
+                    if (deptFilter != null && !deptFilter.isBlank() && !"ALL".equalsIgnoreCase(deptFilter)) {
+                        if (p.getDepartmentId() == null || !p.getDepartmentId().equalsIgnoreCase(deptFilter)) continue;
+                    }
+                    if (sectionFilter != null && !sectionFilter.isBlank() && !"ALL".equalsIgnoreCase(sectionFilter)) {
+                        if (p.getSectionId() == null || !p.getSectionId().equalsIgnoreCase(sectionFilter)) continue;
+                    }
+                    if (yearFilter != null && !yearFilter.isBlank() && !"ALL".equalsIgnoreCase(yearFilter)) {
+                        String computedYear = p.getYear();
+                        if (computedYear == null || computedYear.isBlank()) {
+                            if (p.getBatch() != null && p.getBatch().contains("-")) {
+                                try {
+                                    int startYr = Integer.parseInt(p.getBatch().split("-")[0].trim());
+                                    int currentYr = java.time.Year.now().getValue();
+                                    int calc = (currentYr - startYr) + 1;
+                                    computedYear = String.valueOf(Math.min(Math.max(calc, 1), 4));
+                                } catch (Exception e) { computedYear = "1"; }
+                            } else { computedYear = "1"; }
+                        }
+                        if (!computedYear.equalsIgnoreCase(yearFilter)) continue;
+                    }
+                    recipientIds.add(p.getRollNo());
+                }
             }
+
+            if (includeFaculty || includeMentor || includeHOD) {
+                List<User> staffUsers = userRepository.findAll().stream()
+                        .filter(u -> (includeFaculty && u.getRole() == Role.Faculty) ||
+                                     (includeMentor && u.getRole() == Role.Mentor) ||
+                                     (includeHOD && u.getRole() == Role.HOD))
+                        .toList();
+
+                for (User u : staffUsers) {
+                    if (deptFilter != null && !deptFilter.isBlank() && !"ALL".equalsIgnoreCase(deptFilter)) {
+                        if (u.getDepartmentIds() == null || u.getDepartmentIds().stream().noneMatch(d -> d.equalsIgnoreCase(deptFilter))) {
+                            continue;
+                        }
+                    }
+                    recipientIds.add(u.getEmail());
+                }
+            }
+        } else if ("ALL".equalsIgnoreCase(targetRollNo) || targetRollNo == null || targetRollNo.isBlank()) {
+            List<StudentProfile> profiles = studentProfileRepository.findAll();
+            for (StudentProfile p : profiles) recipientIds.add(p.getRollNo());
             List<User> staffUsers = userRepository.findAll().stream()
                     .filter(u -> u.getRole() == Role.HOD || u.getRole() == Role.Faculty || u.getRole() == Role.Mentor)
                     .toList();
-            for (User u : staffUsers) {
-                Notification notif = Notification.builder()
-                        .rollNo(u.getEmail())
-                        .title(title)
-                        .message(message)
-                        .type(type != null ? type : "SYSTEM")
-                        .read(false)
-                        .createdAt(LocalDateTime.now())
-                        .updatedAt(LocalDateTime.now())
-                        .build();
-                notificationRepository.save(notif);
-            }
+            for (User u : staffUsers) recipientIds.add(u.getEmail());
         } else {
-            Optional<StudentProfile> profileOpt = studentProfileRepository.findByRollNoIgnoreCase(targetRollNo.trim());
-            String targetId = null;
-            if (profileOpt.isPresent()) {
-                targetId = profileOpt.get().getRollNo();
-            } else {
-                Optional<User> userOpt = userRepository.findByEmailIgnoreCase(targetRollNo.trim());
-                if (userOpt.isPresent()) {
-                    targetId = userOpt.get().getEmail();
-                } else {
-                    // Try by user ID (24-char hex or standard ID)
-                    try {
-                        Optional<User> uOpt = userRepository.findById(targetRollNo.trim());
-                        if (uOpt.isPresent()) {
-                            User u = uOpt.get();
-                            if (u.getRole() == Role.Student) {
-                                Optional<StudentProfile> sp = studentProfileRepository.findByUserId(u.getId());
-                                if (sp.isPresent()) {
-                                    targetId = sp.get().getRollNo();
-                                }
-                            } else {
-                                targetId = u.getEmail();
-                            }
-                        }
-                    } catch (Exception e) {
-                        // ignore malformed ID formats
-                    }
-                }
-            }
-            if (targetId == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Student Roll No or Staff Email " + targetRollNo + " not found"));
-            }
-            Notification notif = Notification.builder()
-                    .rollNo(targetId)
+            // Single target rollNo or email
+            recipientIds.add(targetRollNo.trim());
+        }
+
+        List<Notification> notifs = new ArrayList<>();
+        for (String rId : recipientIds) {
+            notifs.add(Notification.builder()
+                    .rollNo(rId)
                     .title(title)
                     .message(message)
                     .type(type != null ? type : "SYSTEM")
                     .read(false)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
-                    .build();
-            notificationRepository.save(notif);
+                    .build());
         }
-        return ResponseEntity.ok(Map.of("message", "Notification broadcast successfully"));
+        notificationRepository.saveAll(notifs);
+
+        String senderId = "admin";
+        String senderName = "Admin";
+        if (authentication != null && authentication.getName() != null) {
+            String email = authentication.getName();
+            User adminUser = userRepository.findByEmailIgnoreCase(email).orElse(null);
+            if (adminUser != null) {
+                senderId = adminUser.getId();
+                senderName = adminUser.getFullName();
+            }
+        }
+        
+        BroadcastLog logRecord = BroadcastLog.builder()
+                .senderId(senderId)
+                .senderName(senderName)
+                .senderRole("Director")
+                .title(title)
+                .message(message)
+                .targetRoles(targetRoles)
+                .targetDepartment(deptFilter)
+                .targetYear(yearFilter)
+                .targetSection(sectionFilter)
+                .specificTarget(targetRollNo)
+                .recipientCount(notifs.size())
+                .build();
+        broadcastLogRepository.save(logRecord);
+
+        return ResponseEntity.ok(Map.of(
+            "message", "Notification broadcast successfully sent to " + notifs.size() + " recipients.",
+            "recipients", notifs.size()
+        ));
+    }
+
+    @GetMapping("/broadcasts/history")
+    public ResponseEntity<?> getAdminBroadcastHistory() {
+        List<BroadcastLog> history = broadcastLogRepository.findAllByOrderByCreatedAtDesc();
+        return ResponseEntity.ok(history);
     }
 }

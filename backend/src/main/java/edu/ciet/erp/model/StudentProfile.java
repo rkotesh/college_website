@@ -30,6 +30,12 @@ public class StudentProfile {
     private String departmentId;
     private String sectionId;
     
+    // ASSUMPTION: year can be explicitly set or derived from batch (e.g. 2022-2026 -> Year 3)
+    private String year;
+
+    @Builder.Default
+    private AcademicStatus academicStatus = AcademicStatus.ACTIVE;
+    
     @Builder.Default
     private double cgpa = 0.0;
     
