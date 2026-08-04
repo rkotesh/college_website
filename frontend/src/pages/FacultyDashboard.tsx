@@ -29,6 +29,8 @@ type Tab =
 
 export default function FacultyDashboard({ userSession, handleLogout }: FacultyDashboardProps) {
   const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || (import.meta.env.DEV ? '' : 'https://ciet-erp.onrender.com');
+  const token = userSession.accessToken;
+  const userEmail = userSession.email;
   
   const getInitialTab = (): Tab => {
     const parts = window.location.pathname.split('/');
@@ -271,7 +273,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   const [trainings, setTrainings] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [meetingLogs, setMeetingLogs] = useState<any[]>([]);
-  const [escalations, setEscalations] = useState<any[]>([]);
   
   // HOD Profile & Notifications state
   const [hodProfile, setHodProfile] = useState<any>(null);
@@ -298,21 +299,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   const [staffMsgInput, setStaffMsgInput] = useState('');
   const [msgSidebarTab, setMsgSidebarTab] = useState<'chats' | 'students' | 'faculty' | 'mentors'>('chats');
   const staffChatContainerRef = useRef<HTMLDivElement | null>(null);
-  const escalationChatContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Active escalation thread
-  const [activeThread, setActiveThread] = useState<any>(null);
-  const [chatMessage, setChatMessage] = useState('');
-  const [privateNotes, setPrivateNotes] = useState<any[]>([]);
-  const [newNote, setNewNote] = useState('');
-
-  // New Escalation Form states
-  const [showNewEscalationForm, setShowNewEscalationForm] = useState(false);
-  const [newEscRollNos, setNewEscRollNos] = useState<string[]>([]);
-  const [newEscMentorIds, setNewEscMentorIds] = useState<string[]>([]);
-  const [newEscFacultyIds, setNewEscFacultyIds] = useState<string[]>([]);
-  const [newEscSubjectCode, setNewEscSubjectCode] = useState('GENERAL');
-  const [creatingEscalation, setCreatingEscalation] = useState(false);
   const [mentorMentees, setMentorMentees] = useState<any[]>([]);
   const [loadingMentees, setLoadingMentees] = useState(false);
   const [selectedMentee, setSelectedMentee] = useState<any | null>(null);
@@ -359,11 +346,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
     }
   }, [selectedConversation?.messages]);
 
-  useEffect(() => {
-    if (escalationChatContainerRef.current) {
-      escalationChatContainerRef.current.scrollTop = escalationChatContainerRef.current.scrollHeight;
-    }
-  }, [activeThread?.messages]);
   const [directoryTab, setDirectoryTab] = useState<'students' | 'faculty' | 'mentors'>('students');
   const [selectedDetailUser, setSelectedDetailUser] = useState<any | null>(null);
   const [detailUserData, setDetailUserData] = useState<any | null>(null);
@@ -400,7 +382,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
         trainingsRes,
         announcementsRes,
         logsRes,
-        escalationsRes,
         profileRes,
         notifRes,
         portalRes
@@ -411,7 +392,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
         fetch(`${API_BASE_URL}/api/v1/hod/trainings`, { headers }),
         fetch(`${API_BASE_URL}/api/v1/hod/announcements`, { headers }),
         fetch(`${API_BASE_URL}/api/v1/hod/meeting-logs`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/hod/escalations`, { headers }),
         fetch(`${API_BASE_URL}/api/v1/hod/profile`, { headers }),
         fetch(`${API_BASE_URL}/api/v1/hod/notifications`, { headers }),
         fetch(`${API_BASE_URL}/api/v1/portal/hod/dashboard`, { headers })
@@ -423,7 +403,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
       if (trainingsRes.ok) setTrainings(await trainingsRes.json());
       if (announcementsRes.ok) setAnnouncements(await announcementsRes.json());
       if (logsRes.ok) setMeetingLogs(await logsRes.json());
-      if (escalationsRes.ok) setEscalations(await escalationsRes.json());
       
       if (profileRes.ok) {
         const prof = await profileRes.json();
@@ -560,119 +539,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
     }
   };
 
-
-  // Escalation Chat Thread Messages
-  const selectThread = async (thread: any) => {
-    setActiveThread(thread);
-    // Fetch private case notes for the student in this thread
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/case-notes/${thread.thread.rollNo}`, {
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      if (res.ok) {
-        setPrivateNotes(await res.json());
-      }
-    } catch {
-      setPrivateNotes([]);
-    }
-  };
-
-  const sendChatMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatMessage.trim() || !activeThread) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/escalations/${activeThread.thread.id}/message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({ content: chatMessage })
-      });
-      if (res.ok) {
-        const newMsg = await res.json();
-        // Update local thread state
-        setActiveThread((prev: any) => ({
-          ...prev,
-          messages: [...prev.messages, newMsg]
-        }));
-        setChatMessage('');
-        fetchBaseData();
-      }
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  const addCaseNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newNote.trim() || !activeThread) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/case-notes/${activeThread.thread.rollNo}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({ content: newNote })
-      });
-      if (res.ok) {
-        const createdNote = await res.json();
-        setPrivateNotes((prev) => [createdNote, ...prev]);
-        setNewNote('');
-      }
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-
-  const handleCreateNewEscalation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newEscRollNos.length === 0) return;
-    setCreatingEscalation(true);
-    try {
-      const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userSession.accessToken}` };
-      // Create one thread per selected student
-      const createdThreadIds: string[] = [];
-      for (const rollNo of newEscRollNos) {
-        const res = await fetch(`${API_BASE_URL}/api/v1/hod/escalations`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            rollNo,
-            subjectCode: newEscSubjectCode || 'GENERAL',
-            mentorUserIds: newEscMentorIds.length > 0 ? newEscMentorIds : undefined,
-            facultyUserIds: newEscFacultyIds.length > 0 ? newEscFacultyIds : undefined,
-          })
-        });
-        if (!res.ok) { const err = await res.json(); throw new Error(err.error || `Failed for ${rollNo}`); }
-        const t = await res.json();
-        createdThreadIds.push(t.id);
-      }
-      // Reload escalations list
-      const escRes = await fetch(`${API_BASE_URL}/api/v1/hod/escalations`, {
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      if (escRes.ok) {
-        const escData = await escRes.json();
-        setEscalations(escData);
-        // Select last created thread
-        const last = escData.find((e: any) => e.thread.id === createdThreadIds[createdThreadIds.length - 1]);
-        if (last) { setActiveThread(last); setPrivateNotes([]); }
-      }
-      // Reset form
-      setShowNewEscalationForm(false);
-      setNewEscRollNos([]);
-      setNewEscMentorIds([]);
-      setNewEscFacultyIds([]);
-      setNewEscSubjectCode('GENERAL');
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setCreatingEscalation(false);
-    }
-  };
 
   const handleSaveHODProfile = async (e: React.FormEvent) => {
     e.preventDefault();

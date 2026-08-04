@@ -1275,7 +1275,7 @@ const BroadcastsTab: React.FC<{ token: string }> = ({ token }) => {
 
 
 
-const EscalationsTab: React.FC<{ token: string; userEmail: string; userRole: string }> = ({ token, userEmail, userRole }) => {
+const EscalationsTab: React.FC<{ token: string; userEmail: string }> = ({ token, userEmail }) => {
   return <EscalationsGroupChat token={token} userEmail={userEmail} userRole="HOD" canCreateGroup={true} />;
 };
 
@@ -1657,7 +1657,7 @@ const HODDashboard: React.FC<HODDashboardProps> = ({ userSession, handleLogout }
       case 'mentorship':   return <MentorshipTab token={token} />;
       case 'documents':   return <DocumentsTab token={token} />;
       case 'broadcasts':  return <BroadcastsTab token={token} />;
-      case 'escalations': return <EscalationsTab token={token} userEmail={userSession.user?.email || ''} userRole="HOD" />;
+      case 'escalations': return <EscalationsTab token={token} userEmail={userSession.email} />;
       case 'analytics':   return <AnalyticsTab token={token} />;
       case 'at-risk':     return <AtRiskTab token={token} />;
       case 'attainment':  return <AttainmentTab token={token} />;

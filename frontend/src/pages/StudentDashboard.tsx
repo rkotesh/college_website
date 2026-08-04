@@ -544,6 +544,9 @@ const pageVariants = {
 const pageTransition = { duration: 0.22, ease: [0.16, 1, 0.3, 1] as const };
 
 export default function StudentDashboard({ userSession, handleLogout }: StudentDashboardProps) {
+  const token = userSession.accessToken;
+  const userEmail = userSession.email;
+
   const getInitialTab = (): Tab => {
     const parts = window.location.pathname.split('/');
     const tabFromUrl = parts[parts.length - 1];
@@ -634,8 +637,6 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
 
   // Intervention / Escalation states
   const [studentEscalations, setStudentEscalations] = useState<any[]>([]);
-  const [escalationInput, setEscalationInput] = useState('');
-  const [sendingEscalationMsg, setSendingEscalationMsg] = useState(false);
 
   useEffect(() => {
     const mainEl = document.querySelector('.ds-main');
@@ -696,33 +697,6 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
       setError(err.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSendStudentEscalationMessage = async (e: React.FormEvent, threadId: string) => {
-    e.preventDefault();
-    if (!escalationInput.trim()) return;
-    try {
-      setSendingEscalationMsg(true);
-      const res = await fetch(`${API_BASE_URL}/api/v1/portal/student/escalations/${threadId}/message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({ content: escalationInput })
-      });
-      if (!res.ok) throw new Error('Failed to send message.');
-      setEscalationInput('');
-      
-      // Refresh escalations list
-      const headers = { 'Authorization': `Bearer ${userSession.accessToken}` };
-      const escRes = await fetch(`${API_BASE_URL}/api/v1/portal/student/escalations`, { headers });
-      if (escRes.ok) setStudentEscalations(await escRes.json());
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setSendingEscalationMsg(false);
     }
   };
 
@@ -2355,7 +2329,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
               ══════════════════════════════════════════ */}
               {activeTab === 'escalation' && (
                 <div className="ds-tab-section">
-                  <EscalationsGroupChat token={token} userEmail={studentProfile?.email || ''} userRole="Student" canCreateGroup={false} />
+                  <EscalationsGroupChat token={token} userEmail={userEmail} userRole="Student" canCreateGroup={false} />
                 </div>
               )}
 

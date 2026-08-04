@@ -105,6 +105,7 @@ export const EscalationsGroupChat: React.FC<EscalationsGroupChatProps> = ({
 }) => {
   const h = { headers: { Authorization: `Bearer ${token}` } };
   const isStudent = userRole === 'Student';
+  const currentUserEmail = (userEmail || '').trim().toLowerCase();
 
   const fetchEndpoint = isStudent ? `${API}/portal/student/escalations` : `${API}/hod/escalations`;
   const msgEndpoint = (tid: string) =>
@@ -367,7 +368,11 @@ export const EscalationsGroupChat: React.FC<EscalationsGroupChatProps> = ({
   };
 
   const canManage = (t: any) =>
-    !isStudent && (userRole === 'HOD' || t.thread?.createdByRole === userRole);
+    !isStudent && (
+      userRole === 'HOD' ||
+      t.thread?.createdByRole === userRole ||
+      (t.thread?.createdByEmail || '').toLowerCase() === currentUserEmail
+    );
 
   /* Light ERP Theme Styles */
   const S = {
@@ -977,7 +982,6 @@ export const EscalationsGroupChat: React.FC<EscalationsGroupChatProps> = ({
                       }}>{m.content}</span>
                     </div>
                   );
-                  const senderColor = ROLE_COLOR[m.senderRole] || '#475569';
                   return (
                     <div key={i} style={{
                       display: 'flex',
