@@ -566,6 +566,8 @@ public class PortalController {
         userOpt.ifPresent(u -> {
             Map<String, String> publicUser = new HashMap<>();
             publicUser.put("fullName", u.getFullName());
+            publicUser.put("email", u.getEmail());
+            publicUser.put("photoUrl", u.getPhotoUrl() != null ? u.getPhotoUrl() : "");
             data.put("user", publicUser);
         });
         
