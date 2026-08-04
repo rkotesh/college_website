@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import LogoHeader from '../components/LogoHeader';
+import { EscalationsGroupChat } from '../components/EscalationsGroupChat';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 // Use relative path — Vite proxy forwards /api → http://localhost:8080
@@ -72,9 +73,10 @@ const Chip: React.FC<{ label: string; color?: string }> = ({ label, color = 'var
 // Directory Tab
 // ═══════════════════════════════════════════════════════════
 const DirectoryTab: React.FC<{ token: string }> = ({ token }) => {
-  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const h = { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 };
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [yearFilter, setYearFilter] = useState('ALL');
   const [sectionFilter, setSectionFilter] = useState('ALL');
@@ -92,12 +94,17 @@ const DirectoryTab: React.FC<{ token: string }> = ({ token }) => {
   const fetchDirectory = async () => {
     try {
       setLoading(true);
+      setError(null);
       const params = new URLSearchParams();
       if (yearFilter !== 'ALL') params.append('year', yearFilter);
       if (sectionFilter !== 'ALL') params.append('sectionId', sectionFilter);
       const res = await axios.get(`${API}/portal/directory?${params}`, h);
-      setUsers(res.data);
-    } catch (e) { console.error(e); }
+      setUsers(Array.isArray(res.data) ? res.data : []);
+    } catch (e: any) {
+      console.error('[Directory] fetch error:', e?.response?.status, e?.message);
+      setError(e?.response?.status === 500 ? 'Server error. Please restart the backend.' : 'Could not load directory. Is the backend running?');
+      setUsers([]);
+    }
     finally { setLoading(false); }
   };
 
@@ -157,9 +164,14 @@ const DirectoryTab: React.FC<{ token: string }> = ({ token }) => {
           <tbody>
             {loading ? (
               <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>Loading…</td></tr>
+            ) : error ? (
+              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#e53e3e' }}>
+                ⚠️ {error} <button onClick={fetchDirectory} style={{ marginLeft: 12, padding: '4px 12px', borderRadius: 6, background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer' }}>Retry</button>
+              </td></tr>
             ) : filtered.length === 0 ? (
               <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>No users found.</td></tr>
             ) : filtered.map((u: any) => (
+
               <tr key={u.id}>
                 {/* Name + roll no */}
                 <td>
@@ -229,7 +241,7 @@ const DirectoryTab: React.FC<{ token: string }> = ({ token }) => {
 // Mentorship Tab
 // ═══════════════════════════════════════════════════════════
 const MentorshipTab: React.FC<{ token: string }> = ({ token }) => {
-  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const h = { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 };
   const [mentors, setMentors] = useState<User[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -1087,11 +1099,13 @@ const BroadcastsTab: React.FC<{ token: string }> = ({ token }) => {
     try {
       setLoadingNotifs(true);
       const r = await axios.get(`${API}/hod/notifications/sent`, h);
-      // Deduplicate by title+message (since one broadcast creates one notif per recipient)
+      // Deduplicate by title+message+hour (since one broadcast creates one notif per recipient, and timestamps vary by ms)
       const seen = new Set<string>();
       const unique: any[] = [];
       for (const n of r.data) {
-        const key = `${n.title}||${n.message}||${n.createdAt}`;
+        let timeBucket = '';
+        try { timeBucket = n.createdAt ? new Date(n.createdAt).toISOString().substring(0, 13) : ''; } catch (err) {}
+        const key = `${n.title}||${n.message}||${timeBucket}`;
         if (!seen.has(key)) { seen.add(key); unique.push(n); }
       }
       setSentNotifs(unique);
@@ -1261,96 +1275,11 @@ const BroadcastsTab: React.FC<{ token: string }> = ({ token }) => {
 
 
 
-// ═══════════════════════════════════════════════════════════
-// Escalations Tab
-// ═══════════════════════════════════════════════════════════
-const EscalationsTab: React.FC<{ token: string }> = ({ token }) => {
-  const h = { headers: { Authorization: `Bearer ${token}` } };
-  const [threads, setThreads] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState<any>(null);
-  const [msg, setMsg] = useState('');
-
-  useEffect(() => { fetchEscalations(); }, []);
-
-  const fetchEscalations = async () => {
-    try {
-      setLoading(true);
-      const r = await axios.get(`${API}/hod/escalations`, h);
-      setThreads(r.data);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  };
-
-  const sendMsg = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!msg || !active) return;
-    try {
-      await axios.post(`${API}/hod/escalations/${active.thread.id}/message`, { content: msg }, h);
-      setMsg(''); fetchEscalations();
-    } catch (e) { alert('Failed to send'); }
-  };
-
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading escalations…</div>;
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', minHeight: '480px' }}>
-      <div style={{ background: 'var(--surface-raised)', borderRadius: 'var(--r3)', border: '1px solid var(--surface-border)', overflowY: 'auto', maxHeight: '480px' }}>
-        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--surface-border)', fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>
-          Escalated Threads
-        </div>
-        {threads.length === 0
-          ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No active escalations.</div>
-          : threads.map((t: any) => (
-            <button key={t.thread.id} onClick={() => setActive(t)} style={{
-              width: '100%', textAlign: 'left', padding: '14px 18px', border: 'none',
-              borderBottom: '1px solid var(--surface-border)', cursor: 'pointer',
-              background: active?.thread?.id === t.thread.id ? 'var(--accent-subtle)' : 'transparent',
-              borderLeft: active?.thread?.id === t.thread.id ? '3px solid var(--accent)' : '3px solid transparent',
-              transition: 'all .15s ease'
-            }}>
-              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{t.studentUser?.fullName || t.profile?.rollNo || '—'}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Subject: {t.thread?.subjectCode}</div>
-            </button>
-          ))
-        }
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', border: '1px solid var(--surface-border)', borderRadius: 'var(--r3)', background: 'var(--surface-base)', minHeight: '380px' }}>
-        {active ? (<>
-          <div style={{ padding: '14px 18px', background: 'var(--surface-raised)', borderBottom: '1px solid var(--surface-border)', borderRadius: 'var(--r3) var(--r3) 0 0' }}>
-            <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>{active.studentUser?.fullName || '—'}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Mentor: {active.mentors?.[0]?.fullName || 'Unassigned'}</div>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '340px' }}>
-            {active.messages?.map((m: any, i: number) => (
-              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.senderRole === 'HOD' ? 'flex-end' : 'flex-start' }}>
-                <div style={{
-                  maxWidth: '75%', padding: '10px 14px', borderRadius: 'var(--r3)',
-                  background: m.senderRole === 'HOD' ? 'var(--accent)' : 'var(--surface-raised)',
-                  color: m.senderRole === 'HOD' ? '#fff' : 'var(--text-primary)',
-                  border: m.senderRole === 'HOD' ? 'none' : '1px solid var(--surface-border)',
-                  fontSize: 13
-                }}>
-                  <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 4 }}>{m.senderName} ({m.senderRole})</div>
-                  {m.content}
-                </div>
-              </div>
-            ))}
-          </div>
-          <form onSubmit={sendMsg} style={{ padding: '14px 18px', background: 'var(--surface-raised)', borderTop: '1px solid var(--surface-border)', borderRadius: '0 0 var(--r3) var(--r3)', display: 'flex', gap: 10 }}>
-            <input className="search-input" style={{ flex: 1, paddingLeft: 14 }} value={msg} onChange={e => setMsg(e.target.value)} placeholder="Type a message…" />
-            <button type="submit" className="btn-action primary" disabled={!msg}>Send</button>
-          </form>
-        </>) : (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 15, padding: '40px' }}>
-            Select a thread to view
-          </div>
-        )}
-      </div>
-    </div>
-  );
+const EscalationsTab: React.FC<{ token: string; userEmail: string; userRole: string }> = ({ token, userEmail, userRole }) => {
+  return <EscalationsGroupChat token={token} userEmail={userEmail} userRole="HOD" canCreateGroup={true} />;
 };
+
+
 
 // ═══════════════════════════════════════════════════════════
 // Analytics Tab
@@ -1728,7 +1657,7 @@ const HODDashboard: React.FC<HODDashboardProps> = ({ userSession, handleLogout }
       case 'mentorship':   return <MentorshipTab token={token} />;
       case 'documents':   return <DocumentsTab token={token} />;
       case 'broadcasts':  return <BroadcastsTab token={token} />;
-      case 'escalations': return <EscalationsTab token={token} />;
+      case 'escalations': return <EscalationsTab token={token} userEmail={userSession.user?.email || ''} userRole="HOD" />;
       case 'analytics':   return <AnalyticsTab token={token} />;
       case 'at-risk':     return <AtRiskTab token={token} />;
       case 'attainment':  return <AttainmentTab token={token} />;

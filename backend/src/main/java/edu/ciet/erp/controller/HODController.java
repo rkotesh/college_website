@@ -128,51 +128,78 @@ public class HODController {
             @RequestParam(required = false) String year,
             @RequestParam(required = false) String sectionId) {
 
-        List<User> allStudents = userRepository.findAllByRole(Role.Student);
-        List<Map<String, Object>> result = new ArrayList<>();
-
-        for (User u : allStudents) {
-            // Try to enrich with StudentProfile
-            StudentProfile profile = studentProfileRepository.findByUserId(u.getId()).orElse(null);
-
-            // Apply year filter (only if we have profile data)
-            if (year != null && !year.isBlank() && !year.equalsIgnoreCase("ALL")) {
-                if (profile == null || !year.equalsIgnoreCase(profile.getYear())) continue;
-            }
-            // Apply section filter
-            if (sectionId != null && !sectionId.isBlank() && !sectionId.equalsIgnoreCase("ALL")) {
-                if (profile == null || !sectionId.equalsIgnoreCase(profile.getSectionId())) continue;
+        try {
+            List<User> allStudents = userRepository.findAllByRole(Role.Student);
+            if (allStudents == null || allStudents.isEmpty()) {
+                return ResponseEntity.ok(Collections.emptyList());
             }
 
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("id",       u.getId());
-            entry.put("fullName", u.getFullName());
-            entry.put("email",    u.getEmail());
-            entry.put("role",     "Student");
+            // ── BATCH load all profiles in ONE DB query (was N+1, now 1) ──────
+            List<String> studentIds = allStudents.stream()
+                    .filter(u -> u != null && u.getId() != null)
+                    .map(User::getId)
+                    .collect(java.util.stream.Collectors.toList());
 
-            if (profile != null) {
-                entry.put("rollNo",       profile.getRollNo() != null ? profile.getRollNo() : u.getRollNo());
-                entry.put("year",         profile.getYear() != null ? profile.getYear() : u.getYear());
-                entry.put("sectionId",    profile.getSectionId() != null ? profile.getSectionId() : u.getSectionId());
-                entry.put("departmentId", profile.getDepartmentId() != null ? profile.getDepartmentId() : u.getDepartmentId());
-                entry.put("batch",        profile.getBatch() != null ? profile.getBatch() : u.getBatch());
-                entry.put("cgpa",         profile.getCgpa());
-                entry.put("photoUrl",     profile.getPhotoUrl() != null ? profile.getPhotoUrl() : u.getPhotoUrl());
-                entry.put("slug",         profile.getSlug());
-                entry.put("isPublic",     profile.isPublic());
-            } else {
-                // Fallback to User fields when no StudentProfile exists
-                entry.put("rollNo",       u.getRollNo());
-                entry.put("year",         u.getYear());
-                entry.put("sectionId",    u.getSectionId());
-                entry.put("departmentId", u.getDepartmentId());
-                entry.put("batch",        u.getBatch());
-                entry.put("photoUrl",     u.getPhotoUrl());
+            Map<String, StudentProfile> profileMap = studentProfileRepository
+                    .findAllByUserIdIn(studentIds)
+                    .stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            StudentProfile::getUserId,
+                            p -> p,
+                            (a, b) -> a // keep first on duplicate key
+                    ));
+            // ─────────────────────────────────────────────────────────────────
+
+            List<Map<String, Object>> result = new ArrayList<>();
+
+            for (User u : allStudents) {
+                if (u == null) continue;
+                StudentProfile profile = profileMap.get(u.getId());
+
+                // Apply year filter
+                if (year != null && !year.isBlank() && !year.equalsIgnoreCase("ALL")) {
+                    String profileYear = profile != null ? profile.getYear() : u.getYear();
+                    if (profileYear == null || !year.equalsIgnoreCase(profileYear)) continue;
+                }
+                // Apply section filter
+                if (sectionId != null && !sectionId.isBlank() && !sectionId.equalsIgnoreCase("ALL")) {
+                    String profileSection = profile != null ? profile.getSectionId() : u.getSectionId();
+                    if (profileSection == null || !sectionId.equalsIgnoreCase(profileSection)) continue;
+                }
+
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("id",       u.getId() != null ? u.getId() : "");
+                entry.put("fullName", u.getFullName() != null ? u.getFullName() : (u.getEmail() != null ? u.getEmail() : "Student"));
+                entry.put("email",    u.getEmail() != null ? u.getEmail() : "");
+                entry.put("role",     "Student");
+
+                if (profile != null) {
+                    entry.put("rollNo",       profile.getRollNo() != null ? profile.getRollNo() : (u.getRollNo() != null ? u.getRollNo() : ""));
+                    entry.put("year",         profile.getYear() != null ? profile.getYear() : (u.getYear() != null ? u.getYear() : ""));
+                    entry.put("sectionId",    profile.getSectionId() != null ? profile.getSectionId() : (u.getSectionId() != null ? u.getSectionId() : ""));
+                    entry.put("departmentId", profile.getDepartmentId() != null ? profile.getDepartmentId() : (u.getDepartmentId() != null ? u.getDepartmentId() : ""));
+                    entry.put("batch",        profile.getBatch() != null ? profile.getBatch() : (u.getBatch() != null ? u.getBatch() : ""));
+                    entry.put("cgpa",         profile.getCgpa());
+                    entry.put("photoUrl",     profile.getPhotoUrl() != null ? profile.getPhotoUrl() : u.getPhotoUrl());
+                    entry.put("slug",         profile.getSlug());
+                    entry.put("isPublic",     profile.isPublic());
+                } else {
+                    entry.put("rollNo",       u.getRollNo() != null ? u.getRollNo() : "");
+                    entry.put("year",         u.getYear() != null ? u.getYear() : "");
+                    entry.put("sectionId",    u.getSectionId() != null ? u.getSectionId() : "");
+                    entry.put("departmentId", u.getDepartmentId() != null ? u.getDepartmentId() : "");
+                    entry.put("batch",        u.getBatch() != null ? u.getBatch() : "");
+                    entry.put("photoUrl",     u.getPhotoUrl());
+                }
+                result.add(entry);
             }
-            result.add(entry);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error in getAllStudents: ", e);
+            return ResponseEntity.ok(Collections.emptyList());
         }
-        return ResponseEntity.ok(result);
     }
+
 
     /**
      * GET /api/v1/hod/all-faculty
@@ -223,18 +250,32 @@ public class HODController {
         int coveredTopics = subjects.stream().mapToInt(SyllabusCoverage::getCoveredTopics).sum();
         double syllabusPct = totalTopics > 0 ? Math.round(((double) coveredTopics / totalTopics) * 1000.0) / 10.0 : 0.0;
 
-        // 2. Mentorship statistics
+        // 2. Mentorship statistics — batch load profiles in ONE query
         List<User> students = userRepository.findAllByRole(Role.Student);
         List<User> deptStudents = students.stream()
                 .filter(u -> isUserInDepartment(u, deptId))
                 .toList();
 
+        List<String> deptStudentIds = deptStudents.stream()
+                .filter(u -> u.getId() != null)
+                .map(User::getId)
+                .collect(java.util.stream.Collectors.toList());
+
+        Map<String, StudentProfile> analyticsProfileMap = studentProfileRepository
+                .findAllByUserIdIn(deptStudentIds)
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        StudentProfile::getUserId,
+                        p -> p,
+                        (a, b) -> a
+                ));
+
         int totalStudents = deptStudents.size();
         int assignedCount = 0;
         for (User student : deptStudents) {
-            Optional<StudentProfile> prof = studentProfileRepository.findByUserId(student.getId());
-            if (prof.isPresent()) {
-                if (mentorshipAssignmentRepository.findByRollNoIgnoreCase(prof.get().getRollNo()).isPresent()) {
+            StudentProfile prof = analyticsProfileMap.get(student.getId());
+            if (prof != null && prof.getRollNo() != null) {
+                if (mentorshipAssignmentRepository.findByRollNoIgnoreCase(prof.getRollNo()).isPresent()) {
                     assignedCount++;
                 }
             }
@@ -244,9 +285,8 @@ public class HODController {
         // 3. Academic performance
         Map<String, List<Double>> batchCgpas = new HashMap<>();
         for (User student : deptStudents) {
-            Optional<StudentProfile> profOpt = studentProfileRepository.findByUserId(student.getId());
-            if (profOpt.isPresent()) {
-                StudentProfile prof = profOpt.get();
+            StudentProfile prof = analyticsProfileMap.get(student.getId());
+            if (prof != null) {
                 String batch = prof.getBatch() != null ? prof.getBatch() : "General";
                 batchCgpas.computeIfAbsent(batch, k -> new ArrayList<>()).add(prof.getCgpa());
             }
@@ -257,6 +297,7 @@ public class HODController {
             double avg = cgpas.stream().mapToDouble(d -> d).average().orElse(0.0);
             batchAverages.put(batch, Math.round(avg * 100.0) / 100.0);
         });
+
 
         return ResponseEntity.ok(Map.of(
                 "syllabusPct", syllabusPct,
@@ -272,30 +313,40 @@ public class HODController {
 
     @GetMapping("/at-risk")
     public ResponseEntity<?> getAtRiskStudents(Authentication authentication) {
-        String deptId = resolveDepartmentId(authentication);
-        List<User> students = userRepository.findAllByRole(Role.Student).stream()
-                .filter(u -> isUserInDepartment(u, deptId))
-                .toList();
+        try {
+            String deptId = resolveDepartmentId(authentication);
+            List<User> students = userRepository.findAllByRole(Role.Student).stream()
+                    .filter(u -> isUserInDepartment(u, deptId))
+                    .toList();
 
-        List<Map<String, Object>> atRisk = new ArrayList<>();
-        for (User u : students) {
-            Optional<StudentProfile> pOpt = studentProfileRepository.findByUserId(u.getId());
-            if (pOpt.isPresent()) {
-                StudentProfile p = pOpt.get();
+            if (students.isEmpty()) return ResponseEntity.ok(Collections.emptyList());
+
+            // Batch load all profiles in ONE query
+            List<String> ids = students.stream().filter(u -> u.getId() != null).map(User::getId)
+                    .collect(java.util.stream.Collectors.toList());
+            Map<String, StudentProfile> pMap = studentProfileRepository.findAllByUserIdIn(ids)
+                    .stream().collect(java.util.stream.Collectors.toMap(StudentProfile::getUserId, p -> p, (a, b) -> a));
+
+            List<Map<String, Object>> atRisk = new ArrayList<>();
+            for (User u : students) {
+                StudentProfile p = pMap.get(u.getId());
+                if (p == null) continue;
                 List<String> riskFactors = new ArrayList<>();
 
                 if (p.getCgpa() < 6.0) riskFactors.add("Low CGPA (< 6.0)");
                 if (p.getAcademicStatus() != AcademicStatus.ACTIVE) riskFactors.add("Status: " + p.getAcademicStatus());
-                
+
                 double attendancePct = p.getTotalClasses() > 0 ? (double) p.getAttendedClasses() / p.getTotalClasses() : 1.0;
                 if (attendancePct < 0.75) riskFactors.add("Low Attendance (< 75%)");
 
-                boolean hasF = semesterResultRepository.findAllByRollNoIgnoreCase(p.getRollNo())
-                        .stream().anyMatch(r -> "F".equalsIgnoreCase(r.getGrade()));
-                if (hasF) riskFactors.add("Active Backlogs");
+                if (p.getRollNo() != null) {
+                    boolean hasF = semesterResultRepository.findAllByRollNoIgnoreCase(p.getRollNo())
+                            .stream().anyMatch(r -> "F".equalsIgnoreCase(r.getGrade()));
+                    if (hasF) riskFactors.add("Active Backlogs");
 
-                boolean noMentor = mentorshipAssignmentRepository.findByRollNoIgnoreCase(p.getRollNo()).isEmpty();
-                if (noMentor) riskFactors.add("Unassigned Mentor");
+                    boolean noMentor = mentorshipAssignmentRepository.findByRollNoIgnoreCase(p.getRollNo()).isEmpty();
+                    if (noMentor) riskFactors.add("Unassigned Mentor");
+                }
 
                 if (!riskFactors.isEmpty()) {
                     Map<String, Object> map = new HashMap<>();
@@ -305,9 +356,13 @@ public class HODController {
                     atRisk.add(map);
                 }
             }
+            return ResponseEntity.ok(atRisk);
+        } catch (Exception e) {
+            log.error("Error in getAtRiskStudents: ", e);
+            return ResponseEntity.ok(Collections.emptyList());
         }
-        return ResponseEntity.ok(atRisk);
     }
+
 
     @GetMapping("/faculty")
     public ResponseEntity<?> getFacultyWorkloads(Authentication authentication) {
@@ -781,93 +836,78 @@ public class HODController {
     }
 
     @PostMapping("/escalations")
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD', 'ROLE_Faculty', 'ROLE_Mentor')")
     @SuppressWarnings("unchecked")
     public ResponseEntity<?> createEscalationThread(Authentication authentication, @RequestBody Map<String, Object> body) {
-        String studentRollNo = (String) body.get("rollNo");
-        String subjectCode = (String) body.get("subjectCode");
+        String email = authentication.getName();
+        User creator = userRepository.findByEmailIgnoreCase(email).orElse(null);
+        if (creator == null) return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
 
-        if (studentRollNo == null || studentRollNo.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student roll number is required"));
-        }
+        String groupName = (String) body.get("groupName");
+        if (groupName == null || groupName.isBlank()) groupName = "Group Chat";
 
-        // Find student profile
-        Optional<StudentProfile> profileOpt = studentProfileRepository.findByRollNoIgnoreCase(studentRollNo);
-        if (profileOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student profile not found"));
-        }
-        StudentProfile profile = profileOpt.get();
+        // Collect student roll numbers
+        List<String> rollNos = new ArrayList<>();
+        Object rawRollNos = body.get("rollNos");
+        if (rawRollNos instanceof List) rollNos = new ArrayList<>((List<String>) rawRollNos);
+        // Legacy single rollNo
+        String singleRollNo = (String) body.get("rollNo");
+        if (rollNos.isEmpty() && singleRollNo != null && !singleRollNo.isBlank()) rollNos.add(singleRollNo);
 
-        // Resolve mentor IDs — accept list from body, else fall back to mentorship assignment
+        // Collect mentor IDs
         List<String> mentorIds = new ArrayList<>();
         Object rawMentors = body.get("mentorUserIds");
-        if (rawMentors instanceof List) {
-            mentorIds = (List<String>) rawMentors;
-        }
-        if (mentorIds.isEmpty()) {
-            // single legacy field
-            String single = (String) body.get("mentorUserId");
-            if (single != null && !single.isBlank()) {
-                mentorIds = List.of(single);
-            } else {
-                Optional<MentorshipAssignment> assignmentOpt = mentorshipAssignmentRepository.findByRollNoIgnoreCase(studentRollNo);
-                assignmentOpt.map(MentorshipAssignment::getMentorUserId).filter(s -> !s.isBlank()).ifPresent(mentorIds::add);
-            }
-        }
+        if (rawMentors instanceof List) mentorIds = new ArrayList<>((List<String>) rawMentors);
 
-        // Resolve faculty IDs — accept list from body, else fall back to dept faculty
+        // Collect faculty IDs
         List<String> facultyIds = new ArrayList<>();
         Object rawFaculty = body.get("facultyUserIds");
-        if (rawFaculty instanceof List) {
-            facultyIds = (List<String>) rawFaculty;
-        }
-        if (facultyIds.isEmpty()) {
-            String single = (String) body.get("facultyUserId");
-            if (single != null && !single.isBlank()) {
-                facultyIds = List.of(single);
-            } else {
-                userRepository.findAll().stream()
-                        .filter(u -> u.getRole() == Role.Faculty && u.getDepartmentIds() != null && u.getDepartmentIds().contains(profile.getDepartmentId()))
-                        .findFirst()
-                        .map(User::getId)
-                        .ifPresent(facultyIds::add);
-            }
+        if (rawFaculty instanceof List) facultyIds = new ArrayList<>((List<String>) rawFaculty);
+
+        // Collect HOD IDs
+        List<String> hodIds = new ArrayList<>();
+        Object rawHods = body.get("hodUserIds");
+        if (rawHods instanceof List) hodIds = new ArrayList<>((List<String>) rawHods);
+
+        // Auto-add creator to the appropriate list if not already included
+        if (creator.getRole() == Role.HOD) {
+            if (!hodIds.contains(creator.getId())) hodIds.add(creator.getId());
+        } else if (creator.getRole() == Role.Faculty) {
+            if (!facultyIds.contains(creator.getId())) facultyIds.add(creator.getId());
+        } else if (creator.getRole() == Role.Mentor) {
+            if (!mentorIds.contains(creator.getId())) mentorIds.add(creator.getId());
         }
 
-        // Make lists mutable for assignment
-        final List<String> finalMentorIds = new ArrayList<>(mentorIds);
-        final List<String> finalFacultyIds = new ArrayList<>(facultyIds);
-
-        // Check if thread already exists for this student + subjectCode
-        Optional<EscalationThread> existing = escalationThreadRepository.findByRollNoIgnoreCaseAndSubjectCode(studentRollNo, subjectCode != null ? subjectCode : "GENERAL");
-        if (existing.isPresent()) {
-            EscalationThread thread = existing.get();
-            thread.setEscalatedToHOD(true);
-            // Merge new mentor/faculty IDs
-            finalMentorIds.forEach(id -> { if (!thread.getMentorUserIds().contains(id)) thread.getMentorUserIds().add(id); });
-            finalFacultyIds.forEach(id -> { if (!thread.getFacultyUserIds().contains(id)) thread.getFacultyUserIds().add(id); });
-            thread.setUpdatedAt(LocalDateTime.now());
-            escalationThreadRepository.save(thread);
-            return ResponseEntity.ok(thread);
-        }
+        final List<String> finalRollNos = rollNos;
+        final List<String> finalMentorIds = mentorIds;
+        final List<String> finalFacultyIds = facultyIds;
+        final List<String> finalHodIds = hodIds;
+        final String finalGroupName = groupName;
 
         EscalationThread thread = EscalationThread.builder()
-                .rollNo(studentRollNo)
+                .groupName(finalGroupName)
+                .createdByUserId(creator.getId())
+                .createdByRole(creator.getRole().name())
+                .rollNos(finalRollNos)
+                .rollNo(finalRollNos.isEmpty() ? null : finalRollNos.get(0)) // legacy compat
                 .mentorUserIds(finalMentorIds)
                 .facultyUserIds(finalFacultyIds)
-                .subjectCode(subjectCode != null ? subjectCode : "GENERAL")
-                .isEscalatedToHOD(true)
+                .hodUserIds(finalHodIds)
+                .subjectCode("GROUP")
+                .isEscalatedToHOD(!finalHodIds.isEmpty())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
         escalationThreadRepository.save(thread);
 
         // System message
+        String membersSummary = "Students: " + String.join(", ", finalRollNos);
         EscalationMessage sysMsg = EscalationMessage.builder()
                 .threadId(thread.getId())
                 .senderUserId("SYSTEM")
-                .senderName("System Alert")
+                .senderName("System")
                 .senderRole("SYSTEM")
-                .content("Intervention thread created. Student: " + studentRollNo + " has been flagged for study plan review.")
+                .content(creator.getFullName() + " created group \"" + finalGroupName + "\". " + membersSummary)
                 .createdAt(LocalDateTime.now())
                 .build();
         escalationMessageRepository.save(sysMsg);
@@ -875,59 +915,305 @@ public class HODController {
         return ResponseEntity.ok(thread);
     }
 
+    /** DELETE /api/v1/hod/escalations/{id} — permanently delete a group */
+    @DeleteMapping({"/escalations/{threadId}", "/portal/escalations/{threadId}"})
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD', 'ROLE_Faculty', 'ROLE_Mentor')")
+    public ResponseEntity<?> deleteEscalationThread(Authentication authentication, @PathVariable String threadId) {
+        try {
+            String email = authentication.getName();
+            User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
+            if (user == null) return ResponseEntity.status(403).body(Map.of("error", "Unauthorized"));
+
+            Optional<EscalationThread> opt = escalationThreadRepository.findById(threadId);
+            if (opt.isEmpty()) return ResponseEntity.ok(Map.of("message", "Group already deleted"));
+
+            EscalationThread thread = opt.get();
+            boolean isCreator = thread.getCreatedByUserId() != null && user.getId().equals(thread.getCreatedByUserId());
+            boolean isHOD = user.getRole() == Role.HOD;
+            boolean isLegacyGroup = thread.getCreatedByUserId() == null;
+            if (!isCreator && !isHOD && !isLegacyGroup) {
+                return ResponseEntity.status(403).body(Map.of("error", "Only the group creator or HOD can delete this group"));
+            }
+
+            // Delete all messages in the thread safely
+            try {
+                List<EscalationMessage> msgs = escalationMessageRepository.findAllByThreadIdOrderByCreatedAtAsc(threadId);
+                if (msgs != null && !msgs.isEmpty()) {
+                    escalationMessageRepository.deleteAll(msgs);
+                }
+            } catch (Exception msgEx) {
+                log.warn("Could not delete messages for thread {}: {}", threadId, msgEx.getMessage());
+            }
+
+            // Delete thread record
+            escalationThreadRepository.deleteById(threadId);
+
+            return ResponseEntity.ok(Map.of("message", "Group deleted successfully"));
+        } catch (Exception e) {
+            log.error("Error in deleteEscalationThread for thread {}: ", threadId, e);
+            return ResponseEntity.ok(Map.of("message", "Group deleted"));
+        }
+    }
+
+    /** PUT /api/v1/hod/escalations/{id} — rename group or update members */
+    @PutMapping({"/escalations/{threadId}", "/portal/escalations/{threadId}"})
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD', 'ROLE_Faculty', 'ROLE_Mentor')")
+    @SuppressWarnings("unchecked")
+    public ResponseEntity<?> updateEscalationThread(Authentication authentication, @PathVariable String threadId, @RequestBody Map<String, Object> body) {
+        try {
+            String email = authentication.getName();
+            User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
+            if (user == null) return ResponseEntity.status(403).body(Map.of("error", "Unauthorized"));
+
+            Optional<EscalationThread> opt = escalationThreadRepository.findById(threadId);
+            if (opt.isEmpty()) return ResponseEntity.badRequest().body(Map.of("error", "Group not found"));
+
+            EscalationThread thread = opt.get();
+            boolean isCreator = thread.getCreatedByUserId() != null && user.getId().equals(thread.getCreatedByUserId());
+            boolean isHOD = user.getRole() == Role.HOD;
+            boolean isLegacyGroup = thread.getCreatedByUserId() == null;
+            if (!isCreator && !isHOD && !isLegacyGroup) {
+                return ResponseEntity.status(403).body(Map.of("error", "Only the group creator or HOD can edit this group"));
+            }
+
+            // Update group name if provided
+            String newName = (String) body.get("groupName");
+            if (newName != null && !newName.isBlank()) {
+                thread.setGroupName(newName.trim());
+            }
+
+            // Update member lists if provided
+            if (body.containsKey("rollNos")) {
+                Object raw = body.get("rollNos");
+                if (raw instanceof List) thread.setRollNos(new ArrayList<>((List<String>) raw));
+            }
+            if (body.containsKey("mentorUserIds")) {
+                Object raw = body.get("mentorUserIds");
+                if (raw instanceof List) thread.setMentorUserIds(new ArrayList<>((List<String>) raw));
+            }
+            if (body.containsKey("facultyUserIds")) {
+                Object raw = body.get("facultyUserIds");
+                if (raw instanceof List) thread.setFacultyUserIds(new ArrayList<>((List<String>) raw));
+            }
+            if (body.containsKey("hodUserIds")) {
+                Object raw = body.get("hodUserIds");
+                if (raw instanceof List) thread.setHodUserIds(new ArrayList<>((List<String>) raw));
+            }
+
+            // Ensure creator is still in the thread
+            if (user.getRole() == Role.HOD && !thread.getHodUserIds().contains(user.getId())) {
+                thread.getHodUserIds().add(user.getId());
+            } else if (user.getRole() == Role.Faculty && !thread.getFacultyUserIds().contains(user.getId())) {
+                thread.getFacultyUserIds().add(user.getId());
+            } else if (user.getRole() == Role.Mentor && !thread.getMentorUserIds().contains(user.getId())) {
+                thread.getMentorUserIds().add(user.getId());
+            }
+
+            thread.setUpdatedAt(LocalDateTime.now());
+            escalationThreadRepository.save(thread);
+
+            // Post system message about the edit
+            try {
+                EscalationMessage sysMsg = EscalationMessage.builder()
+                        .threadId(thread.getId())
+                        .senderUserId("SYSTEM")
+                        .senderName("System")
+                        .senderRole("SYSTEM")
+                        .content(user.getFullName() + " updated the group.")
+                        .createdAt(LocalDateTime.now())
+                        .build();
+                escalationMessageRepository.save(sysMsg);
+            } catch (Exception ignored) {}
+
+            return ResponseEntity.ok(thread);
+        } catch (Exception e) {
+            log.error("Error in updateEscalationThread for thread {}: ", threadId, e);
+            return ResponseEntity.badRequest().body(Map.of("error", "Failed to update group"));
+        }
+    }
+
     @GetMapping("/escalations")
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD', 'ROLE_Faculty', 'ROLE_Mentor')")
     public ResponseEntity<?> getEscalationThreads(Authentication authentication) {
-        String deptId = resolveDepartmentId(authentication);
         String email = authentication.getName();
         User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
-        if (user == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
-        }
+        if (user == null) return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
 
+        // Fetch all threads where user is a participant
+        Set<String> threadIdSet = new java.util.LinkedHashSet<>();
         List<EscalationThread> threads = new ArrayList<>();
+
+        // Threads created by this user
+        escalationThreadRepository.findAllByCreatedByUserId(user.getId()).forEach(t -> {
+            if (threadIdSet.add(t.getId())) threads.add(t);
+        });
+
         if (user.getRole() == Role.HOD) {
-            threads = escalationThreadRepository.findAllByIsEscalatedToHOD(true);
+            escalationThreadRepository.findAllByHodUserIdsIn(List.of(user.getId())).forEach(t -> {
+                if (threadIdSet.add(t.getId())) threads.add(t);
+            });
+            // Also old escalations flagged to HOD (backward compat)
+            escalationThreadRepository.findAllByIsEscalatedToHOD(true).forEach(t -> {
+                if (threadIdSet.add(t.getId())) threads.add(t);
+            });
         } else if (user.getRole() == Role.Mentor) {
-            threads = escalationThreadRepository.findAllByMentorUserIdsIn(List.of(user.getId()));
+            escalationThreadRepository.findAllByMentorUserIdsIn(List.of(user.getId())).forEach(t -> {
+                if (threadIdSet.add(t.getId())) threads.add(t);
+            });
         } else if (user.getRole() == Role.Faculty) {
-            threads = escalationThreadRepository.findAllByFacultyUserIdsIn(List.of(user.getId()));
+            escalationThreadRepository.findAllByFacultyUserIdsIn(List.of(user.getId())).forEach(t -> {
+                if (threadIdSet.add(t.getId())) threads.add(t);
+            });
         }
 
+        // Sort by updatedAt descending
+        threads.sort((a, b) -> b.getUpdatedAt().compareTo(a.getUpdatedAt()));
+
+        return ResponseEntity.ok(buildThreadDetails(threads));
+    }
+
+    /** Helper to build enriched thread detail maps */
+    private List<Map<String, Object>> buildThreadDetails(List<EscalationThread> threads) {
         List<Map<String, Object>> threadDetails = new ArrayList<>();
         for (EscalationThread thread : threads) {
             Map<String, Object> map = new HashMap<>();
             map.put("thread", thread);
 
-            // Resolve multiple mentors
-            List<User> mentorUsers = new ArrayList<>();
+            // Resolve mentors
+            List<Map<String, Object>> mentorInfos = new ArrayList<>();
             if (thread.getMentorUserIds() != null) {
-                thread.getMentorUserIds().forEach(id -> userRepository.findById(id).ifPresent(mentorUsers::add));
+                thread.getMentorUserIds().forEach(id -> userRepository.findById(id).ifPresent(u -> {
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("id", u.getId()); m.put("fullName", u.getFullName()); m.put("role", "Mentor");
+                    mentorInfos.add(m);
+                }));
             }
-            map.put("mentors", mentorUsers);
-            // backward-compat single field
-            if (!mentorUsers.isEmpty()) map.put("mentor", mentorUsers.get(0));
+            map.put("mentors", mentorInfos);
 
-            // Resolve multiple faculty
-            List<User> facultyUsers = new ArrayList<>();
+            // Resolve faculty
+            List<Map<String, Object>> facultyInfos = new ArrayList<>();
             if (thread.getFacultyUserIds() != null) {
-                thread.getFacultyUserIds().forEach(id -> userRepository.findById(id).ifPresent(facultyUsers::add));
+                thread.getFacultyUserIds().forEach(id -> userRepository.findById(id).ifPresent(u -> {
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("id", u.getId()); m.put("fullName", u.getFullName()); m.put("role", "Faculty");
+                    facultyInfos.add(m);
+                }));
             }
-            map.put("facultyMembers", facultyUsers);
-            // backward-compat single field
-            if (!facultyUsers.isEmpty()) map.put("faculty", facultyUsers.get(0));
+            map.put("facultyMembers", facultyInfos);
 
-            // student profile
-            studentProfileRepository.findByRollNoIgnoreCase(thread.getRollNo()).ifPresent(p -> {
-                map.put("profile", p);
-                userRepository.findById(p.getUserId()).ifPresent(u -> map.put("studentUser", u));
-            });
+            // Resolve HODs
+            List<Map<String, Object>> hodInfos = new ArrayList<>();
+            if (thread.getHodUserIds() != null) {
+                thread.getHodUserIds().forEach(id -> userRepository.findById(id).ifPresent(u -> {
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("id", u.getId()); m.put("fullName", u.getFullName()); m.put("role", "HOD");
+                    hodInfos.add(m);
+                }));
+            }
+            map.put("hodMembers", hodInfos);
 
+            // Resolve students from rollNos list
+            List<Map<String, Object>> studentInfos = new ArrayList<>();
+            List<String> rollNos = thread.getRollNos();
+            if (rollNos == null || rollNos.isEmpty()) {
+                // legacy compat — single rollNo field
+                if (thread.getRollNo() != null) rollNos = List.of(thread.getRollNo());
+            }
+            if (rollNos != null) {
+                for (String rn : rollNos) {
+                    studentProfileRepository.findByRollNoIgnoreCase(rn).ifPresent(p -> {
+                        Map<String, Object> m = new HashMap<>();
+                        m.put("rollNo", rn);
+                        userRepository.findById(p.getUserId()).ifPresent(u -> {
+                            m.put("id", u.getId());
+                            m.put("fullName", u.getFullName());
+                        });
+                        m.put("role", "Student");
+                        studentInfos.add(m);
+                    });
+                }
+            }
+            map.put("students", studentInfos);
+            // Legacy single student compat
+            if (!studentInfos.isEmpty()) {
+                map.put("studentUser", Map.of("fullName", studentInfos.get(0).getOrDefault("fullName", "")));
+                map.put("profile", Map.of("rollNo", studentInfos.get(0).getOrDefault("rollNo", "")));
+            }
+
+            // Creator info
+            if (thread.getCreatedByUserId() != null) {
+                userRepository.findById(thread.getCreatedByUserId()).ifPresent(u ->
+                    map.put("creator", Map.of("id", u.getId(), "fullName", u.getFullName(), "role", u.getRole().name())));
+            }
+
+            // Last message for preview
             List<EscalationMessage> messages = escalationMessageRepository.findAllByThreadIdOrderByCreatedAtAsc(thread.getId());
             map.put("messages", messages);
+            if (!messages.isEmpty()) {
+                EscalationMessage last = messages.get(messages.size() - 1);
+                map.put("lastMessage", Map.of("content", last.getContent(), "senderName", last.getSenderName(), "createdAt", last.getCreatedAt()));
+            }
+
             threadDetails.add(map);
         }
-        return ResponseEntity.ok(threadDetails);
+        return threadDetails;
     }
+
+    /** Endpoint to list all users in the department for the New Group member picker */
+    @GetMapping("/escalations/users")
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD', 'ROLE_Faculty', 'ROLE_Mentor', 'HOD', 'Faculty', 'Mentor')")
+    public ResponseEntity<?> getGroupableUsers(Authentication authentication) {
+        try {
+            List<User> all = userRepository.findAll();
+            if (all == null || all.isEmpty()) return ResponseEntity.ok(Collections.emptyList());
+
+            // Batch load all student profiles in ONE query
+            List<String> studentIds = all.stream()
+                    .filter(u -> u != null && u.getId() != null && u.getRole() == Role.Student)
+                    .map(User::getId)
+                    .collect(java.util.stream.Collectors.toList());
+
+            Map<String, StudentProfile> profileMap = studentProfileRepository
+                    .findAllByUserIdIn(studentIds)
+                    .stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            StudentProfile::getUserId, p -> p, (a, b) -> a));
+
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (User u : all) {
+                if (u == null || u.getRole() == null) continue;
+                // Skip system/admin roles
+                if (u.getRole() == Role.Admin || u.getRole() == Role.Parent) continue;
+                Map<String, Object> m = new HashMap<>();
+                m.put("id",       u.getId() != null ? u.getId() : "");
+                m.put("fullName", u.getFullName() != null ? u.getFullName() : (u.getEmail() != null ? u.getEmail() : "User"));
+                m.put("email",    u.getEmail() != null ? u.getEmail() : "");
+                m.put("role",     u.getRole().name());
+                m.put("rollNo",   u.getRollNo() != null ? u.getRollNo() : "");
+                m.put("departmentId", u.getDepartmentId() != null ? u.getDepartmentId() : "");
+                m.put("sectionId", u.getSectionId() != null ? u.getSectionId() : "");
+                m.put("year", u.getYear() != null ? u.getYear() : "");
+
+                // Use batch-loaded profile for student fields (no per-student DB call)
+                if (u.getRole() == Role.Student) {
+                    StudentProfile p = profileMap.get(u.getId());
+                    if (p != null) {
+                        if (p.getRollNo() != null && !p.getRollNo().isBlank()) m.put("rollNo", p.getRollNo());
+                        if (p.getDepartmentId() != null && !p.getDepartmentId().isBlank()) m.put("departmentId", p.getDepartmentId());
+                        if (p.getSectionId() != null && !p.getSectionId().isBlank()) m.put("sectionId", p.getSectionId());
+                        if (p.getYear() != null && !p.getYear().isBlank()) m.put("year", p.getYear());
+                        m.put("batch", p.getBatch() != null ? p.getBatch() : "");
+                    }
+                }
+                result.add(m);
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Error fetching groupable users: ", e);
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+    }
+
 
     @PostMapping("/escalations/{threadId}/message")
     public ResponseEntity<?> sendEscalationMessage(Authentication authentication, @PathVariable String threadId, @RequestBody Map<String, String> body) {

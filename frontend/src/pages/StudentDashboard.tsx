@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 import LogoHeader from '../components/LogoHeader';
+import { EscalationsGroupChat } from '../components/EscalationsGroupChat';
 
 // Use VITE_APP_URL (set in production .env) so shared links use the real deployed domain
 export const APP_ORIGIN = (import.meta.env.VITE_APP_URL as string | undefined)?.replace(/\/$/, '') || window.location.origin;
@@ -2349,103 +2350,12 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
 
               {/* ══════════════════════════════════════════
                   INTERVENTION ROOM TAB (Student View)
+              {/* ══════════════════════════════════════════
+                  INTERVENTION / ESCALATION GROUP CHAT TAB
               ══════════════════════════════════════════ */}
               {activeTab === 'escalation' && (
                 <div className="ds-tab-section">
-                  <div className="ds-tab-header">
-                    <div>
-                      <h2 className="ds-section-title">Intervention Room</h2>
-                      <p className="ds-section-sub">Your confidential study-plan review thread with your Mentor, Faculty &amp; HOD.</p>
-                    </div>
-                  </div>
-
-                  {studentEscalations.length === 0 ? (
-                    <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '48px', textAlign: 'center' }}>
-                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--ds-text3)" strokeWidth="1.5" style={{ marginBottom: '16px' }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                      <p style={{ color: 'var(--ds-text3)', fontSize: '14px', margin: 0 }}>No active intervention thread for you. If your attendance or grades require review, your Mentor will open a thread here.</p>
-                    </div>
-                  ) : (
-                    studentEscalations.map((item: any) => {
-                      const thread = item.thread;
-                      const messages: any[] = item.messages || [];
-                      const mentor = item.mentor;
-                      const faculty = item.faculty;
-                      return (
-                        <div key={thread?.id} style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 220px)' }}>
-                          {/* Thread Header */}
-                          <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--ds-border)', background: 'var(--ds-surface2)', flexShrink: 0 }}>
-                            <h3 style={{ margin: '0 0 4px', fontSize: '16px', fontWeight: 800, color: 'var(--ds-text1)' }}>Study Plan Review Thread</h3>
-                            <p style={{ margin: 0, fontSize: '12px', color: 'var(--ds-text3)' }}>
-                              {item.mentors && item.mentors.length > 0 ? (
-                                <span>Mentors: {item.mentors.map((m: any) => m.fullName).join(', ')}</span>
-                              ) : mentor ? (
-                                <span>Mentor: {mentor.fullName}</span>
-                              ) : null}
-                              &nbsp;|&nbsp;
-                              {item.facultyMembers && item.facultyMembers.length > 0 ? (
-                                <span>Faculty: {item.facultyMembers.map((f: any) => f.fullName).join(', ')}</span>
-                              ) : faculty ? (
-                                <span>Faculty: {faculty.fullName}</span>
-                              ) : null}
-                            </p>
-                          </div>
-
-                          {/* Messages */}
-                          <div ref={escalationChatContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                            {messages.map((msg: any) => {
-                              const isStudent = msg.senderRole === 'Student';
-                              const isSystem = msg.senderRole === 'SYSTEM';
-                              return (
-                                <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isSystem ? 'center' : isStudent ? 'flex-end' : 'flex-start', gap: '4px' }}>
-                                  {isSystem ? (
-                                    <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px dashed rgba(59,130,246,0.3)', borderRadius: '8px', padding: '10px 16px', fontSize: '12px', color: 'var(--ds-text3)', textAlign: 'center', maxWidth: '70%' }}>
-                                      {msg.content}
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <span style={{ fontSize: '10.5px', color: 'var(--ds-text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                        {isStudent ? 'You (Student)' : `${msg.senderName} (${msg.senderRole})`}
-                                      </span>
-                                      <div style={{
-                                        background: isStudent ? 'var(--accent)' : 'var(--ds-surface3)',
-                                        color: isStudent ? '#fff' : 'var(--ds-text1)',
-                                        borderRadius: isStudent ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                                        padding: '10px 16px',
-                                        fontSize: '13.5px',
-                                        lineHeight: '1.5',
-                                        maxWidth: '70%',
-                                        border: isStudent ? 'none' : '1px solid var(--ds-border)'
-                                      }}>
-                                        {msg.content}
-                                      </div>
-                                      <span style={{ fontSize: '10px', color: 'var(--ds-text3)' }}>
-                                        {msg.createdAt ? new Date(msg.createdAt).toLocaleString() : ''}
-                                      </span>
-                                    </>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          {/* Student Reply Input */}
-                          <form onSubmit={e => handleSendStudentEscalationMessage(e, thread?.id)} style={{ padding: '16px 24px', borderTop: '1px solid var(--ds-border)', display: 'flex', gap: '12px', flexShrink: 0, background: 'var(--ds-surface2)' }}>
-                            <input
-                              type="text"
-                              className="ds-input"
-                              placeholder="Type your response to your Mentor / Faculty / HOD..."
-                              value={escalationInput}
-                              onChange={e => setEscalationInput(e.target.value)}
-                              style={{ flex: 1, padding: '10px 14px', fontSize: '13px' }}
-                            />
-                            <button type="submit" className="ds-btn ds-btn-primary" style={{ padding: '10px 20px', flexShrink: 0 }} disabled={sendingEscalationMsg || !escalationInput.trim()}>
-                              {sendingEscalationMsg ? '...' : 'Send'}
-                            </button>
-                          </form>
-                        </div>
-                      );
-                    })
-                  )}
+                  <EscalationsGroupChat token={token} userEmail={studentProfile?.email || ''} userRole="Student" canCreateGroup={false} />
                 </div>
               )}
 

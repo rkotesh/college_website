@@ -10,4 +10,6 @@ public interface StudentProfileRepository extends MongoRepository<StudentProfile
     Optional<StudentProfile> findByUserId(String userId);
     Optional<StudentProfile> findBySlug(String slug);
     java.util.List<StudentProfile> findAllByDepartmentId(String departmentId);
+    // Batch load profiles for multiple user IDs in ONE query (fixes N+1 performance issue)
+    java.util.List<StudentProfile> findAllByUserIdIn(java.util.Collection<String> userIds);
 }

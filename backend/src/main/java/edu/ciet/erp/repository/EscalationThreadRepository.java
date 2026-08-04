@@ -13,5 +13,11 @@ public interface EscalationThreadRepository extends MongoRepository<EscalationTh
     List<EscalationThread> findAllByMentorUserIdsIn(List<String> mentorUserIds);
     /** Find threads where the given facultyId is in the facultyUserIds list */
     List<EscalationThread> findAllByFacultyUserIdsIn(List<String> facultyUserIds);
+    /** Find threads where the given HOD userId is in the hodUserIds list */
+    List<EscalationThread> findAllByHodUserIdsIn(List<String> hodUserIds);
     List<EscalationThread> findAllByIsEscalatedToHOD(boolean isEscalatedToHOD);
+    /** Find threads where a roll number is in the rollNos list */
+    List<EscalationThread> findAllByRollNosContaining(String rollNo);
+    /** Find threads created by a specific user */
+    List<EscalationThread> findAllByCreatedByUserId(String createdByUserId);
 }

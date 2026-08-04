@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import LogoHeader from '../components/LogoHeader';
+import { EscalationsGroupChat } from '../components/EscalationsGroupChat';
 
 
 interface MentorDashboardProps {
@@ -2029,6 +2030,11 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
                   </div>
 
                 </div>
+              )}
+
+              {/* TAB ESCALATION & WHATSAPP-STYLE GROUP CHAT */}
+              {activeTab === 'escalations' && (
+                <EscalationsGroupChat token={userSession.accessToken} userEmail={userSession.email} userRole="Mentor" canCreateGroup={true} />
               )}
 
               {activeTab === 'notifications' && (
