@@ -25,6 +25,7 @@ public class Notification {
     private String title;
     private String message;
     private String type; // VERIFICATION, PLACEMENT, ACADEMIC, SYSTEM
+    private String senderEmail;
 
     @Builder.Default
     private boolean read = false;

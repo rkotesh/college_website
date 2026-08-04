@@ -289,6 +289,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   const [submittingTraining, setSubmittingTraining] = useState(false);
   const [submittingAnn, setSubmittingAnn] = useState(false);
   const [submittingDoc, setSubmittingDoc] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
   
   // Staff Direct Messages states
   const [staffConversations, setStaffConversations] = useState<any[]>([]);
@@ -1040,6 +1041,60 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   return (
     <div className="ds-root" style={{ background: 'var(--ds-bg)', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       
+      {/* Document View Modal */}
+      {previewDoc && (() => {
+        const fileUrl: string = previewDoc.fileUrl || previewDoc.resourceUrl || '';
+        const ext = fileUrl.split('?')[0].split('.').pop()?.toLowerCase() || '';
+        const isImage = ['png','jpg','jpeg','gif','webp'].includes(ext);
+        const isPdf = ext === 'pdf';
+        const isWord = ['doc','docx'].includes(ext);
+        const isExcel = ['xls','xlsx'].includes(ext);
+        const handleDownload = async () => {
+          try {
+            const res = await fetch(fileUrl, { headers: { 'Authorization': `Bearer ${userSession.accessToken}` } });
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url;
+            a.download = previewDoc.title + (ext ? '.' + ext : '');
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+          } catch {
+            const a = document.createElement('a'); a.href = fileUrl; a.download = previewDoc.title;
+            a.target = '_blank'; a.rel = 'noreferrer';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          }
+        };
+        return (
+          <div onClick={e => { if (e.target === e.currentTarget) setPreviewDoc(null); }} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div style={{ background: 'var(--ds-surface2,#1e1e2e)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16, width: '100%', maxWidth: 880, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 32px 80px rgba(0,0,0,.55)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,.08)', flexShrink: 0 }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-primary)' }}>{previewDoc.title}</div>
+                  {previewDoc.docType && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'rgba(239,68,68,.15)', color: 'var(--accent,#ef4444)', textTransform: 'uppercase' }}>{previewDoc.docType.replace(/_/g,' ')}</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={handleDownload} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, background: 'var(--accent,#ef4444)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download
+                  </button>
+                  <button onClick={() => setPreviewDoc(null)} style={{ width: 34, height: 34, borderRadius: 8, background: 'transparent', border: '1px solid rgba(255,255,255,.12)', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>✕</button>
+                </div>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto', minHeight: 300 }}>
+                {isPdf && <iframe src={fileUrl} title={previewDoc.title} style={{ width: '100%', height: '68vh', border: 'none' }} />}
+                {isImage && <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 24, background: 'rgba(0,0,0,.25)' }}><img src={fileUrl} alt={previewDoc.title} style={{ maxWidth: '100%', maxHeight: '65vh', borderRadius: 10, objectFit: 'contain' }} /></div>}
+                {(isWord || isExcel || (!isPdf && !isImage)) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 30px', gap: 18 }}>
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--accent,#ef4444)" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <div style={{ textAlign: 'center' }}><div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>{isWord ? 'Word Document' : isExcel ? 'Excel Spreadsheet' : 'File'}</div><p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>Preview not available. Click <strong>Download</strong> to open the file.</p></div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="ds-bg-layer" style={{ zIndex: 0 }}>
         <div className="ds-grid-texture" />
       </div>
@@ -1547,9 +1602,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               <strong style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>{doc.title}</strong>
                               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Target: {doc.targetYear} Year Sec-{doc.targetSection}</div>
                             </div>
-                            <a href={doc.resourceUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--accent)', fontSize: '11.5px', padding: '4px 10px', borderRadius: '6px', fontWeight: 700 }}>
-                              Open ↗
-                            </a>
+                            <button onClick={() => setPreviewDoc(doc)} style={{ textDecoration: 'none', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--accent)', fontSize: '11.5px', padding: '4px 10px', borderRadius: '6px', fontWeight: 700, border: 'none', cursor: 'pointer' }}>
+                              View
+                            </button>
                           </div>
                         ))}
                         {documents.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>No documents uploaded yet</p>}
@@ -1934,9 +1989,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               Target: {doc.targetYear} Year Sec-{doc.targetSection} | Semester: {doc.semester}
                             </div>
                           </div>
-                          <a href={doc.resourceUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--surface-border)', padding: '6px 12px', borderRadius: '8px', fontSize: '12.5px', color: '#ffffff', fontWeight: 600 }}>
-                            View PDF ↗
-                          </a>
+                          <button onClick={() => setPreviewDoc({ ...doc, fileUrl: doc.fileUrl || doc.resourceUrl })} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--surface-border)', padding: '6px 12px', borderRadius: '8px', fontSize: '12.5px', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}>
+                            View
+                          </button>
                         </div>
                       ))}
                       {documents.length === 0 && <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '24px' }}>No syllabus plans or timetables uploaded yet.</p>}

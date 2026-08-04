@@ -45,6 +45,7 @@ public class HODController {
     private final ResearchRepository researchRepository;
     private final EventRepository eventRepository;
     private final SkillRepository skillRepository;
+    private final ClassTimetableRepository classTimetableRepository;
     private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     // Helper: Resolve HOD primary department
@@ -116,6 +117,92 @@ public class HODController {
     }
 
 
+    /**
+     * GET /api/v1/hod/students
+     * Returns ALL students (from User collection) enriched with StudentProfile data.
+     * Optionally filter by year and sectionId query params.
+     * Uses User records as the source of truth so data always shows even without StudentProfile docs.
+     */
+    @GetMapping("/all-students")
+    public ResponseEntity<?> getAllStudents(
+            @RequestParam(required = false) String year,
+            @RequestParam(required = false) String sectionId) {
+
+        List<User> allStudents = userRepository.findAllByRole(Role.Student);
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        for (User u : allStudents) {
+            // Try to enrich with StudentProfile
+            StudentProfile profile = studentProfileRepository.findByUserId(u.getId()).orElse(null);
+
+            // Apply year filter (only if we have profile data)
+            if (year != null && !year.isBlank() && !year.equalsIgnoreCase("ALL")) {
+                if (profile == null || !year.equalsIgnoreCase(profile.getYear())) continue;
+            }
+            // Apply section filter
+            if (sectionId != null && !sectionId.isBlank() && !sectionId.equalsIgnoreCase("ALL")) {
+                if (profile == null || !sectionId.equalsIgnoreCase(profile.getSectionId())) continue;
+            }
+
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id",       u.getId());
+            entry.put("fullName", u.getFullName());
+            entry.put("email",    u.getEmail());
+            entry.put("role",     "Student");
+
+            if (profile != null) {
+                entry.put("rollNo",       profile.getRollNo() != null ? profile.getRollNo() : u.getRollNo());
+                entry.put("year",         profile.getYear() != null ? profile.getYear() : u.getYear());
+                entry.put("sectionId",    profile.getSectionId() != null ? profile.getSectionId() : u.getSectionId());
+                entry.put("departmentId", profile.getDepartmentId() != null ? profile.getDepartmentId() : u.getDepartmentId());
+                entry.put("batch",        profile.getBatch() != null ? profile.getBatch() : u.getBatch());
+                entry.put("cgpa",         profile.getCgpa());
+                entry.put("photoUrl",     profile.getPhotoUrl() != null ? profile.getPhotoUrl() : u.getPhotoUrl());
+                entry.put("slug",         profile.getSlug());
+                entry.put("isPublic",     profile.isPublic());
+            } else {
+                // Fallback to User fields when no StudentProfile exists
+                entry.put("rollNo",       u.getRollNo());
+                entry.put("year",         u.getYear());
+                entry.put("sectionId",    u.getSectionId());
+                entry.put("departmentId", u.getDepartmentId());
+                entry.put("batch",        u.getBatch());
+                entry.put("photoUrl",     u.getPhotoUrl());
+            }
+            result.add(entry);
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * GET /api/v1/hod/all-faculty
+     * Returns ALL mentors and faculty users for the mentor dropdown.
+     */
+    @GetMapping("/all-faculty")
+    public ResponseEntity<?> getAllFaculty() {
+        List<User> mentors = userRepository.findAllByRole(Role.Mentor);
+        List<User> faculty = userRepository.findAllByRole(Role.Faculty);
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        for (User u : mentors) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id",       u.getId());
+            entry.put("fullName", u.getFullName() != null ? u.getFullName() : u.getEmail());
+            entry.put("email",    u.getEmail());
+            entry.put("role",     "Mentor");
+            result.add(entry);
+        }
+        for (User u : faculty) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id",       u.getId());
+            entry.put("fullName", u.getFullName() != null ? u.getFullName() : u.getEmail());
+            entry.put("email",    u.getEmail());
+            entry.put("role",     "Faculty");
+            result.add(entry);
+        }
+        return ResponseEntity.ok(result);
+    }
+
     @GetMapping("/scope")
     public ResponseEntity<?> getScope(Authentication authentication) {
         String deptId = resolveDepartmentId(authentication);
@@ -181,6 +268,45 @@ public class HODController {
                 "batchAverages", batchAverages,
                 "subjects", subjects
         ));
+    }
+
+    @GetMapping("/at-risk")
+    public ResponseEntity<?> getAtRiskStudents(Authentication authentication) {
+        String deptId = resolveDepartmentId(authentication);
+        List<User> students = userRepository.findAllByRole(Role.Student).stream()
+                .filter(u -> isUserInDepartment(u, deptId))
+                .toList();
+
+        List<Map<String, Object>> atRisk = new ArrayList<>();
+        for (User u : students) {
+            Optional<StudentProfile> pOpt = studentProfileRepository.findByUserId(u.getId());
+            if (pOpt.isPresent()) {
+                StudentProfile p = pOpt.get();
+                List<String> riskFactors = new ArrayList<>();
+
+                if (p.getCgpa() < 6.0) riskFactors.add("Low CGPA (< 6.0)");
+                if (p.getAcademicStatus() != AcademicStatus.ACTIVE) riskFactors.add("Status: " + p.getAcademicStatus());
+                
+                double attendancePct = p.getTotalClasses() > 0 ? (double) p.getAttendedClasses() / p.getTotalClasses() : 1.0;
+                if (attendancePct < 0.75) riskFactors.add("Low Attendance (< 75%)");
+
+                boolean hasF = semesterResultRepository.findAllByRollNoIgnoreCase(p.getRollNo())
+                        .stream().anyMatch(r -> "F".equalsIgnoreCase(r.getGrade()));
+                if (hasF) riskFactors.add("Active Backlogs");
+
+                boolean noMentor = mentorshipAssignmentRepository.findByRollNoIgnoreCase(p.getRollNo()).isEmpty();
+                if (noMentor) riskFactors.add("Unassigned Mentor");
+
+                if (!riskFactors.isEmpty()) {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("user", u);
+                    map.put("profile", p);
+                    map.put("riskFactors", riskFactors);
+                    atRisk.add(map);
+                }
+            }
+        }
+        return ResponseEntity.ok(atRisk);
     }
 
     @GetMapping("/faculty")
@@ -292,16 +418,19 @@ public class HODController {
             return ResponseEntity.badRequest().body(Map.of("error", "Missing selection details"));
         }
 
-        for (String rollNo : studentRollNos) {
-            Optional<StudentProfile> profOpt = studentProfileRepository.findByRollNoIgnoreCase(rollNo);
+        for (String item : studentRollNos) {
+            Optional<StudentProfile> profOpt = studentProfileRepository.findByRollNoIgnoreCase(item);
+            if (profOpt.isEmpty()) {
+                profOpt = studentProfileRepository.findByUserId(item);
+            }
             if (profOpt.isPresent()) {
                 StudentProfile p = profOpt.get();
-                // Clear old
-                mentorshipAssignmentRepository.findByRollNoIgnoreCase(rollNo)
+                // Clear old assignment if any
+                mentorshipAssignmentRepository.findByRollNoIgnoreCase(p.getRollNo())
                         .ifPresent(mentorshipAssignmentRepository::delete);
 
                 MentorshipAssignment assignment = MentorshipAssignment.builder()
-                        .rollNo(rollNo)
+                        .rollNo(p.getRollNo())
                         .mentorUserId(mentorUserId)
                         .batch(p.getBatch())
                         .sectionId(p.getSectionId())
@@ -309,10 +438,134 @@ public class HODController {
                         .academicYear("2025-2026")
                         .build();
                 mentorshipAssignmentRepository.save(assignment);
+            } else {
+                // If direct user ID or fallback
+                Optional<User> uOpt = userRepository.findById(item);
+                if (uOpt.isPresent()) {
+                    String roll = uOpt.get().getEmail();
+                    mentorshipAssignmentRepository.findByRollNoIgnoreCase(roll)
+                            .ifPresent(mentorshipAssignmentRepository::delete);
+                    MentorshipAssignment assignment = MentorshipAssignment.builder()
+                            .rollNo(roll)
+                            .mentorUserId(mentorUserId)
+                            .departmentId(deptId)
+                            .academicYear("2025-2026")
+                            .build();
+                    mentorshipAssignmentRepository.save(assignment);
+                }
             }
         }
 
         return ResponseEntity.ok(Map.of("message", "Mentorship assignments updated successfully"));
+    }
+
+    @GetMapping("/mentor/assignments")
+    public ResponseEntity<?> getMentorshipAssignments(Authentication authentication) {
+        try {
+            List<MentorshipAssignment> list = mentorshipAssignmentRepository.findAll();
+            List<Map<String, Object>> result = new ArrayList<>();
+
+            for (MentorshipAssignment a : list) {
+                try {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("id",           a.getId());
+                    map.put("mentorUserId", a.getMentorUserId());
+                    map.put("rollNo",       a.getRollNo());
+                    map.put("batch",        a.getBatch());
+                    map.put("sectionId",    a.getSectionId());
+                    map.put("departmentId", a.getDepartmentId());
+                    map.put("academicYear", a.getAcademicYear());
+                    // Safely convert LocalDateTime to String to avoid Jackson serialization issues
+                    try { map.put("createdAt", a.getCreatedAt() != null ? a.getCreatedAt().toString() : null); }
+                    catch (Exception ignored) { map.put("createdAt", null); }
+
+                    // Resolve Mentor
+                    try {
+                        if (a.getMentorUserId() != null) {
+                            userRepository.findById(a.getMentorUserId()).ifPresent(m -> {
+                                map.put("mentorName",  m.getFullName() != null ? m.getFullName() : m.getEmail());
+                                map.put("mentorEmail", m.getEmail());
+                            });
+                        }
+                    } catch (Exception ignored) { map.put("mentorName", a.getMentorUserId()); }
+
+                    // Resolve Student by rollNo → StudentProfile → User
+                    boolean found = false;
+                    try {
+                        if (a.getRollNo() != null) {
+                            Optional<StudentProfile> pOpt = studentProfileRepository.findByRollNoIgnoreCase(a.getRollNo());
+                            if (pOpt.isPresent()) {
+                                StudentProfile p = pOpt.get();
+                                map.put("studentUserId", p.getUserId());
+                                map.put("year",      p.getYear());
+                                map.put("batch",     p.getBatch() != null ? p.getBatch() : a.getBatch());
+                                map.put("sectionId", p.getSectionId() != null ? p.getSectionId() : a.getSectionId());
+                                map.put("cgpa",      p.getCgpa());
+                                if (p.getUserId() != null) {
+                                    userRepository.findById(p.getUserId()).ifPresent(s -> {
+                                        map.put("studentName",  s.getFullName() != null ? s.getFullName() : a.getRollNo());
+                                        map.put("studentEmail", s.getEmail());
+                                    });
+                                }
+                                if (!map.containsKey("studentName")) map.put("studentName", a.getRollNo());
+                                found = true;
+                            }
+                        }
+                    } catch (Exception ignored) {}
+
+                    // Fallback: look up by email
+                    if (!found && a.getRollNo() != null) {
+                        try {
+                            userRepository.findByEmailIgnoreCase(a.getRollNo()).ifPresent(s -> {
+                                map.put("studentName",  s.getFullName() != null ? s.getFullName() : a.getRollNo());
+                                map.put("studentEmail", s.getEmail());
+                            });
+                        } catch (Exception ignored) {}
+                        if (!map.containsKey("studentName")) map.put("studentName", a.getRollNo());
+                    }
+
+                    result.add(map);
+                } catch (Exception docEx) {
+                    log.warn("Skipping bad assignment doc {}: {}", a.getId(), docEx.getMessage());
+                }
+            }
+            return ResponseEntity.ok(result);
+
+        } catch (Exception e) {
+            log.error("getMentorshipAssignments failed", e);
+            // Return empty list instead of 500 so frontend can still load students
+            return ResponseEntity.ok(new ArrayList<>());
+        }
+    }
+
+    @PutMapping("/mentor/assignment/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD')")
+    public ResponseEntity<?> updateMentorshipAssignment(@PathVariable String id, @RequestBody Map<String, String> body) {
+        Optional<MentorshipAssignment> aOpt = mentorshipAssignmentRepository.findById(id);
+        if (aOpt.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Assignment not found"));
+        }
+        MentorshipAssignment a = aOpt.get();
+        if (body.containsKey("mentorUserId")) a.setMentorUserId(body.get("mentorUserId"));
+        if (body.containsKey("rollNo"))       a.setRollNo(body.get("rollNo"));
+        if (body.containsKey("sectionId"))    a.setSectionId(body.get("sectionId"));
+        if (body.containsKey("year"))         a.setYear(body.get("year"));
+        if (body.containsKey("batch"))        a.setBatch(body.get("batch"));
+        if (body.containsKey("departmentId")) a.setDepartmentId(body.get("departmentId"));
+        try { a.setUpdatedAt(LocalDateTime.now()); } catch (Exception ignored) {}
+        mentorshipAssignmentRepository.save(a);
+
+        // Return a safe map to avoid LocalDateTime serialization issues
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("id",           a.getId());
+        resp.put("mentorUserId", a.getMentorUserId());
+        resp.put("rollNo",       a.getRollNo());
+        resp.put("sectionId",    a.getSectionId());
+        resp.put("year",         a.getYear());
+        resp.put("batch",        a.getBatch());
+        resp.put("departmentId", a.getDepartmentId());
+        resp.put("academicYear", a.getAcademicYear());
+        return ResponseEntity.ok(resp);
     }
 
     @DeleteMapping("/mentor/{id}")
@@ -330,6 +583,18 @@ public class HODController {
         doc.setCreatedAt(LocalDateTime.now());
         academicDocumentRepository.save(doc);
         return ResponseEntity.ok(doc);
+    }
+
+    @DeleteMapping("/document/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_HOD')")
+    public ResponseEntity<?> deleteDocument(Authentication authentication, @PathVariable String id) {
+        String deptId = resolveDepartmentId(authentication);
+        Optional<AcademicDocument> docOpt = academicDocumentRepository.findById(id);
+        if (docOpt.isEmpty() || !docOpt.get().getDepartmentId().equals(deptId)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Document not found or access denied"));
+        }
+        academicDocumentRepository.deleteById(id);
+        return ResponseEntity.ok(Map.of("message", "Document deleted successfully"));
     }
 
     @GetMapping("/documents")
@@ -372,6 +637,94 @@ public class HODController {
     public ResponseEntity<?> getTrainings(Authentication authentication) {
         String deptId = resolveDepartmentId(authentication);
         return ResponseEntity.ok(trainingProgramRepository.findAllByDepartmentId(deptId));
+    }
+
+    @PutMapping("/training/{id}")
+    public ResponseEntity<?> updateTraining(Authentication authentication, @PathVariable String id, @RequestBody TrainingProgram training) {
+        String deptId = resolveDepartmentId(authentication);
+        Optional<TrainingProgram> existingOpt = trainingProgramRepository.findById(id);
+        if (existingOpt.isEmpty() || !existingOpt.get().getDepartmentId().equals(deptId)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Training program not found or access denied"));
+        }
+        TrainingProgram existing = existingOpt.get();
+        existing.setTitle(training.getTitle());
+        existing.setDescription(training.getDescription());
+        existing.setStartDate(training.getStartDate());
+        existing.setEndDate(training.getEndDate());
+        existing.setVenue(training.getVenue());
+        existing.setRegistrationUrl(training.getRegistrationUrl());
+        existing.setActive(training.isActive());
+        existing.setCategory(training.getCategory());
+        existing.setTargetYears(training.getTargetYears());
+        
+        trainingProgramRepository.save(existing);
+        return ResponseEntity.ok(existing);
+    }
+
+    @DeleteMapping("/training/{id}")
+    public ResponseEntity<?> deleteTraining(Authentication authentication, @PathVariable String id) {
+        String deptId = resolveDepartmentId(authentication);
+        Optional<TrainingProgram> existingOpt = trainingProgramRepository.findById(id);
+        if (existingOpt.isEmpty() || !existingOpt.get().getDepartmentId().equals(deptId)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Training program not found or access denied"));
+        }
+        trainingProgramRepository.deleteById(id);
+        return ResponseEntity.ok(Map.of("success", true, "message", "Training program deleted successfully"));
+    }
+
+    // Timetable Endpoints
+    @GetMapping("/timetable")
+    public ResponseEntity<?> getTimetables(Authentication authentication,
+                                           @RequestParam(required = false) String year,
+                                           @RequestParam(required = false) String sectionId) {
+        String deptId = resolveDepartmentId(authentication);
+        if (year != null && sectionId != null) {
+            return ResponseEntity.ok(classTimetableRepository.findByDepartmentIdAndYearAndSectionId(deptId, year, sectionId));
+        }
+        return ResponseEntity.ok(classTimetableRepository.findByDepartmentId(deptId));
+    }
+
+    @PostMapping("/timetable")
+    public ResponseEntity<?> createTimetable(Authentication authentication, @RequestBody ClassTimetable timetable) {
+        String deptId = resolveDepartmentId(authentication);
+        timetable.setId(null);
+        timetable.setDepartmentId(deptId);
+        if (timetable.getCreatedAt() == null) {
+            timetable.setCreatedAt(LocalDateTime.now());
+        }
+        classTimetableRepository.save(timetable);
+        return ResponseEntity.ok(timetable);
+    }
+
+    @PutMapping("/timetable/{id}")
+    public ResponseEntity<?> updateTimetable(Authentication authentication, @PathVariable String id, @RequestBody ClassTimetable timetable) {
+        String deptId = resolveDepartmentId(authentication);
+        Optional<ClassTimetable> existingOpt = classTimetableRepository.findById(id);
+        if (existingOpt.isEmpty() || !existingOpt.get().getDepartmentId().equals(deptId)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Timetable entry not found or access denied"));
+        }
+        ClassTimetable existing = existingOpt.get();
+        existing.setYear(timetable.getYear());
+        existing.setSectionId(timetable.getSectionId());
+        existing.setAcademicYear(timetable.getAcademicYear());
+        existing.setDayOfWeek(timetable.getDayOfWeek());
+        existing.setPeriodNumber(timetable.getPeriodNumber());
+        existing.setSubjectCode(timetable.getSubjectCode());
+        existing.setFacultyUserId(timetable.getFacultyUserId());
+        
+        classTimetableRepository.save(existing);
+        return ResponseEntity.ok(existing);
+    }
+
+    @DeleteMapping("/timetable/{id}")
+    public ResponseEntity<?> deleteTimetable(Authentication authentication, @PathVariable String id) {
+        String deptId = resolveDepartmentId(authentication);
+        Optional<ClassTimetable> existingOpt = classTimetableRepository.findById(id);
+        if (existingOpt.isEmpty() || !existingOpt.get().getDepartmentId().equals(deptId)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Timetable entry not found or access denied"));
+        }
+        classTimetableRepository.deleteById(id);
+        return ResponseEntity.ok(Map.of("success", true, "message", "Timetable entry deleted successfully"));
     }
 
     @PostMapping("/announcement")
@@ -810,12 +1163,14 @@ public class HODController {
         }
 
         int sentCount = 0;
+        String senderEmail = auth.getName();
         for (String id : recipientIds) {
             Notification notif = Notification.builder()
                     .rollNo(id)
                     .title(title)
                     .message(message)
                     .type(type != null ? type : "SYSTEM")
+                    .senderEmail(senderEmail)
                     .read(false)
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
@@ -826,6 +1181,13 @@ public class HODController {
 
         return ResponseEntity.ok(Map.of("message", "Notification broadcast successfully", "recipientCount", sentCount));
     }
+
+    @GetMapping("/notifications/sent")
+    public ResponseEntity<?> getSentNotifications(Authentication authentication) {
+        String email = authentication.getName();
+        return ResponseEntity.ok(notificationRepository.findAllBySenderEmailIgnoreCaseOrderByCreatedAtDesc(email));
+    }
+
 
     @GetMapping("/messages/conversations")
     public ResponseEntity<?> getStaffConversations(Authentication auth) {
@@ -896,6 +1258,9 @@ public class HODController {
         // Check if target is user ID (ObjectId)
         if (target.matches("^[0-9a-fA-F]{24}$")) {
             recipient = userRepository.findById(target).orElse(null);
+        } else if ("admin".equalsIgnoreCase(target)) {
+            // Find the first admin (Director) user
+            recipient = userRepository.findAllByRole(Role.Director).stream().findFirst().orElse(null);
         }
 
         if (recipient == null) {

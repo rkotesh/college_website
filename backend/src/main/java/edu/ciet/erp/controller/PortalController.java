@@ -54,13 +54,59 @@ public class PortalController {
 
     @GetMapping("/directory")
     @PreAuthorize("hasAnyAuthority('ROLE_HOD', 'ROLE_Faculty', 'ROLE_Mentor')")
-    public ResponseEntity<?> getDirectoryUsers(Authentication authentication) {
+    public ResponseEntity<?> getDirectoryUsers(Authentication authentication, 
+                                               @RequestParam(required = false) String year,
+                                               @RequestParam(required = false) String sectionId) {
         String email = authentication.getName();
         User currentUser = userRepository.findByEmailIgnoreCase(email).orElse(null);
         if (currentUser == null) return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
         
-        List<String> allowedDepts = currentUser.getDepartmentIds();
-        if (allowedDepts == null || allowedDepts.isEmpty()) {
+        List<String> rawDepts = currentUser.getDepartmentIds();
+
+        // Build a robust set of allowed dept identifiers (both IDs and codes, uppercase)
+        // so that comparison works regardless of how depts are stored in user records.
+        Set<String> allowedDeptKeys = new HashSet<>();
+
+        // Helper: resolve a dept string (code or ObjectId) into all keys
+        java.util.function.Consumer<String> addDeptKey = (d) -> {
+            if (d == null || d.isBlank()) return;
+            allowedDeptKeys.add(d.toUpperCase());
+            departmentRepository.findByCodeIgnoreCase(d).ifPresent(dep -> {
+                if (dep.getId() != null) allowedDeptKeys.add(dep.getId().toUpperCase());
+                if (dep.getCode() != null) allowedDeptKeys.add(dep.getCode().toUpperCase());
+                if (dep.getName() != null) allowedDeptKeys.add(dep.getName().toUpperCase());
+            });
+            departmentRepository.findById(d).ifPresent(dep -> {
+                if (dep.getId() != null) allowedDeptKeys.add(dep.getId().toUpperCase());
+                if (dep.getCode() != null) allowedDeptKeys.add(dep.getCode().toUpperCase());
+                if (dep.getName() != null) allowedDeptKeys.add(dep.getName().toUpperCase());
+            });
+        };
+
+        if (rawDepts != null && !rawDepts.isEmpty()) {
+            rawDepts.forEach(addDeptKey);
+        }
+
+        // Also check singular departmentId field (common for HOD registered with one dept)
+        if (currentUser.getDepartmentId() != null && !currentUser.getDepartmentId().isBlank()) {
+            addDeptKey.accept(currentUser.getDepartmentId());
+        }
+
+        // Fallback for HOD/Faculty with no departmentIds at all: resolve from dept collection
+        if (allowedDeptKeys.isEmpty() && (currentUser.getRole() == Role.HOD || currentUser.getRole() == Role.Faculty || currentUser.getRole() == Role.Mentor)) {
+            // Look for any department that matches HOD, or default to first dept (CSE preferred)
+            List<edu.ciet.erp.model.Department> allDepts = departmentRepository.findAll();
+            edu.ciet.erp.model.Department fallback = allDepts.stream()
+                .filter(dep -> dep.getName() != null && dep.getName().toLowerCase().contains("cse"))
+                .findFirst().orElse(allDepts.isEmpty() ? null : allDepts.get(0));
+            if (fallback != null) {
+                if (fallback.getId() != null) allowedDeptKeys.add(fallback.getId().toUpperCase());
+                if (fallback.getCode() != null) allowedDeptKeys.add(fallback.getCode().toUpperCase());
+                if (fallback.getName() != null) allowedDeptKeys.add(fallback.getName().toUpperCase());
+            }
+        }
+
+        if (allowedDeptKeys.isEmpty()) {
             return ResponseEntity.ok(Collections.emptyList());
         }
         
@@ -71,29 +117,114 @@ public class PortalController {
             boolean match = false;
             if (u.getDepartmentIds() != null) {
                 for (String d : u.getDepartmentIds()) {
-                    if (allowedDepts.contains(d.toUpperCase())) {
+                    if (d != null && allowedDeptKeys.contains(d.toUpperCase())) {
                         match = true;
                         break;
                     }
                 }
             }
             if (!match && u.getRole() == Role.Student) {
-                if (u.getDepartmentId() != null && allowedDepts.contains(u.getDepartmentId().toUpperCase())) {
+                if (u.getDepartmentId() != null && allowedDeptKeys.contains(u.getDepartmentId().toUpperCase())) {
                     match = true;
                 } else {
                     Optional<StudentProfile> pOpt = studentProfileRepository.findByUserId(u.getId());
-                    if (pOpt.isPresent() && pOpt.get().getDepartmentId() != null &&
-                        allowedDepts.contains(pOpt.get().getDepartmentId().toUpperCase())) {
-                        match = true;
+                    if (pOpt.isPresent() && pOpt.get().getDepartmentId() != null) {
+                        String pdept = pOpt.get().getDepartmentId();
+                        // Try direct match, and also resolve code ↔ ID
+                        if (allowedDeptKeys.contains(pdept.toUpperCase())) {
+                            match = true;
+                        } else {
+                            // Resolve via dept repo
+                            Optional<edu.ciet.erp.model.Department> byId = departmentRepository.findById(pdept);
+                            Optional<edu.ciet.erp.model.Department> byCode = departmentRepository.findByCodeIgnoreCase(pdept);
+                            if (byId.isPresent() && (allowedDeptKeys.contains(byId.get().getId() != null ? byId.get().getId().toUpperCase() : "")
+                                    || allowedDeptKeys.contains(byId.get().getCode() != null ? byId.get().getCode().toUpperCase() : ""))) {
+                                match = true;
+                            } else if (byCode.isPresent() && (allowedDeptKeys.contains(byCode.get().getId() != null ? byCode.get().getId().toUpperCase() : "")
+                                    || allowedDeptKeys.contains(byCode.get().getCode() != null ? byCode.get().getCode().toUpperCase() : ""))) {
+                                match = true;
+                            }
+                        }
                     }
                 }
             }
             if (match) {
+                // Apply year and section filters for students if provided
+                if (u.getRole() == Role.Student) {
+                    Optional<StudentProfile> pOpt = studentProfileRepository.findByUserId(u.getId());
+                    if (pOpt.isPresent()) {
+                        StudentProfile p = pOpt.get();
+                        if (year != null && !year.isBlank() && !year.equalsIgnoreCase("ALL")) {
+                            if (!year.equalsIgnoreCase(p.getYear())) {
+                                continue;
+                            }
+                        }
+                        if (sectionId != null && !sectionId.isBlank() && !sectionId.equalsIgnoreCase("ALL")) {
+                            if (!sectionId.equalsIgnoreCase(p.getSectionId())) {
+                                continue;
+                            }
+                        }
+                    }
+                }
+                // Apply section filters for faculty/mentors if provided (they usually map to sectionId or via their MentorshipAssignment, but we'll filter their base sectionId if they have one or skip if complex)
+                else {
+                    if (sectionId != null && !sectionId.isBlank() && !sectionId.equalsIgnoreCase("ALL")) {
+                        // Mentors typically have section assignments via MentorshipAssignment, but if filtering is requested directly on the user list:
+                        if (u.getSectionId() != null && !sectionId.equalsIgnoreCase(u.getSectionId())) {
+                            // If they don't have a direct sectionId matching, we'll exclude them, or we could leave them. 
+                            // Let's exclude if sectionId is strictly requested and they don't match.
+                            // Actually, faculty/mentors might not have user.sectionId set, they teach multiple. Let's only filter students for now to be safe, or just check user.sectionId if it's there.
+                            // Wait, the rulebook says: "For Faculty and Mentors: filter by Section where meaningful... do not force a Year filter"
+                            // If they have sectionId set on User, filter by it. Else, we keep them so we don't accidentally hide all faculty.
+                            // Let's implement a safe filter: if sectionId is provided, and the user HAS a sectionId but it differs, exclude.
+                            if (u.getSectionId() != null && !u.getSectionId().isEmpty() && !sectionId.equalsIgnoreCase(u.getSectionId())) {
+                                continue;
+                            }
+                        }
+                    }
+                }
+
                 u.setPasswordHash(null);
                 filteredUsers.add(u);
             }
         }
-        return ResponseEntity.ok(filteredUsers);
+
+        // Enrich student entries with profile fields so the UI can show
+        // Year / Section / Dept labels and a portfolio link without extra calls.
+        List<Map<String, Object>> enriched = new ArrayList<>();
+        for (User u : filteredUsers) {
+            Map<String, Object> entry = new java.util.LinkedHashMap<>();
+            entry.put("id",       u.getId());
+            entry.put("fullName", u.getFullName());
+            entry.put("email",    u.getEmail());
+            entry.put("role",     u.getRole() != null ? u.getRole().name() : null);
+            entry.put("departmentIds", u.getDepartmentIds());
+
+            if (u.getRole() == Role.Student) {
+                studentProfileRepository.findByUserId(u.getId()).ifPresent(p -> {
+                    // Auto-generate slug from rollNo if missing so the portfolio link always works
+                    if ((p.getSlug() == null || p.getSlug().isBlank()) && p.getRollNo() != null) {
+                        String generated = p.getRollNo().toLowerCase()
+                                .replaceAll("[^a-z0-9]", "-")  // replace non-alphanumeric with dash
+                                .replaceAll("-{2,}", "-")       // collapse multiple dashes
+                                .replaceAll("^-|-$", "");       // trim leading/trailing dashes
+                        p.setSlug(generated);
+                        studentProfileRepository.save(p);
+                    }
+                    entry.put("year",         p.getYear());
+                    entry.put("sectionId",    p.getSectionId());
+                    entry.put("departmentId", p.getDepartmentId());
+                    entry.put("batch",        p.getBatch());
+                    entry.put("rollNo",       p.getRollNo());
+                    entry.put("slug",         p.getSlug());
+                    entry.put("photoUrl",     p.getPhotoUrl());
+                    entry.put("cgpa",         p.getCgpa());
+                    entry.put("isPublic",     p.isPublic());
+                });
+            }
+            enriched.add(entry);
+        }
+        return ResponseEntity.ok(enriched);
     }
 
     @PutMapping("/directory/{id}")

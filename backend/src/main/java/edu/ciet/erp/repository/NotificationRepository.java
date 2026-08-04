@@ -6,5 +6,6 @@ import java.util.List;
 
 public interface NotificationRepository extends MongoRepository<Notification, String> {
     List<Notification> findAllByRollNoIgnoreCaseOrderByCreatedAtDesc(String rollNo);
+    List<Notification> findAllBySenderEmailIgnoreCaseOrderByCreatedAtDesc(String senderEmail);
     long countByRollNoIgnoreCaseAndReadFalse(String rollNo);
 }

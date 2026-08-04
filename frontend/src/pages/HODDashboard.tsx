@@ -1,3168 +1,2003 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import LogoHeader from '../components/LogoHeader';
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+// Use relative path — Vite proxy forwards /api → http://localhost:8080
+const API = '/api/v1';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface UserSession {
+  role: string;
+  email: string;
+  fullName?: string;
+  accessToken: string;
+}
 
 interface HODDashboardProps {
-  userSession: {
-    role: string;
-    email: string;
-    fullName?: string;
-    accessToken: string;
-  };
+  userSession: UserSession;
   handleLogout: () => void;
 }
 
-type Tab =
-  | 'overview'
-  | 'faculty'
-  | 'mentorship'
-  | 'documents'
-  | 'training'
-  | 'attainment'
-  | 'at-risk'
-  | 'escalations'
-  | 'notifications'
-  | 'settings'
-  | 'messages'
-  | 'directory'
-  | 'broadcasts';
-
-export default function HODDashboard({ userSession, handleLogout }: HODDashboardProps) {
-  const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || (import.meta.env.DEV ? '' : 'https://ciet-erp.onrender.com');
-  
-  const getInitialTab = (): Tab => {
-    const parts = window.location.pathname.split('/');
-    const tabFromUrl = parts[parts.length - 1];
-    const validTabs: Tab[] = [
-      'overview', 'faculty', 'mentorship', 'documents', 'training', 
-      'attainment', 'at-risk', 'escalations', 'notifications', 'settings', 'messages'
-    , 'directory', 'broadcasts'];
-    if (validTabs.includes(tabFromUrl as Tab)) {
-      return tabFromUrl as Tab;
-    }
-    return 'overview';
-  };
-
-  const [activeTab, setActiveTab] = useState<Tab>(getInitialTab());
-
-  // --- Injected User Directory State ---
-  const [directoryUsers, setDirectoryUsers] = useState<any[]>([]);
-  const [dirSearchQuery, setDirSearchQuery] = useState('');
-  const [dirRoleFilter, setDirRoleFilter] = useState('ALL');
-  const [dirDeptFilter, setDirDeptFilter] = useState('ALL');
-  const [dirCurrentPage, setDirCurrentPage] = useState(1);
-  const [dirActiveModal, setDirActiveModal] = useState<'view' | 'edit' | null>(null);
-  const [dirSelectedUser, setDirSelectedUser] = useState<any | null>(null);
-  const dirUsersPerPage = 15;
-
-  const [dirFormEmail, setDirFormEmail] = useState('');
-  const [dirFormFullName, setDirFormFullName] = useState('');
-  const [dirFormPhone, setDirFormPhone] = useState('');
-  const [dirFormYear, setDirFormYear] = useState('');
-  const [dirFormSectionId, setDirFormSectionId] = useState('');
-  const [dirFormBatch, setDirFormBatch] = useState('');
-  const [dirFormCgpa, setDirFormCgpa] = useState('0.0');
-  const [dirFormAcademicStatus, setDirFormAcademicStatus] = useState('ACTIVE');
-  const [dirFormRollNo, setDirFormRollNo] = useState('');
-
-  // --- Injected Broadcast State ---
-  const [notifTarget, setNotifTarget] = useState('AUDIENCE');
-  const [notifTitle, setNotifTitle] = useState('');
-  const [notifMessage, setNotifMessage] = useState('');
-  const [notifType, setNotifType] = useState('SYSTEM');
-  const [sendingNotif, setSendingNotif] = useState(false);
-  const [notifTargetRoles, setNotifTargetRoles] = useState<string[]>(['Student']);
-  const [notifYearFilter, setNotifYearFilter] = useState<string>('ALL');
-  const [notifDeptFilterAlert, setNotifDeptFilterAlert] = useState<string>('ALL');
-  const [notifSectionFilter, setNotifSectionFilter] = useState<string>('ALL');
-  const [broadcastHistory, setBroadcastHistory] = useState<any[]>([]);
-  const [selectedBroadcast, setSelectedBroadcast] = useState<any | null>(null);
-  const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+interface User { id: string; fullName?: string; email: string; role: string; }
 
 
-  // Whenever activeTab changes, update history URL and title
+interface TrainingProgram {
+  id: string; title: string; description: string; startDate: string;
+  endDate: string; venue: string; registrationUrl: string;
+  isActive: boolean; category: string; targetYears: string[];
+}
 
-  // --- Injected Functions ---
-  const fetchDirectoryUsers = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/portal/directory`, {
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setDirectoryUsers(data);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
+const TABS = [
+  { id: 'directory',    label: 'Directory' },
+  { id: 'mentorship',   label: 'Mentorship' },
+  { id: 'documents',   label: 'Documents' },
+  { id: 'broadcasts',  label: 'Broadcasts' },
+  { id: 'escalations', label: 'Escalations' },
+  { id: 'analytics',   label: 'Analytics' },
+  { id: 'at-risk',     label: 'At-Risk' },
+  { id: 'attainment',  label: 'Attainment' },
+  { id: 'trainings',   label: 'Trainings' },
+];
 
-  const handleEditDirUserSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!dirSelectedUser) return;
-    try {
-      const payload: any = {
-        email: dirFormEmail,
-        fullName: dirFormFullName,
-        phone: dirFormPhone,
-      };
-      if (dirSelectedUser.role === 'Student') {
-        payload.year = dirFormYear;
-        payload.sectionId = dirFormSectionId;
-        payload.batch = dirFormBatch;
-        payload.cgpa = dirFormCgpa;
-        payload.academicStatus = dirFormAcademicStatus;
-        payload.roll_no = dirFormRollNo;
-      }
-      const res = await fetch(`${API_BASE_URL}/api/v1/portal/directory/${dirSelectedUser.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error('Update failed');
-      alert('User updated successfully');
-      setDirActiveModal(null);
-      fetchDirectoryUsers();
-    } catch (e) {
-      alert('Error updating user');
-    }
-  };
+// ── Sections Configuration (Dynamic Loader/Saver) ─────────────────────────────
+const DEFAULT_SECTIONS = ['A', 'B', 'C', 'D'];
+const getSavedSections = (): string[] => {
+  try {
+    const saved = localStorage.getItem('ciet_erp_sections');
+    if (saved) return JSON.parse(saved);
+  } catch (e) {
+    console.error('Failed to parse sections', e);
+  }
+  return DEFAULT_SECTIONS;
+};
 
-  const openDirEditModal = (u: any) => {
-    setDirSelectedUser(u);
-    setDirFormEmail(u.email || '');
-    setDirFormFullName(u.fullName || '');
-    setDirFormPhone(u.phone || '');
-    setDirFormRollNo(u.rollNo || '');
-    setDirFormYear(u.year || '');
-    setDirFormSectionId(u.sectionId || '');
-    setDirFormBatch(u.batch || '');
-    setDirFormCgpa(u.cgpa?.toString() || '0.0');
-    setDirFormAcademicStatus(u.academicStatus || 'ACTIVE');
-    setDirActiveModal('edit');
-  };
+const saveSectionsList = (sections: string[]) => {
+  localStorage.setItem('ciet_erp_sections', JSON.stringify(sections));
+  // Dispatch custom event to notify other components to refresh
+  window.dispatchEvent(new Event('sections_updated'));
+};
 
-  const fetchBroadcastHistory = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/portal/broadcasts/history`, {
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setBroadcastHistory(data);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
+// ── Small reusable label chip ─────────────────────────────────────────────────
+const Chip: React.FC<{ label: string; color?: string }> = ({ label, color = 'var(--accent)' }) => (
+  <span style={{
+    display: 'inline-flex', alignItems: 'center',
+    padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 700,
+    background: `color-mix(in srgb, ${color} 14%, transparent)`,
+    color: color, whiteSpace: 'nowrap', letterSpacing: '.3px'
+  }}>{label}</span>
+);
 
-  const handleSendBroadcast = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!notifTitle.trim() || !notifMessage.trim()) return alert('Title and Message are required.');
-    try {
-      setSendingNotif(true);
-      const payload: any = { title: notifTitle, message: notifMessage, type: notifType };
-      if (notifTarget === 'AUDIENCE') {
-        payload.targetRoles = notifTargetRoles;
-        payload.year = notifYearFilter;
-        payload.departmentId = notifDeptFilterAlert;
-        payload.sectionId = notifSectionFilter;
-      } else {
-        payload.rollNo = notifTarget;
-      }
-      const res = await fetch(`${API_BASE_URL}/api/v1/portal/broadcast`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) { alert('Failed to send broadcast'); return; }
-      const data = await res.json();
-      alert(data.message);
-      setNotifTitle('');
-      setNotifMessage('');
-      fetchBroadcastHistory();
-    } catch (e) {
-      alert('Error sending broadcast');
-    } finally {
-      setSendingNotif(false);
-    }
-  };
-
-  const filteredDirUsers = directoryUsers.filter(u => {
-    if (dirRoleFilter !== 'ALL' && u.role !== dirRoleFilter) return false;
-    if (dirDeptFilter !== 'ALL') {
-      const uDept = u.departmentIds?.[0] || u.departmentId || '';
-      if (uDept !== dirDeptFilter) return false;
-    }
-    if (dirSearchQuery) {
-      const sq = dirSearchQuery.toLowerCase();
-      if (!u.fullName?.toLowerCase().includes(sq) && 
-          !u.email?.toLowerCase().includes(sq) &&
-          !u.rollNo?.toLowerCase().includes(sq)) {
-        return false;
-      }
-    }
-    return true;
-  });
-  
-  const dirTotalPages = Math.max(1, Math.ceil(filteredDirUsers.length / dirUsersPerPage));
-  const displayedDirUsers = filteredDirUsers.slice((dirCurrentPage - 1) * dirUsersPerPage, dirCurrentPage * dirUsersPerPage);
-
-
-  useEffect(() => {
-    if (activeTab === 'directory') fetchDirectoryUsers();
-    if (activeTab === 'broadcasts') fetchBroadcastHistory();
-  }, [activeTab]);
-
-  useEffect(() => {
-    let tabLabel = '';
-    switch (activeTab) {
-      case 'overview': tabLabel = 'Overview'; break;
-      case 'faculty': tabLabel = 'Faculty Members'; break;
-      case 'mentorship': tabLabel = 'Mentorship'; break;
-      case 'documents': tabLabel = 'Documents'; break;
-      case 'training': tabLabel = 'Professional Training'; break;
-      case 'attainment': tabLabel = 'CO-PO Attainment'; break;
-      case 'at-risk': tabLabel = 'At-Risk Analytics'; break;
-      case 'escalations': tabLabel = 'Escalation Center'; break;
-      case 'notifications': tabLabel = 'Notifications'; break;
-      case 'settings': tabLabel = 'Settings'; break;
-      case 'messages': tabLabel = 'Staff Messages'; break;
-      default: {
-        const tabStr = activeTab as string;
-        tabLabel = tabStr.charAt(0).toUpperCase() + tabStr.slice(1);
-      }
-    }
-    
-    document.title = `${tabLabel} | HOD Dashboard | CIET ERP`;
-    
-    const newPath = activeTab === 'overview' ? '/hod-dashboard' : `/hod-dashboard/${activeTab}`;
-    if (window.location.pathname !== newPath) {
-      window.history.pushState(null, '', newPath);
-    }
-  }, [activeTab]);
-
-  // Sync activeTab when the back/forward button is clicked
-  useEffect(() => {
-    const handlePopState = () => {
-      const parts = window.location.pathname.split('/');
-      const tabFromUrl = parts[parts.length - 1];
-      const validTabs: Tab[] = [
-        'overview', 'faculty', 'mentorship', 'documents', 'training', 
-        'attainment', 'at-risk', 'escalations', 'notifications', 'settings', 'messages'
-      , 'directory', 'broadcasts'];
-      if (validTabs.includes(tabFromUrl as Tab)) {
-        setActiveTab(tabFromUrl as Tab);
-      } else {
-        setActiveTab('overview');
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-  const [department, setDepartment] = useState<any>(null);
-  const [facultyList, setFacultyList] = useState<any[]>([]);
-  const [studentsList, setStudentsList] = useState<any[]>([]);
-  const [documents, setDocuments] = useState<any[]>([]);
-  const [trainings, setTrainings] = useState<any[]>([]);
-  const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [meetingLogs, setMeetingLogs] = useState<any[]>([]);
-  const [escalations, setEscalations] = useState<any[]>([]);
-  
-  // HOD Profile & Notifications state
-  const [hodProfile, setHodProfile] = useState<any>(null);
-  const [profileFullName, setProfileFullName] = useState('');
-  const [profilePhone, setProfilePhone] = useState('');
-  const [profilePassword, setProfilePassword] = useState('');
-  const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
-  const [hodNotifications, setHodNotifications] = useState<any[]>([]);
-  
-  // HOD Manual Notification Form states
-  const [hodNotifTarget, setHodNotifTarget] = useState('ALL');
-  const [hodNotifType, setHodNotifType] = useState('SYSTEM');
-  const [hodNotifTitle, setHodNotifTitle] = useState('');
-  const [hodNotifMessage, setHodNotifMessage] = useState('');
-  const [sendingHodNotif, setSendingHodNotif] = useState(false);
-  const [submittingTraining, setSubmittingTraining] = useState(false);
-  const [submittingAnn, setSubmittingAnn] = useState(false);
-  const [submittingDoc, setSubmittingDoc] = useState(false);
-  
-  // Staff Direct Messages states
-  const [staffConversations, setStaffConversations] = useState<any[]>([]);
-  const [selectedConversation, setSelectedConversation] = useState<any>(null);
-  const [staffMsgInput, setStaffMsgInput] = useState('');
-  const [msgSidebarTab, setMsgSidebarTab] = useState<'chats' | 'students' | 'faculty' | 'mentors'>('chats');
-  const staffChatContainerRef = useRef<HTMLDivElement | null>(null);
-  const escalationChatContainerRef = useRef<HTMLDivElement | null>(null);
-
-  // Active escalation thread
-  const [activeThread, setActiveThread] = useState<any>(null);
-  const [chatMessage, setChatMessage] = useState('');
-  const [privateNotes, setPrivateNotes] = useState<any[]>([]);
-  const [newNote, setNewNote] = useState('');
-
-  // New Escalation Form states
-  const [showNewEscalationForm, setShowNewEscalationForm] = useState(false);
-  const [newEscRollNos, setNewEscRollNos] = useState<string[]>([]);
-  const [newEscMentorIds, setNewEscMentorIds] = useState<string[]>([]);
-  const [newEscFacultyIds, setNewEscFacultyIds] = useState<string[]>([]);
-  const [newEscSubjectCode, setNewEscSubjectCode] = useState('GENERAL');
-  const [creatingEscalation, setCreatingEscalation] = useState(false);
-
-  // Form states
+// ═══════════════════════════════════════════════════════════
+// Directory Tab
+// ═══════════════════════════════════════════════════════════
+const DirectoryTab: React.FC<{ token: string }> = ({ token }) => {
+  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  
-  // Mentorship forms
-  const [splitForm, setSplitForm] = useState({ batch: '2022-2026', sectionId: 'A', mentorAId: '', mentorBId: '' });
-  const [manualForm, setManualForm] = useState({ mentorUserId: '', studentRollNos: [] as string[] });
-  
-  // Document upload form
-  const [docForm, setDocForm] = useState({ title: '', docType: 'LESSON_PLAN', fileUrl: '', resourceUrl: '', subjectCode: '', semester: '1', academicYear: '2025-2026', targetYear: 'III', targetSection: 'A', validFrom: '' });
-  
-  // Training form
-  const [trainingForm, setTrainingForm] = useState({ title: '', description: '', startDate: '', endDate: '', venue: '', registrationUrl: '', isActive: true, category: 'Technical' });
-  
-  // Announcement form
-  const [annForm, setAnnForm] = useState({ title: '', content: '', resourceUrl: '' });
-
-  // HOD Directory and User Detail Overlay states
-  const [directorySearch, setDirectorySearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('ALL');
+  const [yearFilter, setYearFilter] = useState('ALL');
+  const [sectionFilter, setSectionFilter] = useState('ALL');
+  const [search, setSearch] = useState('');
+  const [sections, setSections] = useState<string[]>(getSavedSections());
 
   useEffect(() => {
-    const mainEl = document.querySelector('.ds-main');
-    if (mainEl) {
-      mainEl.scrollTop = 0;
-    }
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (staffChatContainerRef.current) {
-      staffChatContainerRef.current.scrollTop = staffChatContainerRef.current.scrollHeight;
-    }
-  }, [selectedConversation?.messages]);
-
-  useEffect(() => {
-    if (escalationChatContainerRef.current) {
-      escalationChatContainerRef.current.scrollTop = escalationChatContainerRef.current.scrollHeight;
-    }
-  }, [activeThread?.messages]);
-  const [directoryTab, setDirectoryTab] = useState<'students' | 'faculty' | 'mentors'>('students');
-  const [selectedDetailUser, setSelectedDetailUser] = useState<any | null>(null);
-  const [detailUserData, setDetailUserData] = useState<any | null>(null);
-  const [detailUserLoading, setDetailUserLoading] = useState(false);
-
-  // Notifications dropdown
-  // const [showNotifications, setShowNotifications] = useState(false);
-  // const [notifications] = useState([
-    // { id: 1, title: 'Accreditation Review', msg: 'NAAC Pre-Audit check is scheduled for next Monday.', time: '2 hours ago' }
-  // ]);
-
-  useEffect(() => {
-    fetchBaseData();
+    const handleUpdate = () => setSections(getSavedSections());
+    window.addEventListener('sections_updated', handleUpdate);
+    return () => window.removeEventListener('sections_updated', handleUpdate);
   }, []);
-  useEffect(() => {
-    if (activeTab === 'messages') {
-      fetchStaffConversations();
-    }
-    if (activeTab === 'notifications') {
-      markNotificationsAsRead();
-    }
-  }, [activeTab]);
-  const fetchBaseData = async () => {
+
+  useEffect(() => { fetchDirectory(); }, [yearFilter, sectionFilter]);
+
+  const fetchDirectory = async () => {
     try {
       setLoading(true);
-      setError('');
-      
-      const headers = { 'Authorization': `Bearer ${userSession.accessToken}` };
-      
-      const [
-        scopeRes,
-        facultyRes,
-        docsRes,
-        trainingsRes,
-        announcementsRes,
-        logsRes,
-        escalationsRes,
-        profileRes,
-        notifRes,
-        portalRes
-      ] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/v1/hod/scope`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/hod/faculty`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/hod/documents`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/hod/trainings`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/hod/announcements`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/hod/meeting-logs`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/hod/escalations`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/hod/profile`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/hod/notifications`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/portal/hod/dashboard`, { headers })
-      ]);
-
-      if (scopeRes.ok) setDepartment(await scopeRes.json());
-      if (facultyRes.ok) setFacultyList(await facultyRes.json());
-      if (docsRes.ok) setDocuments(await docsRes.json());
-      if (trainingsRes.ok) setTrainings(await trainingsRes.json());
-      if (announcementsRes.ok) setAnnouncements(await announcementsRes.json());
-      if (logsRes.ok) setMeetingLogs(await logsRes.json());
-      if (escalationsRes.ok) setEscalations(await escalationsRes.json());
-      
-      if (profileRes.ok) {
-        const prof = await profileRes.json();
-        setHodProfile(prof);
-        setProfileFullName(prof.fullName || '');
-        setProfilePhone(prof.phone || '');
-        setProfilePhotoUrl(prof.photoUrl || '');
-      }
-      
-      if (notifRes.ok) setHodNotifications(await notifRes.json());
-      
-      if (portalRes.ok) {
-        const portalData = await portalRes.json();
-        setStudentsList(portalData.students || []);
-      }
-
-    } catch (err: any) {
-      setError(err.message || 'Failed to load HOD data.');
-    } finally {
-      setLoading(false);
-    }
+      const params = new URLSearchParams();
+      if (yearFilter !== 'ALL') params.append('year', yearFilter);
+      if (sectionFilter !== 'ALL') params.append('sectionId', sectionFilter);
+      const res = await axios.get(`${API}/portal/directory?${params}`, h);
+      setUsers(res.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
-  // Halves Split Action
-  const handleSplitSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/mentor/split`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify(splitForm)
-      });
-      if (!res.ok) throw new Error('Failed to split mentorship classes.');
-      alert('Class halves split assignment completed successfully!');
-      fetchBaseData();
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  // Manual Mentorship Action
-  const handleManualSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/mentor/manual`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify(manualForm)
-      });
-      if (!res.ok) throw new Error('Failed manual mentorship assignments.');
-      alert('Selected students assigned successfully.');
-      setManualForm({ mentorUserId: '', studentRollNos: [] });
-      fetchBaseData();
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  // Document Upload Action
-  const handleDocSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setSubmittingDoc(true);
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/document`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify(docForm)
-      });
-      if (!res.ok) throw new Error('Failed to upload document.');
-      alert('Document recorded successfully!');
-      setDocForm({ title: '', docType: 'LESSON_PLAN', fileUrl: '', resourceUrl: '', subjectCode: '', semester: '1', academicYear: '2025-2026', targetYear: 'III', targetSection: 'A', validFrom: '' });
-      fetchBaseData();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setSubmittingDoc(false);
-    }
-  };
-
-  // Skill Course Listing Action
-  const handleTrainingSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setSubmittingTraining(true);
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/training`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify(trainingForm)
-      });
-      if (!res.ok) throw new Error('Failed to save training program.');
-      alert('Training program course created!');
-      setTrainingForm({ title: '', description: '', startDate: '', endDate: '', venue: '', registrationUrl: '', isActive: true, category: 'Technical' });
-      fetchBaseData();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setSubmittingTraining(false);
-    }
-  };
-
-  // Announcement Action
-  const handleAnnSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setSubmittingAnn(true);
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/announcement`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify(annForm)
-      });
-      if (!res.ok) throw new Error('Failed to post announcement.');
-      alert('Announcement published to department students!');
-      setAnnForm({ title: '', content: '', resourceUrl: '' });
-      fetchBaseData();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setSubmittingAnn(false);
-    }
-  };
-
-
-  // Escalation Chat Thread Messages
-  const selectThread = async (thread: any) => {
-    setActiveThread(thread);
-    // Fetch private case notes for the student in this thread
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/case-notes/${thread.thread.rollNo}`, {
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      if (res.ok) {
-        setPrivateNotes(await res.json());
-      }
-    } catch {
-      setPrivateNotes([]);
-    }
-  };
-
-  const sendChatMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatMessage.trim() || !activeThread) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/escalations/${activeThread.thread.id}/message`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({ content: chatMessage })
-      });
-      if (res.ok) {
-        const newMsg = await res.json();
-        // Update local thread state
-        setActiveThread((prev: any) => ({
-          ...prev,
-          messages: [...prev.messages, newMsg]
-        }));
-        setChatMessage('');
-        fetchBaseData();
-      }
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  const addCaseNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newNote.trim() || !activeThread) return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/case-notes/${activeThread.thread.rollNo}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({ content: newNote })
-      });
-      if (res.ok) {
-        const createdNote = await res.json();
-        setPrivateNotes((prev) => [createdNote, ...prev]);
-        setNewNote('');
-      }
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-
-  const handleCreateNewEscalation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newEscRollNos.length === 0) return;
-    setCreatingEscalation(true);
-    try {
-      const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userSession.accessToken}` };
-      // Create one thread per selected student
-      const createdThreadIds: string[] = [];
-      for (const rollNo of newEscRollNos) {
-        const res = await fetch(`${API_BASE_URL}/api/v1/hod/escalations`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            rollNo,
-            subjectCode: newEscSubjectCode || 'GENERAL',
-            mentorUserIds: newEscMentorIds.length > 0 ? newEscMentorIds : undefined,
-            facultyUserIds: newEscFacultyIds.length > 0 ? newEscFacultyIds : undefined,
-          })
-        });
-        if (!res.ok) { const err = await res.json(); throw new Error(err.error || `Failed for ${rollNo}`); }
-        const t = await res.json();
-        createdThreadIds.push(t.id);
-      }
-      // Reload escalations list
-      const escRes = await fetch(`${API_BASE_URL}/api/v1/hod/escalations`, {
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      if (escRes.ok) {
-        const escData = await escRes.json();
-        setEscalations(escData);
-        // Select last created thread
-        const last = escData.find((e: any) => e.thread.id === createdThreadIds[createdThreadIds.length - 1]);
-        if (last) { setActiveThread(last); setPrivateNotes([]); }
-      }
-      // Reset form
-      setShowNewEscalationForm(false);
-      setNewEscRollNos([]);
-      setNewEscMentorIds([]);
-      setNewEscFacultyIds([]);
-      setNewEscSubjectCode('GENERAL');
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setCreatingEscalation(false);
-    }
-  };
-
-  const handleSaveHODProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({
-          fullName: profileFullName,
-          phone: profilePhone,
-          password: profilePassword,
-          photoUrl: profilePhotoUrl
-        })
-      });
-      if (!res.ok) throw new Error('Failed to update HOD profile.');
-      const updatedUser = await res.json();
-      setHodProfile(updatedUser);
-      setProfilePassword('');
-      alert('Profile updated successfully!');
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  const handleHODPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5MB'); return; }
-    try {
-      const uploadFormData = new FormData();
-      uploadFormData.append('file', file);
-      const res = await fetch(`${API_BASE_URL}/api/v1/portal/student/upload`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` },
-        body: uploadFormData,
-        credentials: 'include'
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to upload photo');
-      }
-      const data = await res.json();
-      setProfilePhotoUrl(data.url);
-      alert('Photo uploaded successfully! Save settings to apply.');
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  const fetchUserDetailForHOD = async (targetUser: any) => {
-    setSelectedDetailUser(targetUser);
-    setDetailUserLoading(true);
-    setDetailUserData(null);
-    try {
-      const headers = { 'Authorization': `Bearer ${userSession.accessToken}` };
-      if (targetUser.role === 'Student') {
-        const res = await fetch(`${API_BASE_URL}/api/v1/hod/students/${targetUser.id}/dashboard`, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          setDetailUserData(data);
-        }
-      } else {
-        const res = await fetch(`${API_BASE_URL}/api/v1/hod/staff/${targetUser.id}/profile`, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          setDetailUserData(data);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load user detail profile', err);
-    } finally {
-      setDetailUserLoading(false);
-    }
-  };
-
-
-
-
-
-  const markNotificationsAsRead = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/notifications/read`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      if (res.ok) {
-        setHodNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      }
-    } catch (err) {
-      console.error('Failed to mark all as read', err);
-    }
-  };
-
-  const markSingleNotificationAsRead = async (id: string) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/notifications/${id}/read`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      if (res.ok) {
-        setHodNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-      }
-    } catch (err) {
-      console.error('Failed to mark single as read', err);
-    }
-  };
-
-  const handleSendHODNotification = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!hodNotifTitle.trim() || !hodNotifMessage.trim()) {
-      alert('Title and Message are required.');
-      return;
-    }
-    try {
-      setSendingHodNotif(true);
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/notification`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({
-          rollNo: hodNotifTarget,
-          title: hodNotifTitle,
-          message: hodNotifMessage,
-          type: hodNotifType
-        })
-      });
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Failed to dispatch notification.');
-      }
-      alert('Departmental notification broadcast successfully!');
-      setHodNotifTitle('');
-      setHodNotifMessage('');
-      fetchBaseData();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setSendingHodNotif(false);
-    }
-  };
-
-  const fetchStaffConversations = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/messages/conversations`, {
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      if (res.ok) {
-        const convs = await res.json();
-        setStaffConversations(convs);
-        if (convs.length > 0) {
-          setSelectedConversation((prev: any) => {
-            if (prev) {
-              const updated = convs.find((c: any) => c.studentRollNo === prev.studentRollNo);
-              return updated || convs[0];
-            }
-            return convs[0];
-          });
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load staff conversations", err);
-    }
-  };
-
-  const handleSendStaffMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!staffMsgInput.trim() || !selectedConversation) return;
-    const text = staffMsgInput;
-    setStaffMsgInput('');
-
-    const target = selectedConversation.userId || selectedConversation.studentRollNo || selectedConversation.studentEmail;
-    if (!target) return;
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/messages/${target}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({ messageText: text })
-      });
-      if (res.ok) {
-        const updatedMessages = await res.json();
-        setStaffConversations(prev => {
-          const exists = prev.some(c => (c.userId && c.userId === selectedConversation.userId) || c.studentRollNo === selectedConversation.studentRollNo);
-          if (exists) {
-            return prev.map(c => {
-              if ((c.userId && c.userId === selectedConversation.userId) || c.studentRollNo === selectedConversation.studentRollNo) {
-                return { ...c, messages: updatedMessages };
-              }
-              return c;
-            });
-          } else {
-            const newConv = { ...selectedConversation, messages: updatedMessages };
-            return [newConv, ...prev];
-          }
-        });
-        setSelectedConversation((prev: any) => ({ ...prev, messages: updatedMessages }));
-        fetchStaffConversations();
-      }
-    } catch (err) {
-      console.error("Failed to send staff message", err);
-      setStaffMsgInput(text);
-    }
-  };
-
-  // Particles canvas re-used and styled to premium blue/indigo
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let animId: number;
-    let w = (canvas.width = window.innerWidth);
-    let h = (canvas.height = window.innerHeight);
-
-    interface Orb {
-      x: number; y: number; vx: number; vy: number; r: number; alpha: number; dAlpha: number; isRed: boolean;
-    }
-    const orbs: Orb[] = [];
-    for (let i = 0; i < 85; i++) {
-      orbs.push({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4,
-        r: Math.random() * 2 + 1,
-        alpha: Math.random() * 0.5 + 0.2,
-        dAlpha: (Math.random() - 0.5) * 0.015,
-        isRed: Math.random() > 0.5
-      });
-    }
-
-    const render = () => {
-      ctx.clearRect(0, 0, w, h);
-      orbs.forEach((o) => {
-        o.x += o.vx;
-        o.y += o.vy;
-        o.alpha += o.dAlpha;
-        if (o.alpha > 0.8 || o.alpha < 0.1) o.dAlpha = -o.dAlpha;
-        if (o.x < 0 || o.x > w) o.vx = -o.vx;
-        if (o.y < 0 || o.y > h) o.vy = -o.vy;
-
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
-        const rgb = o.isRed ? '229, 57, 53' : '0, 0, 0';
-        ctx.fillStyle = `rgba(${rgb}, ${Math.max(0.1, Math.min(o.alpha, 0.8))})`;
-        ctx.fill();
-      });
-
-      // Draw connection lines (spiderweb net)
-      for (let i = 0; i < orbs.length; i++) {
-        for (let j = i + 1; j < orbs.length; j++) {
-          const o1 = orbs[i];
-          const o2 = orbs[j];
-          const dx = o1.x - o2.x;
-          const dy = o1.y - o2.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 185) {
-            const lineAlpha = 0.38 * (1 - dist / 185);
-            ctx.beginPath();
-            ctx.moveTo(o1.x, o1.y);
-            ctx.lineTo(o2.x, o2.y);
-            const isRedLine = o1.isRed || o2.isRed;
-            ctx.strokeStyle = isRedLine ? `rgba(229, 57, 53, ${lineAlpha})` : `rgba(0, 0, 0, ${lineAlpha})`;
-            ctx.lineWidth = 0.9;
-            ctx.stroke();
-          }
-        }
-      }
-      animId = requestAnimationFrame(render);
-    };
-    render();
-
-    const handleResize = () => {
-      w = canvas.width = window.innerWidth;
-      h = canvas.height = window.innerHeight;
-    };
-    window.addEventListener('resize', handleResize);
-    return () => {
-      cancelAnimationFrame(animId);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
-
-  const pageVariants = {
-    initial: { opacity: 0, y: 12 },
-    animate: { opacity: 1, y: 0 },
-    exit: { opacity: 0, y: -8 }
-  };
-  const pageTransition = { duration: 0.24, ease: [0.16, 1, 0.3, 1] as const };
-
-  if (loading) {
-    return (
-      <div className="ds-root" style={{ background: 'var(--ds-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#fff' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ margin: '0 auto 16px', display: 'flex', justifyContent: 'center' }}>
-            <LogoHeader imageStyle={{ height: '40px' }} />
-          </div>
-          <p style={{ fontFamily: 'var(--ds-font-display)', fontWeight: 600 }}>Syncing HOD Portal Workspace...</p>
-        </div>
-      </div>
-    );
-  }
+  const filtered = users.filter((u: any) => {
+    const roleOk = roleFilter === 'ALL' || u.role === roleFilter;
+    const searchOk = !search ||
+      (u.fullName || '').toLowerCase().includes(search.toLowerCase()) ||
+      (u.email || '').toLowerCase().includes(search.toLowerCase()) ||
+      (u.rollNo || '').toLowerCase().includes(search.toLowerCase());
+    return roleOk && searchOk;
+  });
 
   return (
-    <div className="ds-root" style={{ background: 'var(--ds-bg)', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      
-      <div className="ds-bg-layer" style={{ zIndex: 0 }}>
-        <div className="ds-grid-texture" />
+    <div>
+      {/* Toolbar */}
+      <div className="toolbar-row" style={{ flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+        <input
+          className="search-input"
+          style={{ flex: '1 1 180px', paddingLeft: 14 }}
+          placeholder="Search name, email, roll no…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <select className="filter-select" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+          <option value="ALL">All Roles</option>
+          <option value="Faculty">Faculty</option>
+          <option value="Student">Student</option>
+          <option value="Mentor">Mentor</option>
+        </select>
+        {(roleFilter === 'ALL' || roleFilter === 'Student') && (<>
+          <select className="filter-select" value={yearFilter} onChange={e => setYearFilter(e.target.value)}>
+            <option value="ALL">All Years</option>
+            {['1','2','3','4'].map(y => <option key={y} value={y}>Year {y}</option>)}
+          </select>
+          <select className="filter-select" value={sectionFilter} onChange={e => setSectionFilter(e.target.value)}>
+            <option value="ALL">All Sections</option>
+            {sections.map(s => <option key={s} value={s}>Section {s}</option>)}
+          </select>
+        </>)}
+        <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto', alignSelf: 'center' }}>
+          {filtered.length} result{filtered.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
-      <style dangerouslySetInnerHTML={{ __html: `
-        .ds-root {
-          --accent: hsl(0, 75%, 50%) !important;
-          --accent-light: hsl(0, 75%, 60%) !important;
-          --accent-dark: hsl(0, 75%, 40%) !important;
-          --accent-glow: hsla(0, 75%, 50%, 0.15) !important;
-          --accent-border: hsl(0, 75%, 50%) !important;
-        }
-        .sidebar-item.active {
-          color: var(--text-primary) !important;
-          background: var(--ds-surface3) !important;
-        }
-        .sidebar-item.active svg {
-          color: hsl(0, 75%, 50%) !important;
-          stroke: hsl(0, 75%, 50%) !important;
-        }
-        .sidebar-item.active::before {
-          background: hsl(0, 75%, 50%) !important;
-        }
-        .btn-action-primary {
-          background: hsl(0, 75%, 50%) !important;
-          color: #ffffff !important;
-        }
-        .btn-action-primary:hover {
-          background: hsl(0, 75%, 42%) !important;
-        }
-      ` }} />
-
-      {/* HEADER TOPBAR (BLUE COMPLIANT) */}
-      
-
-      {/* LAYOUT BODY */}
-            {/* HEADER */}
-      <div className="admin-header">
-        <LogoHeader />
-        <div className="admin-header-right">
-          <div className="user-avatar-chip">
-            <div className="user-avatar-info">
-              <div className="user-avatar-name">{userSession.fullName || 'User'}</div>
-              <div className="user-avatar-role">{userSession.role}</div>
-            </div>
-          </div>
-          <button onClick={handleLogout} className="btn-topbar danger">Sign Out</button>
-        </div>
-      </div>
-
-      {/* BODY */}
-      <div className="admin-body">
-        <div className="admin-sidebar">
-        
-        {/* SIDEBAR NAVIGATION (ACCENT BLUE INTEGRATED) */}
-        
-          <nav className="ds-nav" style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div className="sidebar-section-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', paddingBottom: '6px' }}>Operations</div>
-            
-            <button className={`sidebar-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'overview' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'overview' ? 700 : 500 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-              <span>Department Overview</span>
-            </button>
-            
-            <button className={`sidebar-item ${activeTab === 'faculty' ? 'active' : ''}`} onClick={() => setActiveTab('faculty')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'faculty' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'faculty' ? 700 : 500 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <span>Faculty Workload</span>
-            </button>
-
-            <button className={`sidebar-item ${activeTab === 'mentorship' ? 'active' : ''}`} onClick={() => setActiveTab('mentorship')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'mentorship' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'mentorship' ? 700 : 500 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <span>Mentorship Assignment</span>
-            </button>
-
-            <button className={`sidebar-item ${activeTab === 'documents' ? 'active' : ''}`} onClick={() => setActiveTab('documents')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'documents' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'documents' ? 700 : 500 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-              <span>Curriculum Files</span>
-            </button>
-
-            <div className="sidebar-section-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 6px' }}>Development & OBE</div>
-
-            <button className={`sidebar-item ${activeTab === 'training' ? 'active' : ''}`} onClick={() => setActiveTab('training')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'training' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'training' ? 700 : 500 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              <span>Trainings & Broadcasts</span>
-            </button>
-
-
-
-             <button className={`sidebar-item ${activeTab === 'escalations' ? 'active' : ''}`} onClick={() => setActiveTab('escalations')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'escalations' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'escalations' ? 700 : 500 }}>
-               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-               <span>Escalation Chain</span>
-             </button>
-
-             <div className="sidebar-section-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 6px' }}>Account</div>
-
-             <button className={`sidebar-item ${activeTab === 'notifications' ? 'active' : ''}`} onClick={() => setActiveTab('notifications')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'notifications' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'notifications' ? 700 : 500 }}>
-               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-               <span>Notifications</span>
-               {hodNotifications.filter(n => !n.read).length > 0 && (
-                 <span style={{ background: '#3b82f6', color: '#fff', fontSize: '9px', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', marginLeft: 'auto' }}>
-                   {hodNotifications.filter(n => !n.read).length}
-                 </span>
-               )}
-             </button>
-
-             <button className={`sidebar-item ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'messages' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'messages' ? 700 : 500 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <span>Direct Messages</span>
-              </button>
-
-             <button className={`sidebar-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'settings' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'settings' ? 700 : 500 }}>
-               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
-               <span>Profile Settings</span>
-             </button>
-          </nav>
-        </div>
-
-        {/* MAIN PANEL CONTENT */}
-        <div className="admin-main">
-          <div className="admin-main-content">
-          {error && (
-            <div style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span>{error}</span>
-            </div>
-          )}
-          <AnimatePresence mode="wait">
-            <motion.div key={activeTab} variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={pageTransition} className="admin-page" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              
-              {/* TAB OVERVIEW */}
-              
-              {activeTab === 'directory' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div className="admin-view-header">
-                    <h2>User Directory</h2>
-                    <p>View and edit users within your department(s)</p>
+      {/* Table */}
+      <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Year · Sec · Dept</th>
+              <th style={{ minWidth: 110 }}>Portfolio</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>Loading…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>No users found.</td></tr>
+            ) : filtered.map((u: any) => (
+              <tr key={u.id}>
+                {/* Name + roll no */}
+                <td>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{u.fullName || '—'}</span>
+                    {u.rollNo && (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{u.rollNo}</span>
+                    )}
                   </div>
-
-                  {/* Filter Toolbar */}
-                  <div className="toolbar-row">
-                    <div className="toolbar-search">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                      <input type="text" placeholder="Search by name, email, or roll no..." value={dirSearchQuery} onChange={e => setDirSearchQuery(e.target.value)} />
-                    </div>
-                    <select className="filter-select" value={dirRoleFilter} onChange={e => setDirRoleFilter(e.target.value)}>
-                      <option value="ALL">All Roles</option>
-                      <option value="Student">Students</option>
-                      <option value="Faculty">Faculty</option>
-                      <option value="Mentor">Mentors</option>
-                      <option value="HOD">HODs</option>
-                    </select>
-                    <select className="filter-select" value={dirDeptFilter} onChange={e => setDirDeptFilter(e.target.value)}>
-                      <option value="ALL">All Departments</option>
-                      <option value="CSE">CSE</option>
-                      <option value="AI">AI</option>
-                      <option value="AIML">AIML</option>
-                      <option value="ECE">ECE</option>
-                      <option value="IT">IT</option>
-                    </select>
-                  </div>
-
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>User Details</th>
-                        <th>Role</th>
-                        <th>Department</th>
-                        <th>Status</th>
-                        <th style={{ textAlign: 'right' }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayedDirUsers.map((u: any) => (
-                        <tr key={u.id}>
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <span style={{ fontWeight: '700', color: 'var(--text-primary)', fontSize: '14px' }}>{u.fullName}</span>
-                              <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{u.email}</span>
-                              {u.role === 'Student' && u.rollNo && (
-                                <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: '600' }}>{u.rollNo}</span>
-                              )}
-                            </div>
-                          </td>
-                          <td>
-                            <span className="badge-pill outline">{u.role}</span>
-                          </td>
-                          <td>
-                            <span style={{ fontWeight: '600', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                              {u.departmentIds?.join(', ') || u.departmentId || 'N/A'}
-                            </span>
-                          </td>
-                          <td>
-                            {u.isActive ? (
-                              <span className="badge-pill success">Active</span>
-                            ) : (
-                              <span className="badge-pill danger">Inactive</span>
-                            )}
-                          </td>
-                          <td style={{ textAlign: 'right' }}>
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                              <button className="btn-row-action" onClick={() => { setDirSelectedUser(u); setDirActiveModal('view'); }}>
-                                View
-                              </button>
-                              <button className="btn-row-action" onClick={() => openDirEditModal(u)}>
-                                Edit
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {displayedDirUsers.length === 0 && (
-                        <tr><td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-secondary)' }}>No users found matching your filters.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                  
-                  {/* Pagination */}
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', alignItems: 'center', marginTop: '16px' }}>
-                    <button className="btn-action secondary" disabled={dirCurrentPage === 1} onClick={() => setDirCurrentPage(prev => Math.max(1, prev - 1))}>Previous</button>
-                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)' }}>Page {dirCurrentPage} of {dirTotalPages}</span>
-                    <button className="btn-action secondary" disabled={dirCurrentPage === dirTotalPages} onClick={() => setDirCurrentPage(prev => Math.min(dirTotalPages, prev + 1))}>Next</button>
-                  </div>
-                </div>
-              )}
-
-
-              {activeTab === 'broadcasts' && (
-                <>
-                  <div className="admin-view-header">
-                    <h2>Department Broadcast Alerts</h2>
-                    <p>Send high-priority manual notifications to students or staff in your department</p>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '24px' }}>
-                      <form onSubmit={handleSendBroadcast} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Audience Mode</label>
-                          <select className="filter-select" value={notifTarget === 'AUDIENCE' ? 'AUDIENCE' : notifTarget === 'ALL' ? 'ALL' : 'SPECIFIC'} onChange={e => setNotifTarget(e.target.value === 'AUDIENCE' ? 'AUDIENCE' : e.target.value === 'ALL' ? 'ALL' : '')} style={{ padding: '10px', fontSize: '13px' }}>
-                            <option value="AUDIENCE">Targeted Audience (Roles, Dept, Year, Section)</option>
-                            <option value="SPECIFIC">Single Roll No / Staff Email</option>
-                          </select>
-                        </div>
-
-                        {notifTarget === 'AUDIENCE' && (
-                          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                            <div>
-                              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', marginBottom: '8px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Target Roles</label>
-                              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                                {['Student', 'Faculty', 'Mentor'].map(role => {
-                                  const isChecked = notifTargetRoles.includes(role);
-                                  return (
-                                    <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: isChecked ? '700' : '500', color: isChecked ? 'var(--accent)' : 'var(--text-primary)' }}>
-                                      <input type="checkbox" checked={isChecked} onChange={(e) => {
-                                        if (e.target.checked) setNotifTargetRoles([...notifTargetRoles, role]);
-                                        else setNotifTargetRoles(notifTargetRoles.filter(r => r !== role));
-                                      }} /> {role}s
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                              <div>
-                                <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)' }}>Department</label>
-                                <select className="filter-select" value={notifDeptFilterAlert} onChange={e => setNotifDeptFilterAlert(e.target.value)} style={{ padding: '8px', fontSize: '12.5px' }}>
-                                  <option value="ALL">All Associated Depts</option>
-                                  <option value="CSE">CSE</option><option value="AI">AI</option><option value="AIML">AIML</option><option value="ECE">ECE</option><option value="IT">IT</option>
-                                </select>
-                              </div>
-                              {notifTargetRoles.includes('Student') && (
-                                <>
-                                  <div>
-                                    <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)' }}>Academic Year</label>
-                                    <select className="filter-select" value={notifYearFilter} onChange={e => setNotifYearFilter(e.target.value)} style={{ padding: '8px', fontSize: '12.5px' }}>
-                                      <option value="ALL">All Academic Years</option><option value="1">1st Year</option><option value="2">2nd Year</option><option value="3">3rd Year</option><option value="4">4th Year</option>
-                                    </select>
-                                  </div>
-                                  <div style={{ gridColumn: 'span 2' }}>
-                                    <label style={{ display: 'block', fontSize: '11.5px', fontWeight: '700', marginBottom: '4px', color: 'var(--text-secondary)' }}>Section</label>
-                                    <select className="filter-select" value={notifSectionFilter} onChange={e => setNotifSectionFilter(e.target.value)} style={{ padding: '8px', fontSize: '12.5px' }}>
-                                      <option value="ALL">All Sections</option>
-                                      {['A', 'B', 'C', 'D'].map(sec => <option key={sec} value={sec}>Section {sec}</option>)}
-                                    </select>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {notifTarget !== 'ALL' && notifTarget !== 'AUDIENCE' && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Target Roll No / Staff Email</label>
-                            <input type="text" className="filter-select" placeholder="e.g. Y23CSM051" value={notifTarget} onChange={e => setNotifTarget(e.target.value)} style={{ padding: '10px', fontSize: '13px' }} required />
-                          </div>
-                        )}
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Alert Type</label>
-                          <select className="filter-select" value={notifType} onChange={e => setNotifType(e.target.value)} style={{ padding: '10px', fontSize: '13px' }}>
-                            <option value="SYSTEM">System Announcement</option><option value="ACADEMIC">Academic</option><option value="PLACEMENT">Placement Training</option><option value="VERIFICATION">Verification Pending</option>
-                          </select>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Alert Title</label>
-                          <input type="text" className="filter-select" value={notifTitle} onChange={e => setNotifTitle(e.target.value)} required style={{ padding: '10px', fontSize: '13px' }} placeholder="e.g. Urgent: Placement Drive Update" />
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Message Body</label>
-                          <textarea className="filter-select" value={notifMessage} onChange={e => setNotifMessage(e.target.value)} required style={{ padding: '10px', fontSize: '13px', minHeight: '120px', resize: 'vertical' }} placeholder="Enter the detailed announcement..." />
-                        </div>
-
-                        <button type="submit" className="btn-action primary" disabled={sendingNotif} style={{ padding: '12px', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
-                          {sendingNotif ? 'Broadcasting...' : 'Send Broadcast Alert'}
-                        </button>
-                      </form>
-                    </div>
-
-                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '24px' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px' }}>Broadcast History</h3>
-                      {broadcastHistory.length === 0 ? (
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>No broadcasts sent yet.</p>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '700px', overflowY: 'auto', paddingRight: '8px' }}>
-                          {broadcastHistory.map((log: any) => (
-                            <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px', border: '1px solid var(--surface-border)' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>{log.title}</span>
-                                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                                  Sent by {log.senderName} • {new Date(log.createdAt).toLocaleString()} • {log.recipientCount} recipients
-                                </span>
-                              </div>
-                              <button className="btn-row-action" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={() => { setSelectedBroadcast(log); setShowBroadcastModal(true); }}>
-                                View
-                              </button>
-                            </div>
-                          ))}
-                        </div>
+                </td>
+                {/* Email */}
+                <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{u.email}</td>
+                {/* Role */}
+                <td><span className={`role-badge ${u.role}`}>{u.role}</span></td>
+                {/* Year · Sec · Dept chips */}
+                <td>
+                  {u.role === 'Student' ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {u.year        && <Chip label={`Y${u.year}`}                    color="hsl(217,91%,60%)" />}
+                      {u.sectionId   && <Chip label={`Sec ${u.sectionId}`}            color="hsl(270,60%,65%)" />}
+                      {u.departmentId && <Chip label={u.departmentId.toUpperCase()}  color="hsl(160,60%,45%)" />}
+                      {u.batch       && <Chip label={u.batch}                        color="hsl(30,80%,55%)"  />}
+                      {u.cgpa != null && (
+                        <Chip
+                          label={`CGPA ${Number(u.cgpa).toFixed(1)}`}
+                          color={Number(u.cgpa) < 6 ? 'hsl(0,80%,60%)' : 'hsl(140,60%,45%)'}
+                        />
                       )}
                     </div>
-                  </div>
-                </>
-              )}
-
-{activeTab === 'overview' && (
-                <div style={{ display: 'flex', gap: '20px', flex: 1, flexDirection: 'row' }}>
-                  {/* Left Column: Active Directory */}
-                  <div style={{ flex: 1.5, background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                      <div>
-                        <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Department Active Directory</h2>
-                        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>Resolved scope: {department?.name || 'Computer Science & Engineering'} ({department?.code || 'CSE'})</p>
-                      </div>
-                      
-                      {/* Search Bar */}
-                      <input
-                        type="text"
-                        className="filter-select"
-                        placeholder="Search directory..."
-                        value={directorySearch}
-                        onChange={e => setDirectorySearch(e.target.value)}
-                        style={{ maxWidth: '240px', padding: '8px 14px', fontSize: '12.5px' }}
-                      />
-                    </div>
-
-                    {/* Directory Categories Tabs */}
-                    <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--surface-border)', paddingBottom: '10px' }}>
-                      {(['students', 'faculty', 'mentors'] as const).map((cat) => {
-                        const isSelected = directoryTab === cat;
-                        return (
-                          <button
-                            key={cat}
-                            onClick={() => setDirectoryTab(cat)}
-                            style={{
-                              padding: '8px 16px',
-                              borderRadius: '8px',
-                              border: 'none',
-                              background: isSelected ? '#ffffff' : 'transparent',
-                              color: isSelected ? '#000000' : 'var(--text-secondary)',
-                              fontSize: '13px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              textTransform: 'capitalize',
-                              transition: 'all 0.2s ease'
-                            }}
-                          >
-                            {cat}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Directory Listings */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', maxHeight: '500px' }}>
-                      {directoryTab === 'students' && (() => {
-                        const filtered = studentsList.filter(s => 
-                          (s.user?.fullName || '').toLowerCase().includes(directorySearch.toLowerCase()) ||
-                          (s.profile?.rollNo || '').toLowerCase().includes(directorySearch.toLowerCase())
-                        );
-                        if (filtered.length === 0) return <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No students found matching your criteria</p>;
-                        return filtered.map((s: any) => (
-                          <div key={s.user?.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: '13px', overflow: 'hidden' }}>
-                                {s.user?.photoUrl ? (
-                                  <img src={`${API_BASE_URL}${s.user.photoUrl}`} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : (
-                                  s.user?.fullName?.slice(0, 1)?.toUpperCase() || 'S'
-                                )}
-                              </div>
-                              <div>
-                                <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{s.user?.fullName}</strong>
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                  Roll No: <span style={{ color: '#ffffff', fontWeight: 600 }}>{s.profile?.rollNo}</span> &nbsp;|&nbsp; Batch: {s.profile?.batch}
-                                </div>
-                              </div>
-                            </div>
-                            <button
-                              className="btn-action secondary"
-                              onClick={() => fetchUserDetailForHOD({ id: s.user?.id, fullName: s.user?.fullName, email: s.user?.email, role: 'Student' })}
-                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--surface-border)', cursor: 'pointer' }}
-                            >
-                              View Profile
-                            </button>
-                          </div>
-                        ));
-                      })()}
-
-                      {directoryTab === 'faculty' && (() => {
-                        const filtered = facultyList.filter(f => 
-                          f.role === 'Faculty' &&
-                          (f.fullName || '').toLowerCase().includes(directorySearch.toLowerCase())
-                        );
-                        if (filtered.length === 0) return <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No faculty members found</p>;
-                        return filtered.map((f: any) => (
-                          <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: '13px', overflow: 'hidden' }}>
-                                {f.photoUrl ? (
-                                  <img src={`${API_BASE_URL}${f.photoUrl}`} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : (
-                                  f.fullName?.slice(0, 1)?.toUpperCase() || 'F'
-                                )}
-                              </div>
-                              <div>
-                                <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{f.fullName}</strong>
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Email: {f.email}</div>
-                              </div>
-                            </div>
-                            <button
-                              className="btn-action secondary"
-                              onClick={() => fetchUserDetailForHOD({ id: f.id, fullName: f.fullName, email: f.email, role: 'Faculty' })}
-                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--surface-border)', cursor: 'pointer' }}
-                            >
-                              View Workload
-                            </button>
-                          </div>
-                        ));
-                      })()}
-
-                      {directoryTab === 'mentors' && (() => {
-                        const filtered = facultyList.filter(f => 
-                          f.role === 'Mentor' &&
-                          (f.fullName || '').toLowerCase().includes(directorySearch.toLowerCase())
-                        );
-                        if (filtered.length === 0) return <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No mentors found</p>;
-                        return filtered.map((m: any) => (
-                          <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #10b981, #059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: '13px', overflow: 'hidden' }}>
-                                {m.photoUrl ? (
-                                  <img src={`${API_BASE_URL}${m.photoUrl}`} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : (
-                                  m.fullName?.slice(0, 1)?.toUpperCase() || 'M'
-                                )}
-                              </div>
-                              <div>
-                                <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{m.fullName}</strong>
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Email: {m.email}</div>
-                              </div>
-                            </div>
-                            <button
-                              className="btn-action secondary"
-                              onClick={() => fetchUserDetailForHOD({ id: m.id, fullName: m.fullName, email: m.email, role: 'Mentor' })}
-                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--surface-border)', cursor: 'pointer' }}
-                            >
-                              View Mentees
-                            </button>
-                          </div>
-                        ));
-                      })()}
-                    </div>
-                  </div>
-
-                  {/* Right Column: Feeds & Updates */}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    {/* Widget 1: Recently Updated Curriculum Library */}
-                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <h3 style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                         Recently Updated Curriculum Library
-                      </h3>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {documents.slice(0, 3).map(doc => (
-                          <div key={doc.id} style={{ padding: '12px', background: 'var(--surface-overlay)', borderRadius: '10px', border: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                              <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', marginBottom: '4px' }}>
-                                {doc.docType.replace('_', ' ')}
-                              </div>
-                              <strong style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>{doc.title}</strong>
-                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Target: {doc.targetYear} Year Sec-{doc.targetSection}</div>
-                            </div>
-                            <a href={doc.resourceUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: 'rgba(59, 130, 246, 0.1)', color: 'var(--accent)', fontSize: '11.5px', padding: '4px 10px', borderRadius: '6px', fontWeight: 700 }}>
-                              Open ↗
-                            </a>
-                          </div>
-                        ))}
-                        {documents.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>No documents uploaded yet</p>}
-                      </div>
-                    </div>
-
-                    {/* Widget 2: Recently Published Announcements */}
-                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <h3 style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                         Recently Published Announcements
-                      </h3>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {announcements.slice(0, 3).map(ann => (
-                          <div key={ann.id} style={{ padding: '12px', background: 'var(--surface-overlay)', borderRadius: '10px', border: '1px solid var(--surface-border)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                              <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{ann.title}</strong>
-                              <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>{new Date(ann.createdAt).toLocaleDateString()}</span>
-                            </div>
-                            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.4' }}>{ann.content}</p>
-                            {ann.resourceUrl && (
-                              <a href={ann.resourceUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-block', fontSize: '11px', color: 'var(--accent)', textDecoration: 'none', marginTop: '6px', fontWeight: 600 }}>
-                                Reference Attachment ↗
-                              </a>
-                            )}
-                          </div>
-                        ))}
-                        {announcements.length === 0 && <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>No announcements published yet</p>}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB FACULTY WORKLOAD */}
-              {activeTab === 'faculty' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>Faculty List & Workload Monitoring</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Review assigned courses, teaching hours, and active mentorship allocations of department faculty.</p>
-                  </div>
-
-                  <div className="admin-card data-table-wrapper" style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', overflow: 'hidden' }}>
-                    <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ background: 'var(--surface-overlay)', textAlign: 'left', borderBottom: '1px solid var(--surface-border)' }}>
-                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Name</th>
-                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Role</th>
-                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Subjects Taught</th>
-                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)' }}>Active Mentorship Group</th>
-                          <th style={{ padding: '12px 16px', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)', textAlign: 'center' }}>Mentees</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {facultyList.map((f: any) => (
-                          <tr key={f.id} style={{ borderBottom: '1px solid var(--surface-border)' }}>
-                            <td style={{ padding: '16px', fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>{f.fullName}</td>
-                            <td style={{ padding: '16px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                              <span style={{ padding: '3px 8px', borderRadius: '4px', background: 'var(--surface-overlay)', fontSize: '10.5px', fontWeight: 700 }}>{f.role}</span>
-                            </td>
-                            <td style={{ padding: '16px', fontSize: '13.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>{f.subjectCount} Subjects</td>
-                            <td style={{ padding: '16px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                              <span style={{ color: f.menteesCount > 0 ? '#3b82f6' : 'var(--text-muted)', fontWeight: 700 }}>{f.mentorRange}</span>
-                            </td>
-                            <td style={{ padding: '16px', fontSize: '13.5px', color: 'var(--text-primary)', fontWeight: 800, textAlign: 'center', fontFamily: 'var(--ds-font-mono)' }}>{f.menteesCount}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB MENTORSHIP CONTROL PANEL / MY MENTEES */}
-              {activeTab === 'mentorship' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>Mentorship Assignment Control Panel</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Assign faculty mentors to department student cohorts manually or split them into half classes.</p>
-                  </div>
-
-                  {/* Halves split block */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Class Halves Split Assignment</h3>
-                      <form onSubmit={handleSplitSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div className="admin-form-group">
-                          <label className="admin-label">Batch & Section</label>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <select className="filter-select" value={splitForm.batch} onChange={e => setSplitForm({ ...splitForm, batch: e.target.value })} style={{ flex: 1 }}>
-                              <option value="2022-2026">2022-2026 (IV Year)</option>
-                              <option value="2023-2027">2023-2027 (III Year)</option>
-                            </select>
-                            <select className="filter-select" value={splitForm.sectionId} onChange={e => setSplitForm({ ...splitForm, sectionId: e.target.value })} style={{ width: '80px' }}>
-                              <option value="A">A</option>
-                              <option value="B">B</option>
-                              <option value="C">C</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="admin-form-group">
-                          <label className="admin-label">Mentor A (1st Half)</label>
-                          <select className="filter-select" required value={splitForm.mentorAId} onChange={e => setSplitForm({ ...splitForm, mentorAId: e.target.value })}>
-                            <option value="">Select Mentor A...</option>
-                            {facultyList.map(f => (
-                              <option key={f.id} value={f.id}>{f.fullName}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="admin-form-group">
-                          <label className="admin-label">Mentor B (2nd Half)</label>
-                          <select className="filter-select" required value={splitForm.mentorBId} onChange={e => setSplitForm({ ...splitForm, mentorBId: e.target.value })}>
-                            <option value="">Select Mentor B...</option>
-                            {facultyList.map(f => (
-                              <option key={f.id} value={f.id}>{f.fullName}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <button type="submit" className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Run Splits & Assign</button>
-                      </form>
-                    </div>
-
-                    {/* Manual checkbox block */}
-                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Manual Mentorship Assignment</h3>
-                      <form onSubmit={handleManualSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div className="admin-form-group">
-                          <label className="admin-label">Choose Mentor</label>
-                          <select className="filter-select" required value={manualForm.mentorUserId} onChange={e => setManualForm({ ...manualForm, mentorUserId: e.target.value })}>
-                            <option value="">Select Mentor...</option>
-                            {facultyList.map(f => (
-                              <option key={f.id} value={f.id}>{f.fullName}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="admin-form-group">
-                          <label className="admin-label">Select Student Mentees</label>
-                          <div style={{ maxHeight: '120px', overflowY: 'auto', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '10px', background: 'var(--surface-overlay)' }}>
-                            {studentsList.map(item => (
-                              <label key={item.profile.rollNo} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', padding: '4px 0', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={manualForm.studentRollNos.includes(item.profile.rollNo)}
-                                  onChange={e => {
-                                    const checked = e.target.checked;
-                                    setManualForm(prev => ({
-                                      ...prev,
-                                      studentRollNos: checked 
-                                        ? [...prev.studentRollNos, item.profile.rollNo]
-                                        : prev.studentRollNos.filter(r => r !== item.profile.rollNo)
-                                    }));
-                                  }}
-                                />
-                                {item.user.fullName} ({item.profile.rollNo})
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-
-                        <button type="submit" className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Assign Selected</button>
-                      </form>
-                    </div>
-                  </div>
-
-                  {/* Active logs summary of Assignments */}
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Active Mentorship Meeting Logs</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '200px', overflowY: 'auto' }}>
-                      {meetingLogs.map(log => (
-                        <div key={log.id} style={{ padding: '12px', background: 'var(--surface-overlay)', borderRadius: '10px', borderLeft: '3px solid #3b82f6' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                            <span>Student: {log.rollNo}</span>
-                            <span>{log.meetingDate}</span>
-                          </div>
-                          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                            <strong>Discussed:</strong> {log.topicsDiscussed} | <strong>Concerns:</strong> {log.concerns}
-                          </p>
-                        </div>
-                      ))}
-                      {meetingLogs.length === 0 && <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No session logs reported for this academic year.</p>}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB CURRICULUM FILES */}
-              {activeTab === 'documents' && (
-                <div style={{ display: 'flex', gap: '16px' }}>
-                  
-                  {/* Uploader */}
-                  {userSession.role === 'HOD' && (
-                    <div style={{ width: '320px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', flexShrink: 0 }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Upload Curriculum File</h3>
-                      <form onSubmit={handleDocSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div className="admin-form-group">
-                          <label className="admin-label">Document Category</label>
-                          <select className="filter-select" value={docForm.docType} onChange={e => setDocForm({ ...docForm, docType: e.target.value })}>
-                            <option value="LESSON_PLAN">Lesson Plan</option>
-                            <option value="TIMETABLE">Class Timetable</option>
-                            <option value="CALENDAR">Academic Calendar</option>
-                          </select>
-                        </div>
-
-                        <div className="admin-form-group">
-                          <label className="admin-label">Title / Caption</label>
-                          <input type="text" className="filter-select" required value={docForm.title} onChange={e => setDocForm({ ...docForm, title: e.target.value })} placeholder="e.g. III B.Tech CSE-A Timetable" />
-                        </div>
-
-                        <div className="admin-form-group">
-                          <label className="admin-label">Subject Code (if Lesson Plan)</label>
-                          <input type="text" className="filter-select" value={docForm.subjectCode} onChange={e => setDocForm({ ...docForm, subjectCode: e.target.value })} placeholder="e.g. CS301" />
-                        </div>
-
-                        <div className="admin-form-group">
-                          <label className="admin-label">External PDF Resource URL</label>
-                          <input type="url" className="filter-select" required value={docForm.resourceUrl} onChange={e => setDocForm({ ...docForm, resourceUrl: e.target.value })} placeholder="https://..." />
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <div className="admin-form-group" style={{ flex: 1 }}>
-                            <label className="admin-label">Year</label>
-                            <select className="filter-select" value={docForm.targetYear} onChange={e => setDocForm({ ...docForm, targetYear: e.target.value })}>
-                              <option value="I">I Year</option>
-                              <option value="II">II Year</option>
-                              <option value="III">III Year</option>
-                              <option value="IV">IV Year</option>
-                            </select>
-                          </div>
-                          <div className="admin-form-group" style={{ flex: 1 }}>
-                            <label className="admin-label">Section</label>
-                            <select className="filter-select" value={docForm.targetSection} onChange={e => setDocForm({ ...docForm, targetSection: e.target.value })}>
-                              <option value="A">A</option>
-                              <option value="B">B</option>
-                              <option value="C">C</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <button type="submit" disabled={submittingDoc} className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>
-                          {submittingDoc ? 'Recording...' : 'Record File'}
-                        </button>
-                      </form>
-                    </div>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
                   )}
-
-                  {/* List */}
-                  <div style={{ flex: 1, background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Active Curriculum Library</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {documents.map(doc => (
-                        <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'var(--surface-overlay)', borderRadius: '10px', border: '1px solid var(--surface-border)' }}>
-                          <div>
-                            <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.1)', color: '#ffffff', textTransform: 'uppercase', marginRight: '8px' }}>
-                              {doc.docType.replace('_', ' ')}
-                            </span>
-                            <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)' }}>{doc.title}</strong>
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                              Target: {doc.targetYear} Year Sec-{doc.targetSection} | Semester: {doc.semester}
-                            </div>
-                          </div>
-                          <a href={doc.resourceUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--surface-border)', padding: '6px 12px', borderRadius: '8px', fontSize: '12.5px', color: '#ffffff', fontWeight: 600 }}>
-                            View PDF ↗
-                          </a>
-                        </div>
-                      ))}
-                      {documents.length === 0 && <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '24px' }}>No syllabus plans or timetables uploaded yet.</p>}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB TRAININGS & BROADCASTS */}
-              {activeTab === 'training' && (
-                <div style={{ display: 'grid', gridTemplateColumns: userSession.role === 'HOD' ? '1fr 1.2fr' : '1fr', gap: '16px' }}>
-                  
-                  {/* Uploader Left */}
-                  {userSession.role === 'HOD' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                        <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Broadcast Announcement</h3>
-                        <form onSubmit={handleAnnSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          <div className="admin-form-group">
-                            <label className="admin-label">Title</label>
-                            <input type="text" className="filter-select" required value={annForm.title} onChange={e => setAnnForm({ ...annForm, title: e.target.value })} placeholder="e.g. NBA Pre-Audit Review Scheduled" />
-                          </div>
-                          <div className="admin-form-group">
-                            <label className="admin-label">Content Description</label>
-                            <textarea className="filter-select" required rows={3} value={annForm.content} onChange={e => setAnnForm({ ...annForm, content: e.target.value })} placeholder="Write announcement details..." />
-                          </div>
-                          <div className="admin-form-group">
-                            <label className="admin-label">Optional Resource Link</label>
-                            <input type="url" className="filter-select" value={annForm.resourceUrl} onChange={e => setAnnForm({ ...annForm, resourceUrl: e.target.value })} placeholder="https://..." />
-                          </div>
-                          <button type="submit" disabled={submittingAnn} className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>{submittingAnn ? 'Publishing...' : 'Publish Broadcast'}</button>
-                        </form>
-                      </div>
-
-                      <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                        <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Create Skill Training Course</h3>
-                        <form onSubmit={handleTrainingSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          <div className="admin-form-group">
-                            <label className="admin-label">Course Title</label>
-                            <input type="text" className="filter-select" required value={trainingForm.title} onChange={e => setTrainingForm({ ...trainingForm, title: e.target.value })} placeholder="e.g. React & Node.js bootcamp" />
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <div className="admin-form-group" style={{ flex: 1 }}>
-                              <label className="admin-label">Category</label>
-                              <select className="filter-select" value={trainingForm.category} onChange={e => setTrainingForm({ ...trainingForm, category: e.target.value })}>
-                                <option value="Technical">Technical</option>
-                                <option value="Aptitude">Aptitude</option>
-                                <option value="Soft Skills">Soft Skills</option>
-                              </select>
-                            </div>
-                            <div className="admin-form-group" style={{ flex: 1 }}>
-                              <label className="admin-label">Venue</label>
-                              <input type="text" className="filter-select" required value={trainingForm.venue} onChange={e => setTrainingForm({ ...trainingForm, venue: e.target.value })} placeholder="CSE Lab 3" />
-                            </div>
-                          </div>
-                          <div className="admin-form-group">
-                            <label className="admin-label">Registration Landing Page URL</label>
-                            <input type="url" className="filter-select" required value={trainingForm.registrationUrl} onChange={e => setTrainingForm({ ...trainingForm, registrationUrl: e.target.value })} placeholder="https://..." />
-                          </div>
-                          <button type="submit" disabled={submittingTraining} className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>{submittingTraining ? 'Recording...' : 'Record Training Course'}</button>
-                        </form>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* List Right */}
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '10px' }}>Recent Published Announcements</h3>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {announcements.map(ann => (
-                          <div key={ann.id} style={{ padding: '10px', background: 'var(--surface-overlay)', borderRadius: '8px', border: '1px solid var(--surface-border)' }}>
-                            <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{ann.title}</strong>
-                            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0' }}>{ann.content}</p>
-                            {ann.resourceUrl && <a href={ann.resourceUrl} target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: '#ffffff' }}>Attachment Resource ↗</a>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '10px' }}>Active Skill Trainings</h3>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {trainings.map(t => (
-                          <div key={t.id} style={{ padding: '10px', background: 'var(--surface-overlay)', borderRadius: '8px', borderLeft: '3px solid #10b981' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{t.title}</strong>
-                              <span style={{ fontSize: '10px', padding: '2px 6px', borderRadius: '4px', background: '#3b82f6', color: '#fff' }}>{t.category}</span>
-                            </div>
-                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px' }}>Venue: {t.venue} | <a href={t.registrationUrl} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>Portal Register ↗</a></div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-
-
-              {/* TAB ESCALATION & 4-WAY CHAT (Staff collaborative case notes integrated) */}
-              {activeTab === 'escalations' && (
-                <div style={{ display: 'flex', gap: '16px', height: 'calc(100vh - 140px)', minHeight: '0' }}>
-                  
-                  {/* Left Threads list */}
-                  <div style={{ width: '280px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Escalation Threads</h3>
-                      <button
-                        onClick={() => { setShowNewEscalationForm(true); setActiveThread(null); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '6px', color: '#ffffff', fontSize: '10px', fontWeight: 700, padding: '4px 8px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                </td>
+                {/* Portfolio */}
+                <td>
+                  {u.role === 'Student' && (u.slug || u.rollNo) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                      <a
+                        href={`/portfolio/${u.slug || u.rollNo}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn-row-action"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', fontSize: 12, padding: '4px 8px' }}
                       >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                        New
-                      </button>
+                        Portfolio
+                      </a>
+                      {u.isPublic === false && (
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          🔒 Private
+                        </span>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1 }}>
-                      {escalations.map(esc => (
-                        <button
-                          key={esc.thread.id}
-                          onClick={() => selectThread(esc)}
-                          style={{
-                            textAlign: 'left',
-                            background: activeThread?.thread.id === esc.thread.id ? 'var(--surface-overlay)' : 'transparent',
-                            border: '1px solid var(--surface-border)',
-                            borderRadius: '8px',
-                            padding: '10px',
-                            cursor: 'pointer',
-                            color: 'inherit',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '4px'
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <strong style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>{esc.studentUser?.fullName || esc.thread.rollNo}</strong>
-                            {esc.thread.isEscalatedToHOD && <span style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', fontSize: '9px', fontWeight: 700, padding: '1px 4px', borderRadius: '3px' }}>HOD</span>}
-                          </div>
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Roll No: {esc.thread.rollNo}</span>
-                          {esc.thread.subjectCode && <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Sub: {esc.thread.subjectCode}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
 
-                  {/* Chat Box Center */}
-                  <div style={{ flex: 1, background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    {activeThread ? (
-                      <>
-                        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--surface-border)', background: 'var(--surface-overlay)' }}>
-                          <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)' }}>
-                            Intervention Room: {activeThread.studentUser?.fullName} ({activeThread.thread.rollNo})
-                          </h4>
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            {activeThread.mentors && activeThread.mentors.length > 0 ? (
-                              <span>Mentors: {activeThread.mentors.map((m: any) => m.fullName).join(', ')}</span>
-                            ) : (
-                              <span>Mentor: {activeThread.mentor?.fullName || 'None'}</span>
-                            )}
-                            &nbsp;|&nbsp;
-                            {activeThread.facultyMembers && activeThread.facultyMembers.length > 0 ? (
-                              <span>Faculty: {activeThread.facultyMembers.map((f: any) => f.fullName).join(', ')}</span>
-                            ) : (
-                              <span>Faculty: {activeThread.faculty?.fullName || 'None'}</span>
-                            )}
-                          </div>
-                        </div>
+// ═══════════════════════════════════════════════════════════
+// Mentorship Tab
+// ═══════════════════════════════════════════════════════════
+const MentorshipTab: React.FC<{ token: string }> = ({ token }) => {
+  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const [mentors, setMentors] = useState<User[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [totalStudentCount, setTotalStudentCount] = useState(0);
+  const [selectedMentor, setSelectedMentor] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [yearFilter, setYearFilter] = useState('ALL');
+  const [sectionFilter, setSectionFilter] = useState('ALL');
+  const [assignmentSearch, setAssignmentSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sections, setSections] = useState<string[]>(getSavedSections());
 
-                        {/* Message history */}
-                        <div ref={escalationChatContainerRef} style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                          {activeThread.messages.map((m: any) => {
-                            const isMe = m.senderUserId === userSession.fullName; // simple mock check
+  // Modal state for editing/changing mentor
+  const [editingAssignment, setEditingAssignment] = useState<any>(null);
+
+  useEffect(() => {
+    const handleUpdate = () => setSections(getSavedSections());
+    window.addEventListener('sections_updated', handleUpdate);
+    return () => window.removeEventListener('sections_updated', handleUpdate);
+  }, []);
+  const [editMentorId, setEditMentorId] = useState('');
+  const [editStudentRollNo, setEditStudentRollNo] = useState('');
+  const [expandedMentors, setExpandedMentors] = useState<Set<string>>(new Set());
+
+  useEffect(() => { fetchData(); }, [yearFilter, sectionFilter]);
+
+  const fetchData = async () => {
+    setLoading(true);
+
+    // 1. Fetch mentors/faculty — independent block
+    try {
+      const facRes = await axios.get(`${API}/hod/all-faculty`, h);
+      console.log('[HOD] Faculty/Mentors:', facRes.data?.length);
+      setMentors(facRes.data || []);
+    } catch (e: any) {
+      console.error('[HOD] faculty error:', e?.response?.status, e?.message);
+    }
+
+    // 2. Fetch assignments — independent block, 500 won't crash students
+    let activeAssignments: any[] = [];
+    try {
+      const assignRes = await axios.get(`${API}/hod/mentor/assignments`, h);
+      activeAssignments = assignRes.data || [];
+      console.log('[HOD] Assignments:', activeAssignments.length);
+      setAssignments(activeAssignments);
+    } catch (e: any) {
+      console.error('[HOD] assignments error:', e?.response?.status, e?.message);
+      setAssignments([]);
+    }
+
+    // 3. Fetch students — independent block
+    try {
+      const params = new URLSearchParams();
+      if (yearFilter !== 'ALL') params.append('year', yearFilter);
+      if (sectionFilter !== 'ALL') params.append('sectionId', sectionFilter);
+      const stuRes = await axios.get(`${API}/hod/all-students?${params}`, h);
+      console.log('[HOD] Students:', stuRes.data?.length);
+
+      const allStudents: any[] = stuRes.data || [];
+      setTotalStudentCount(allStudents.length);
+
+      const assignedRolls = new Set(activeAssignments.map((a: any) => (a.rollNo || '').toLowerCase()));
+      const assignedIds   = new Set(activeAssignments.map((a: any) => a.studentUserId).filter(Boolean));
+      const unassigned = allStudents.filter((s: any) =>
+        !assignedRolls.has((s.rollNo || '').toLowerCase()) && !assignedIds.has(s.id)
+      );
+      console.log('[HOD] Unassigned students:', unassigned.length);
+      setStudents(unassigned);
+    } catch (e: any) {
+      console.error('[HOD] students error:', e?.response?.status, e?.message);
+    }
+
+    setLoading(false);
+  };
+
+
+  const toggleId = (id: string) =>
+    setSelectedIds(p => p.includes(id) ? p.filter(r => r !== id) : [...p, id]);
+
+  const handleAssign = async () => {
+    if (!selectedMentor || selectedIds.length === 0) return;
+    try {
+      await axios.post(`${API}/hod/mentor/manual`,
+        { mentorUserId: selectedMentor, studentRollNos: selectedIds },
+        h);
+      alert('Assigned successfully!');
+      setSelectedIds([]);
+      fetchData();
+    } catch (e) { alert('Failed to assign mentor'); }
+  };
+
+  const handleUnassign = async (id: string) => {
+    if (!confirm('Are you sure you want to unassign this student from their mentor?')) return;
+    try {
+      await axios.delete(`${API}/hod/mentor/${id}`, h);
+      fetchData();
+    } catch (e) { alert('Failed to unassign student'); }
+  };
+
+  const handleUpdateMentor = async () => {
+    if (!editingAssignment) return;
+    const payload: Record<string, string> = {};
+    if (editMentorId) payload.mentorUserId = editMentorId;
+    if (editStudentRollNo && editStudentRollNo !== editingAssignment.rollNo) payload.rollNo = editStudentRollNo;
+    if (Object.keys(payload).length === 0) return;
+    try {
+      await axios.put(`${API}/hod/mentor/assignment/${editingAssignment.id}`, payload, h);
+      setEditingAssignment(null);
+      fetchData();
+    } catch (e) { alert('Failed to update assignment'); }
+  };
+
+  const filteredAssignments = assignments.filter((a: any) => {
+    if (!assignmentSearch) return true;
+    const q = assignmentSearch.toLowerCase();
+    return (
+      (a.mentorName || '').toLowerCase().includes(q) ||
+      (a.studentName || '').toLowerCase().includes(q) ||
+      (a.rollNo || '').toLowerCase().includes(q) ||
+      (a.studentEmail || '').toLowerCase().includes(q)
+    );
+  });
+
+  // Group assignments by mentorUserId for the grouped card view
+  const mentorGroups = filteredAssignments.reduce((acc: Record<string, any>, a: any) => {
+    const key = a.mentorUserId || 'unassigned';
+    if (!acc[key]) {
+      acc[key] = {
+        mentorUserId: a.mentorUserId,
+        mentorName: a.mentorName || 'Unknown Mentor',
+        mentorEmail: a.mentorEmail || '',
+        students: [],
+      };
+    }
+    acc[key].students.push(a);
+    return acc;
+  }, {});
+
+  const toggleMentorExpand = (key: string) => {
+    setExpandedMentors(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  return (
+    <>
+      {/* Top Section: New Assignment Form + Unassigned Students */}
+      <div>
+        <div style={{ marginBottom: 16 }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)' }}>Assign New Mentees</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Select unassigned students and assign them to a mentor.</p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+          {/* Assignment Form Card */}
+          <div className="chart-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, color: 'var(--text-primary)', marginBottom: 4 }}>Assignment Setup</h4>
+            <div>
+              <label className="modal-label">Select Mentor</label>
+              <select className="filter-select" style={{ width: '100%' }} value={selectedMentor} onChange={e => setSelectedMentor(e.target.value)}>
+                <option value="">— choose mentor —</option>
+                {mentors.map(m => <option key={m.id} value={m.id}>{m.fullName || m.email}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="modal-label">Year Filter</label>
+              <select className="filter-select" style={{ width: '100%' }} value={yearFilter} onChange={e => setYearFilter(e.target.value)}>
+                <option value="ALL">All Years</option>
+                {['1','2','3','4'].map(y => <option key={y} value={y}>Year {y}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="modal-label">Section Filter</label>
+              <select className="filter-select" style={{ width: '100%' }} value={sectionFilter} onChange={e => setSectionFilter(e.target.value)}>
+                <option value="ALL">All Sections</option>
+                {sections.map(s => <option key={s} value={s}>Section {s}</option>)}
+              </select>
+            </div>
+            <button className="btn-action primary"
+              disabled={!selectedMentor || selectedIds.length === 0}
+              onClick={handleAssign}>
+              Assign Selected {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
+            </button>
+          </div>
+
+          {/* Unassigned Students Panel — grouped by Year → Section */}
+          <div className="data-table-wrapper" style={{ height: 420, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--surface-border)', background: 'var(--surface-raised)' }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-secondary)' }}>
+                Unassigned Students ({students.length})
+              </span>
+              {students.length > 0 && (
+                <button className="btn-row-action" onClick={() => setSelectedIds(students.map((s: any) => s.rollNo || s.id))}>Select All</button>
+              )}
+            </div>
+
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>Loading students…</div>
+            ) : students.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                {totalStudentCount > 0 ? '✅ All students in this filter are already assigned!' : '📭 No students found in your department for this filter.'}
+              </div>
+            ) : (() => {
+              // Group students by Year → Section
+              const byYear: Record<string, Record<string, any[]>> = {};
+              students.forEach((s: any) => {
+                const yr  = s.year      || 'Unknown Year';
+                const sec = s.sectionId || 'Unknown Sec';
+                if (!byYear[yr]) byYear[yr] = {};
+                if (!byYear[yr][sec]) byYear[yr][sec] = [];
+                byYear[yr][sec].push(s);
+              });
+              return (
+                <div>
+                  {Object.entries(byYear).sort().map(([yr, sections]) => (
+                    <div key={yr}>
+                      {/* Year header */}
+                      <div style={{
+                        padding: '8px 18px', fontWeight: 800, fontSize: 12,
+                        letterSpacing: '0.08em', textTransform: 'uppercase',
+                        background: 'hsl(217,91%,95%)', color: 'hsl(217,80%,35%)',
+                        borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)',
+                      }}>
+                        Year {yr}
+                      </div>
+                      {Object.entries(sections).sort().map(([sec, studs]) => (
+                        <div key={sec}>
+                          {/* Section sub-header */}
+                          <div style={{
+                            padding: '5px 18px 5px 28px', fontSize: 11, fontWeight: 700,
+                            color: 'hsl(270,60%,50%)', background: 'hsl(270,60%,97%)',
+                            borderBottom: '1px solid var(--border)',
+                          }}>
+                            Section {sec} — {studs.length} student{studs.length !== 1 ? 's' : ''}
+                          </div>
+                          {/* Student rows */}
+                          {(studs as any[]).map((s: any) => {
+                            const sId = s.rollNo || s.id;
                             return (
-                              <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '75%' }}>
-                                <span style={{ fontSize: '9.5px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '2px' }}>
-                                  {m.senderName} ({m.senderRole})
-                                </span>
-                                <div style={{ background: isMe ? '#ffffff' : 'var(--surface-overlay)', border: isMe ? 'none' : '1px solid var(--surface-border)', padding: '10px', borderRadius: '8px', fontSize: '12.5px', color: isMe ? '#000000' : '#fff' }}>
-                                  {m.content}
+                              <div
+                                key={s.id}
+                                onClick={() => toggleId(sId)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 10,
+                                  padding: '10px 18px 10px 36px', cursor: 'pointer',
+                                  borderBottom: '1px solid var(--border)',
+                                  background: selectedIds.includes(sId) ? 'var(--accent-subtle)' : 'transparent',
+                                  transition: 'background 0.15s',
+                                }}
+                              >
+                                <input type="checkbox" readOnly checked={selectedIds.includes(sId)} style={{ flexShrink: 0 }} />
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{s.fullName || '—'}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                    {s.rollNo}{s.departmentId ? ` · ${s.departmentId}` : ''}
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--text-secondary)', textAlign: 'right' }}>
+                                  <div>{s.email}</div>
+                                  {s.batch && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.batch}</div>}
                                 </div>
                               </div>
                             );
                           })}
                         </div>
-
-                        {/* Send bar */}
-                        <form onSubmit={sendChatMessage} style={{ display: 'flex', gap: '8px', padding: '14px', borderTop: '1px solid var(--surface-border)', background: 'var(--surface-overlay)' }}>
-                          <input type="text" className="filter-select" value={chatMessage} onChange={e => setChatMessage(e.target.value)} placeholder="Type contribution to study plan chat..." style={{ flex: 1 }} />
-                          <button type="submit" className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Send</button>
-                        </form>
-                      </>
-                    ) : showNewEscalationForm ? (
-                      /* ── NEW ESCALATION CREATION FORM ── */
-                      <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                          <div>
-                            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>Start New Intervention</h3>
-                            <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>Select a student, assign mentor &amp; faculty, then create the 4-way thread.</p>
-                          </div>
-                          <button onClick={() => setShowNewEscalationForm(false)} style={{ background: 'transparent', border: '1px solid var(--surface-border)', borderRadius: '6px', color: 'var(--text-muted)', padding: '4px 10px', cursor: 'pointer', fontSize: '11px' }}>✕ Cancel</button>
-                        </div>
-
-                        <form onSubmit={handleCreateNewEscalation} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-                          {/* ─ STUDENT SELECTOR (multi-select) ─ */}
-                          <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
-                              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Select Students</span>
-                              {newEscRollNos.length > 0 && (
-                                <span style={{ marginLeft: 'auto', fontSize: '9px', background: 'rgba(59,130,246,0.15)', color: '#3b82f6', padding: '2px 7px', borderRadius: '4px', fontWeight: 800 }}>
-                                  {newEscRollNos.length} selected
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
-                              {studentsList.length === 0 ? (
-                                <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0' }}>No students in department</span>
-                              ) : studentsList.map((s: any) => {
-                                const student = s.user;
-                                const rollNo = s.profile?.rollNo || '';
-                                const isSelected = newEscRollNos.includes(rollNo);
-                                const toggle = () => setNewEscRollNos(prev => isSelected ? prev.filter(r => r !== rollNo) : [...prev, rollNo]);
-                                return (
-                                  <button key={student.id} type="button" onClick={toggle}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', border: isSelected ? '1.5px solid #3b82f6' : '1px solid var(--surface-border)', background: isSelected ? 'rgba(59,130,246,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }}>
-                                    {/* Checkbox */}
-                                    <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? 'none' : '1.5px solid var(--surface-border)', background: isSelected ? '#3b82f6' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                      {isSelected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                                    </div>
-                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isSelected ? '#3b82f6' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>{student.fullName?.charAt(0) || '?'}</div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{student.fullName}</div>
-                                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Roll: {rollNo}</div>
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* ─ MENTOR SELECTOR (multi-select) ─ */}
-                          <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Assign Mentors</span>
-                              {newEscMentorIds.length > 0 ? (
-                                <span style={{ marginLeft: 'auto', fontSize: '9px', background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '2px 7px', borderRadius: '4px', fontWeight: 800 }}>
-                                  {newEscMentorIds.length} selected
-                                </span>
-                              ) : (
-                                <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'var(--text-muted)' }}>optional</span>
-                              )}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '130px', overflowY: 'auto' }}>
-                              {facultyList.filter((f: any) => f.role === 'Mentor').length === 0 ? (
-                                <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0' }}>No mentors in department</span>
-                              ) : facultyList.filter((f: any) => f.role === 'Mentor').map((m: any) => {
-                                const isSelected = newEscMentorIds.includes(m.id);
-                                const toggle = () => setNewEscMentorIds(prev => isSelected ? prev.filter(id => id !== m.id) : [...prev, m.id]);
-                                return (
-                                  <button key={m.id} type="button" onClick={toggle}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', border: isSelected ? '1.5px solid #10b981' : '1px solid var(--surface-border)', background: isSelected ? 'rgba(16,185,129,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }}>
-                                    <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? 'none' : '1.5px solid var(--surface-border)', background: isSelected ? '#10b981' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                      {isSelected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                                    </div>
-                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isSelected ? '#10b981' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>{m.fullName?.charAt(0) || '?'}</div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.fullName}</div>
-                                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.email}</div>
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* ─ FACULTY SELECTOR (multi-select) ─ */}
-                          <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                              <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Assign Faculty</span>
-                              {newEscFacultyIds.length > 0 ? (
-                                <span style={{ marginLeft: 'auto', fontSize: '9px', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '2px 7px', borderRadius: '4px', fontWeight: 800 }}>
-                                  {newEscFacultyIds.length} selected
-                                </span>
-                              ) : (
-                                <span style={{ marginLeft: 'auto', fontSize: '9px', color: 'var(--text-muted)' }}>optional</span>
-                              )}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '130px', overflowY: 'auto' }}>
-                              {facultyList.filter((f: any) => f.role === 'Faculty').length === 0 ? (
-                                <span style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '8px 0' }}>No faculty in department</span>
-                              ) : facultyList.filter((f: any) => f.role === 'Faculty').map((f: any) => {
-                                const isSelected = newEscFacultyIds.includes(f.id);
-                                const toggle = () => setNewEscFacultyIds(prev => isSelected ? prev.filter(id => id !== f.id) : [...prev, f.id]);
-                                return (
-                                  <button key={f.id} type="button" onClick={toggle}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', border: isSelected ? '1.5px solid #f59e0b' : '1px solid var(--surface-border)', background: isSelected ? 'rgba(245,158,11,0.08)' : 'transparent', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'all 0.15s' }}>
-                                    <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: isSelected ? 'none' : '1.5px solid var(--surface-border)', background: isSelected ? '#f59e0b' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                      {isSelected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                                    </div>
-                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isSelected ? '#f59e0b' : 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>{f.fullName?.charAt(0) || '?'}</div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.fullName}</div>
-                                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.email}</div>
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* ─ SUBJECT CODE ─ */}
-                          <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', padding: '14px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'block', marginBottom: '8px' }}>Subject / Course Code</label>
-                            <input
-                              type="text"
-                              className="filter-select"
-                              value={newEscSubjectCode}
-                              onChange={e => setNewEscSubjectCode(e.target.value)}
-                              placeholder="e.g. CS301 or GENERAL"
-                              style={{ width: '100%', boxSizing: 'border-box' }}
-                            />
-                            <p style={{ margin: '6px 0 0', fontSize: '10px', color: 'var(--text-muted)' }}>Leave as GENERAL for a non-subject-specific review.</p>
-                          </div>
-
-                          {/* ─ SUBMIT ─ */}
-                          <button
-                            type="submit"
-                            disabled={newEscRollNos.length === 0 || creatingEscalation}
-                            style={{ padding: '12px 24px', borderRadius: '10px', border: 'none', background: newEscRollNos.length > 0 ? '#ffffff' : 'var(--surface-overlay)', color: newEscRollNos.length > 0 ? '#000000' : 'var(--text-muted)', fontWeight: 800, fontSize: '13px', cursor: newEscRollNos.length > 0 ? 'pointer' : 'not-allowed', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                          >
-                            {creatingEscalation ? (
-                              <><div style={{ width: '14px', height: '14px', border: '2px solid #000', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />Creating...</>
-                            ) : (
-                              <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                              Create {newEscRollNos.length > 1 ? `${newEscRollNos.length} Threads` : 'Intervention Thread'}</>
-                            )}
-                          </button>
-                        </form>
-                      </div>
-                    ) : (
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', color: 'var(--text-muted)', padding: '24px' }}>
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                        <span style={{ fontSize: '13px', textAlign: 'center' }}>Select a thread from the sidebar to open the 4-way intervention room, or click <strong style={{ color: 'var(--text-secondary)' }}>+ New</strong> to start one.</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Private Staff Case Notes Right (Security Restrictive Component) */}
-                  <div style={{ width: '280px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-secondary)' }}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                       <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Private Case Notes</h3>
-                     </div>
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Staff Only — Hidden from Student</span>
-
-                    {activeThread ? (
-                      <>
-                        <form onSubmit={addCaseNote} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <textarea className="filter-select" rows={2} value={newNote} onChange={e => setNewNote(e.target.value)} placeholder="Log confidential counseling comment..." style={{ resize: 'none', fontSize: '12px' }} />
-                          <button type="submit" className="btn-action primary" style={{ background: '#10b981', color: '#fff', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer', fontWeight: 700, fontSize: '12px' }}>Save Note</button>
-                        </form>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, marginTop: '8px' }}>
-                          {privateNotes.map((note: any) => (
-                            <div key={note.id} style={{ padding: '8px', background: 'var(--surface-overlay)', borderRadius: '8px', borderLeft: '2.5px solid #10b981' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                                <span>By: {note.authorRole}</span>
-                                <span>{new Date(note.createdAt).toLocaleDateString()}</span>
-                              </div>
-                              <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: 0 }}>{note.content}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center' }}>
-                        Confidential case notes render once an active thread is selected.
-                      </div>
-                    )}
-                  </div>
-
-                </div>
-              )}
-
-              {activeTab === 'notifications' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>HOD Command Center Notifications</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>View audit updates, system-generated intervention warnings, and send manual alerts to students.</p>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px', alignItems: 'start' }}>
-                    {/* Left Column: Inbox */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 4px' }}>Inbox Alerts</h3>
-                      {hodNotifications.length === 0 ? (
-                        <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                          No new notifications.
-                        </div>
-                      ) : (
-                        hodNotifications.map((notif: any) => (
-                          <div key={notif.id} style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', display: 'flex', gap: '16px', alignItems: 'flex-start', opacity: notif.read ? 0.7 : 1 }}>
-                            <div style={{ background: notif.read ? 'rgba(255, 255, 255, 0.04)' : 'rgba(59, 130, 246, 0.1)', color: notif.read ? 'var(--text-muted)' : '#3b82f6', width: '36px', height: '36px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <h4 style={{ margin: 0, fontSize: '14.5px', fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  {notif.title}
-                                  {!notif.read && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444' }} />}
-                                </h4>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                    {notif.createdAt ? new Date(notif.createdAt).toLocaleDateString() : 'N/A'}
-                                  </span>
-                                  {!notif.read && (
-                                    <button
-                                      onClick={() => markSingleNotificationAsRead(notif.id)}
-                                      style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: '11px', fontWeight: 700, cursor: 'pointer', padding: 0 }}
-                                    >
-                                      ✓ Mark read
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '6px 0 0', lineHeight: '1.4' }}>{notif.message}</p>
-                            </div>
-                          </div>
-                        ))
-                      )}
+                      ))}
                     </div>
-
-                    {/* Right Column: Broadcast Form */}
-                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '24px' }}>
-                      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 14px' }}>Manual Notification Broadcast</h3>
-                      <form onSubmit={handleSendHODNotification} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                        
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Target Audience</label>
-                          <select className="filter-select" value={hodNotifTarget === 'ALL' ? 'ALL' : 'SPECIFIC'} onChange={e => setHodNotifTarget(e.target.value === 'ALL' ? 'ALL' : '')} style={{ padding: '10px', fontSize: '13px' }}>
-                            <option value="ALL">Department Students (Global)</option>
-                            <option value="SPECIFIC">Target Specific Roll Number</option>
-                          </select>
-                        </div>
-
-                        {hodNotifTarget !== 'ALL' && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Student Roll Number</label>
-                            <input 
-                              type="text" 
-                              className="filter-select" 
-                              placeholder="e.g. 22B01A0501" 
-                              value={hodNotifTarget} 
-                              onChange={e => setHodNotifTarget(e.target.value)} 
-                              style={{ padding: '10px', fontSize: '13px' }}
-                              required
-                            />
-                          </div>
-                        )}
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Alert Category</label>
-                          <select className="filter-select" value={hodNotifType} onChange={e => setHodNotifType(e.target.value)} style={{ padding: '10px', fontSize: '13px' }}>
-                            <option value="SYSTEM">System Announcement</option>
-                            <option value="ACADEMIC">Academic</option>
-                            <option value="PLACEMENT">Placement Training</option>
-                            <option value="VERIFICATION">Verification Request</option>
-                          </select>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Alert Title</label>
-                          <input 
-                            type="text" 
-                            className="filter-select" 
-                            placeholder="Enter alert title..." 
-                            value={hodNotifTitle} 
-                            onChange={e => setHodNotifTitle(e.target.value)} 
-                            style={{ padding: '10px', fontSize: '13px' }}
-                            required
-                          />
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Message Body</label>
-                          <textarea 
-                            className="filter-select" 
-                            rows={3} 
-                            placeholder="Enter warning details..." 
-                            value={hodNotifMessage} 
-                            onChange={e => setHodNotifMessage(e.target.value)} 
-                            style={{ padding: '10px', fontSize: '13px', resize: 'vertical' }}
-                            required
-                          />
-                        </div>
-
-                        <button type="submit" className="btn-action primary" style={{ marginTop: '6px' }} disabled={sendingHodNotif}>
-                          {sendingHodNotif ? 'Broadcasting...' : 'Broadcast Alert'}
-                        </button>
-                      </form>
-                    </div>
-
-                  </div>
+                  ))}
                 </div>
-              )}
-
-              {/* ══════════════════════════════════════════
-                  DIRECT MESSAGES TAB (Red Theme)
-              ══════════════════════════════════════════ */}
-              {activeTab === 'messages' && (
-                <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)', gap: '20px' }}>
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', flexShrink: 0 }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>Direct Messages</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Real-time counseling and support with students in your department.</p>
-                  </div>
-
-                  <div style={{
-                    display: 'flex',
-                    flex: 1,
-                    background: 'var(--surface-overlay)',
-                    border: '1px solid var(--surface-border)',
-                    borderRadius: '16px',
-                    overflow: 'hidden',
-                    height: '100%'
-                  }}>
-                    {/* Left Sidebar: Conversations & Contacts */}
-                    <div style={{
-                      width: '260px',
-                      borderRight: '1px solid var(--surface-border)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      background: 'var(--surface-overlay)',
-                      flexShrink: 0
-                    }}>
-                      {/* Pill Tab Selector */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', padding: '12px', borderBottom: '1px solid var(--surface-border)' }}>
-                        {['chats', 'students', 'faculty', 'mentors'].map((tab) => {
-                          const isAct = msgSidebarTab === tab;
-                          return (
-                            <button
-                              key={tab}
-                              onClick={() => setMsgSidebarTab(tab as any)}
-                              style={{
-                                padding: '6px 2px',
-                                borderRadius: '6px',
-                                border: 'none',
-                                background: isAct ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
-                                color: isAct ? '#ffffff' : 'var(--text-muted)',
-                                fontSize: '10px',
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                                textAlign: 'center',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.4px'
-                              }}
-                            >
-                              {tab === 'chats' ? 'Chats' : tab === 'students' ? 'Studs' : tab === 'faculty' ? 'Fac' : 'Ment'}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Scrollable list */}
-                      <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {msgSidebarTab === 'chats' && (
-                          staffConversations.length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                              No active chats
-                            </div>
-                          ) : (
-                            staffConversations.map((c) => {
-                              const isSelected = (selectedConversation?.userId && selectedConversation?.userId === c.userId) || 
-                                                 (selectedConversation?.studentRollNo === c.studentRollNo);
-                              const lastMsg = c.messages && c.messages.length > 0 ? c.messages[c.messages.length - 1] : null;
-                              return (
-                                <button
-                                  key={c.userId || c.studentRollNo}
-                                  onClick={() => setSelectedConversation(c)}
-                                  style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '4px',
-                                    padding: '12px',
-                                    border: 'none',
-                                    borderRadius: '10px',
-                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    width: '100%',
-                                    transition: 'all 0.2s ease',
-                                    borderLeft: isSelected ? '3px solid #ffffff' : '3px solid transparent'
-                                  }}
-                                >
-                                  <div style={{ fontWeight: 700, fontSize: '13.5px', color: isSelected ? '#ffffff' : 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span>{c.studentName}</span>
-                                      {c.role && c.role !== 'Student' && (
-                                        <span style={{ fontSize: '8.5px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                                          {c.role}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {c.role === 'Student' && (
-                                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{c.studentRollNo}</span>
-                                    )}
-                                  </div>
-                                  {lastMsg && (
-                                    <div style={{
-                                      fontSize: '11.5px',
-                                      color: 'var(--text-muted)',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap',
-                                      width: '100%',
-                                      marginTop: '2px'
-                                    }}>
-                                      {lastMsg.senderRole === 'HOD' ? 'You: ' : `${lastMsg.senderRole}: `}{lastMsg.messageText}
-                                    </div>
-                                  )}
-                                </button>
-                              );
-                            })
-                          )
-                        )}
-
-                        {msgSidebarTab === 'students' && (
-                          studentsList.length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                              No students loaded
-                            </div>
-                          ) : (
-                            studentsList.map((s) => {
-                              const student = s.user;
-                              const rollNo = s.profile.rollNo;
-                              const isSelected = selectedConversation?.userId === student.id || selectedConversation?.studentRollNo === rollNo;
-                              return (
-                                <button
-                                  key={student.id}
-                                  onClick={() => {
-                                    const existing = staffConversations.find(c => c.userId === student.id || c.studentRollNo === rollNo);
-                                    if (existing) {
-                                      setSelectedConversation(existing);
-                                    } else {
-                                      setSelectedConversation({
-                                        userId: student.id,
-                                        studentRollNo: rollNo,
-                                        studentName: student.fullName,
-                                        studentEmail: s.profile.personalEmail || student.email,
-                                        role: 'Student',
-                                        messages: []
-                                      });
-                                    }
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '10px',
-                                    padding: '10px 12px',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    width: '100%',
-                                    transition: 'all 0.2s ease',
-                                  }}
-                                >
-                                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: 700, color: '#ffffff', flexShrink: 0, justifyContent: 'center' }}>
-                                    {student.fullName ? student.fullName.substring(0, 1) : '?'}
-                                  </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {student.fullName}
-                                    </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      Roll No: {rollNo}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          )
-                        )}
-
-                        {msgSidebarTab === 'faculty' && (
-                          facultyList.filter(f => f.role === 'Faculty' && f.email !== userSession.email).length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                              No faculty found
-                            </div>
-                          ) : (
-                            facultyList.filter(f => f.role === 'Faculty' && f.email !== userSession.email).map((f) => {
-                              const isSelected = selectedConversation?.userId === f.id || selectedConversation?.studentEmail === f.email;
-                              return (
-                                <button
-                                  key={f.id}
-                                  onClick={() => {
-                                    const existing = staffConversations.find(c => c.userId === f.id || c.studentEmail === f.email);
-                                    if (existing) {
-                                      setSelectedConversation(existing);
-                                    } else {
-                                      setSelectedConversation({
-                                        userId: f.id,
-                                        studentRollNo: f.email,
-                                        studentName: f.fullName,
-                                        studentEmail: f.email,
-                                        role: 'Faculty',
-                                        messages: []
-                                      });
-                                    }
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '10px',
-                                    padding: '10px 12px',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    width: '100%',
-                                    transition: 'all 0.2s ease',
-                                  }}
-                                >
-                                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: 700, color: '#ffffff', flexShrink: 0, justifyContent: 'center' }}>
-                                    {f.fullName ? f.fullName.substring(0, 1) : '?'}
-                                  </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {f.fullName}
-                                    </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {f.email}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          )
-                        )}
-
-                        {msgSidebarTab === 'mentors' && (
-                          facultyList.filter(f => f.role === 'Mentor' && f.email !== userSession.email).length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                              No mentors found
-                            </div>
-                          ) : (
-                            facultyList.filter(f => f.role === 'Mentor' && f.email !== userSession.email).map((m) => {
-                              const isSelected = selectedConversation?.userId === m.id || selectedConversation?.studentEmail === m.email;
-                              return (
-                                <button
-                                  key={m.id}
-                                  onClick={() => {
-                                    const existing = staffConversations.find(c => c.userId === m.id || c.studentEmail === m.email);
-                                    if (existing) {
-                                      setSelectedConversation(existing);
-                                    } else {
-                                      setSelectedConversation({
-                                        userId: m.id,
-                                        studentRollNo: m.email,
-                                        studentName: m.fullName,
-                                        studentEmail: m.email,
-                                        role: 'Mentor',
-                                        messages: []
-                                      });
-                                    }
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '10px',
-                                    padding: '10px 12px',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    width: '100%',
-                                    transition: 'all 0.2s ease',
-                                  }}
-                                >
-                                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: 700, color: '#ffffff', flexShrink: 0, justifyContent: 'center' }}>
-                                    {m.fullName ? m.fullName.substring(0, 1) : '?'}
-                                  </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {m.fullName}
-                                    </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {m.email}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          )
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Right: Chat Feed & Action Panel */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--surface-overlay)' }}>
-                      {selectedConversation ? (
-                        <>
-                          {/* Chat Header */}
-                          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--surface-border)', background: 'var(--surface-overlay)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-primary)' }}>{selectedConversation.studentName}</span>
-                              <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', background: selectedConversation.role === 'Student' ? '#10b981' : selectedConversation.role === 'Faculty' ? '#f59e0b' : '#3b82f6', color: '#fff', fontWeight: 700, textTransform: 'uppercase' }}>
-                                {selectedConversation.role || 'Student'}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                              {selectedConversation.role === 'Student' ? `Roll No: ${selectedConversation.studentRollNo}` : `Email: ${selectedConversation.studentEmail}`}
-                            </div>
-                          </div>
-
-                          {/* Chat Feed */}
-                          <div ref={staffChatContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                            {selectedConversation.messages && selectedConversation.messages.map((msg: any, idx: number) => {
-                              const isMe = msg.senderRole === 'HOD';
-                              return (
-                                <div key={idx} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
-                                  <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: isMe ? 'flex-end' : 'flex-start',
-                                    maxWidth: '70%',
-                                    gap: '3px'
-                                  }}>
-                                    <div style={{
-                                      background: isMe ? 'var(--accent)' : 'var(--ds-surface3)',
-                                      color: isMe ? '#000000' : 'var(--text-primary)',
-                                      borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                                      padding: '10px 14px',
-                                      fontSize: '13px',
-                                      lineHeight: '1.45',
-                                      border: isMe ? 'none' : '1px solid var(--surface-border)'
-                                    }}>
-                                      {msg.messageText}
-                                    </div>
-                                    <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
-                                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          {/* Chat Reply Form */}
-                          <form onSubmit={handleSendStaffMessage} style={{ padding: '16px 20px', borderTop: '1px solid var(--surface-border)', display: 'flex', gap: '12px', background: 'var(--surface-overlay)' }}>
-                            <input
-                              type="text"
-                              className="filter-select"
-                              placeholder={`Reply to ${selectedConversation.studentName}...`}
-                              value={staffMsgInput}
-                              onChange={e => setStaffMsgInput(e.target.value)}
-                              style={{ flex: 1, padding: '10px 14px', fontSize: '13px' }}
-                            />
-                            <button
-                              type="submit"
-                              className="btn-action primary"
-                              disabled={!staffMsgInput.trim()}
-                              style={{ padding: '10px 20px', background: '#ffffff', border: 'none', color: '#000000', fontWeight: 700 }}
-                            >
-                              Send
-                            </button>
-                          </form>
-                        </>
-                      ) : (
-                        <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-muted)' }}>
-                          <div style={{ fontSize: '32px', marginBottom: '10px' }}>💬</div>
-                          <div style={{ fontWeight: 700 }}>Select a student conversation to view chat history</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'settings' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>HOD Profile Settings</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Review your registered account profile status and update security parameters.</p>
-                  </div>
-
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '24px' }}>
-                    <form onSubmit={handleSaveHODProfile} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {/* Profile Picture Section */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
-                        <div style={{
-                          width: '64px',
-                          height: '64px',
-                          borderRadius: '50%',
-                          background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 800,
-                          color: '#fff',
-                          fontSize: '24px',
-                          overflow: 'hidden',
-                          border: '2px solid var(--surface-border)'
-                        }}>
-                          {profilePhotoUrl ? (
-                            <img src={`${API_BASE_URL}${profilePhotoUrl}`} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            userSession.fullName?.slice(0, 1)?.toUpperCase() || 'H'
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Profile Photo</label>
-                          <input type="file" accept="image/*" onChange={handleHODPhotoUpload} style={{ fontSize: '12px', color: 'var(--text-secondary)' }} />
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Full Name</label>
-                        <input type="text" className="filter-select" value={profileFullName} onChange={e => setProfileFullName(e.target.value)} required />
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Email Address</label>
-                        <input type="email" className="filter-select" value={hodProfile?.email || userSession.email} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Contact Phone</label>
-                        <input type="text" className="filter-select" value={profilePhone} onChange={e => setProfilePhone(e.target.value)} placeholder="Enter mobile number..." />
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Account Authority Role</label>
-                        <input type="text" className="filter-select" value={hodProfile?.role || userSession.role} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Change Password</label>
-                        <input type="password" className="filter-select" value={profilePassword} onChange={e => setProfilePassword(e.target.value)} placeholder="Type new password to modify..." />
-                      </div>
-
-                      <button type="submit" className="btn-action primary" style={{ marginTop: '10px' }}>
-                        Save Settings
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              )}
-
-            </motion.div>
-          </AnimatePresence>
-
-          {/* FOOTER */}
-          <footer className="admin-footer">
-            <div className="admin-footer-top">
-              <div className="admin-footer-brand">
-                <LogoHeader imageStyle={{ height: '32px' }} />
-              </div>
-              <div className="admin-footer-links">
-                <div>
-                  <h5 className="admin-footer-col-title">Quick Contacts</h5>
-                  <ul className="admin-footer-list">
-                    <li>📞 0863 - 2524112 / 113</li>
-                    <li><a href="mailto:principal@chalapathiengg.ac.in">principal@chalapathiengg.ac.in</a></li>
-                  </ul>
-                </div>
-                <div>
-                  <h5 className="admin-footer-col-title">Address</h5>
-                  <p className="admin-footer-addr">Chalapathi Nagar, Lam,<br />Guntur District, A.P. – 522 034</p>
-                </div>
-              </div>
-            </div>
-            <div className="admin-footer-bottom">
-              <span>© {new Date().getFullYear()} CIET. All Rights Reserved.</span>
-              <a href="http://chalapathiengg.ac.in" target="_blank" rel="noopener noreferrer">Official Portal →</a>
-            </div>
-          </footer>
-        </div>
+              );
+            })()}
+          </div>
         </div>
       </div>
 
-      {/* OVERLAY PROFILE DETAILS MODAL */}
-      {selectedDetailUser && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          background: 'rgba(10, 10, 10, 0.75)',
-          backdropFilter: 'blur(8px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 9999,
-          padding: '20px'
-        }}>
-          <div style={{
-            background: 'var(--surface-overlay)',
-            border: '1px solid var(--surface-border)',
-            borderRadius: '16px',
-            width: '720px',
-            maxWidth: '100%',
-            maxHeight: '90vh',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            boxShadow: 'var(--ds-s3)'
-          }}>
-            {/* Modal Header */}
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface-overlay)' }}>
-              <div>
-                <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>{selectedDetailUser.fullName}</h3>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{selectedDetailUser.role} &nbsp;|&nbsp; {selectedDetailUser.email}</span>
-              </div>
-              <button
-                onClick={() => setSelectedDetailUser(null)}
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '20px', cursor: 'pointer' }}
-              >
-                ×
-              </button>
-            </div>
+      {/* ── Assigned Mentors & Mentees (grouped by mentor) ── */}
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+          <div>
+            <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)' }}>Assigned Mentors &amp; Mentees</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Each mentor group shows their assigned students. Click to expand/collapse.</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <input
+              className="search-input"
+              style={{ paddingLeft: 14, width: 220 }}
+              placeholder="Search mentor or student…"
+              value={assignmentSearch}
+              onChange={e => setAssignmentSearch(e.target.value)}
+            />
+            <span style={{ padding: '6px 14px', borderRadius: 99, background: 'var(--accent-subtle)', color: 'var(--accent)', fontWeight: 800, fontSize: 12 }}>
+              {assignments.length} Active
+            </span>
+          </div>
+        </div>
 
-            {/* Modal Scrollable Body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {detailUserLoading ? (
-                <div style={{ margin: 'auto', padding: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                  <div className="spinner" />
-                  <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>Syncing profile workspace records...</span>
-                </div>
-              ) : detailUserData ? (
-                <>
-                  {/* General User Profile Details (Matches Admin layout style) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13.5px', marginBottom: '24px', borderBottom: '1px solid var(--surface-border)', paddingBottom: '20px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Email Address</span>
-                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{detailUserData.user?.email}</span>
-                    </div>
-
-                    {selectedDetailUser.role === 'Student' && detailUserData.profile?.rollNo && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
-                        <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Register Number</span>
-                        <span style={{ fontWeight: '700', color: 'var(--accent)', fontFamily: 'monospace', letterSpacing: '1px' }}>{detailUserData.profile.rollNo}</span>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Loading assignments…</div>
+        ) : Object.keys(mentorGroups).length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>No mentorship assignments logged yet.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {Object.entries(mentorGroups).map(([key, group]: [string, any]) => {
+              const isOpen = expandedMentors.has(key);
+              return (
+                <div key={key} className="chart-card" style={{ padding: 0, overflow: 'hidden' }}>
+                  {/* Mentor Header */}
+                  <div
+                    onClick={() => toggleMentorExpand(key)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '14px 20px', cursor: 'pointer',
+                      background: isOpen ? 'var(--accent-subtle)' : 'transparent',
+                      borderBottom: isOpen ? '1px solid var(--border)' : 'none',
+                      transition: 'background 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                      <div style={{
+                        width: 42, height: 42, borderRadius: '50%',
+                        background: 'linear-gradient(135deg,hsl(217,91%,60%),hsl(270,60%,65%))',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: '#fff', fontWeight: 800, fontSize: 16, flexShrink: 0,
+                      }}>
+                        {(group.mentorName || 'U')[0].toUpperCase()}
                       </div>
-                    )}
-
-                    {selectedDetailUser.role === 'Student' && detailUserData.profile?.batch && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
-                        <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Academic Batch</span>
-                        <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{detailUserData.profile.batch}</span>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-primary)' }}>{group.mentorName}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{group.mentorEmail || 'No email'}</div>
                       </div>
-                    )}
-
-                    {selectedDetailUser.role === 'Student' && detailUserData.profile?.cgpa !== undefined && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
-                        <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>CGPA</span>
-                        <span style={{ fontWeight: '700', color: detailUserData.profile.cgpa >= 8 ? '#10b981' : detailUserData.profile.cgpa >= 6 ? '#f59e0b' : '#ef4444' }}>
-                          {detailUserData.profile.cgpa.toFixed(2)} / 10.00
-                        </span>
-                      </div>
-                    )}
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Phone Number</span>
-                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{detailUserData.user?.phone || 'Not Registered'}</span>
                     </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Departments</span>
-                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{detailUserData.user?.departmentIds?.join(', ') || 'General / None'}</span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Portal Access</span>
-                      <span style={{ fontWeight: '700', color: detailUserData.user?.active ? '#10b981' : '#ef4444' }}>
-                        {detailUserData.user?.active ? 'Granted / Active' : 'Revoked / Locked'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ padding: '4px 12px', borderRadius: 99, background: 'hsl(217,91%,60%)', color: '#fff', fontWeight: 800, fontSize: 12 }}>
+                        {group.students.length} student{group.students.length !== 1 ? 's' : ''}
                       </span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Date Enrolled</span>
-                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{detailUserData.user?.createdAt ? new Date(detailUserData.user.createdAt).toLocaleString() : 'N/A'}</span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', borderBottom: '1px solid var(--surface-border)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Last IP Address</span>
-                      <span style={{ fontWeight: '500', fontFamily: 'monospace', color: 'var(--text-primary)' }}>{detailUserData.user?.lastLoginIp || 'None'}</span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr' }}>
-                      <span style={{ color: 'var(--text-muted)', fontWeight: '600' }}>Last Login Time</span>
-                      <span style={{ fontWeight: '500', color: 'var(--text-primary)' }}>
-                        {detailUserData.user?.lastLogin ? new Date(detailUserData.user.lastLogin).toLocaleString() : 'Never'}
-                      </span>
+                      <span style={{ fontSize: 18, color: 'var(--text-secondary)', display: 'inline-block', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>⌄</span>
                     </div>
                   </div>
 
-                  {selectedDetailUser.role === 'Student' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                      {/* Semester Results */}
-                      <div>
-                        <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Semester Results History</h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {detailUserData.results && detailUserData.results.map((r: any) => (
-                            <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '8px', fontSize: '12.5px' }}>
-                              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{r.subjectCode} - {r.subjectName}</span>
-                              <span style={{ color: r.grade === 'F' ? 'var(--ds-red)' : 'var(--accent)', fontWeight: 800 }}>{r.grade} (Sem {r.semester})</span>
-                            </div>
-                          ))}
-                          {(!detailUserData.results || detailUserData.results.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>No results uploaded yet.</p>}
-                        </div>
-                      </div>
-
-                      {/* Projects */}
-                      <div>
-                        <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Student Portfolios & Projects</h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {detailUserData.projects && detailUserData.projects.map((p: any) => (
-                            <div key={p.id} style={{ padding: '12px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '10px' }}>
-                              <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{p.title}</div>
-                              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Tech stack: {p.technologies}</div>
-                              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '6px 0 0' }}>{p.description}</p>
-                            </div>
-                          ))}
-                          {(!detailUserData.projects || detailUserData.projects.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>No projects uploaded yet.</p>}
-                        </div>
-                      </div>
-
-                      {/* Certifications */}
-                      <div>
-                        <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Professional Certifications</h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {detailUserData.certifications && detailUserData.certifications.map((c: any) => (
-                            <div key={c.id} style={{ padding: '12px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div>
-                                <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>{c.title}</div>
-                                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>Issued by: {c.issuingAuthority}</div>
-                              </div>
-                              {c.certUrl && <a href={c.certUrl} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'var(--accent)', fontSize: '12px', fontWeight: 700 }}>Verify ↗</a>}
-                            </div>
-                          ))}
-                          {(!detailUserData.certifications || detailUserData.certifications.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>No certifications recorded.</p>}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedDetailUser.role === 'Mentor' && (
+                  {/* Student rows — expanded */}
+                  {isOpen && (
                     <div>
-                      <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assigned Mentees</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {detailUserData.assignedStudents && detailUserData.assignedStudents.map((s: any) => (
-                          <div key={s.profile?.id} style={{ padding: '12px 16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                              <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)' }}>{s.user?.fullName}</strong>
-                              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>Roll No: {s.profile?.rollNo} | Batch: {s.profile?.batch}</div>
+                      {group.students.map((a: any, idx: number) => (
+                        <div key={a.id} style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          flexWrap: 'wrap', gap: 12,
+                          padding: '12px 20px 12px 76px',
+                          borderBottom: idx < group.students.length - 1 ? '1px solid var(--border)' : 'none',
+                          background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.015)',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 180 }}>
+                            <div style={{
+                              width: 34, height: 34, borderRadius: '50%',
+                              background: 'hsl(145,60%,45%)', color: '#fff',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontWeight: 800, fontSize: 13, flexShrink: 0,
+                            }}>
+                              {(a.studentName || a.rollNo || 'S')[0].toUpperCase()}
                             </div>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{a.studentName || a.rollNo}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                                {a.rollNo}{a.studentEmail ? ` · ${a.studentEmail}` : ''}
+                              </div>
+                              {a.departmentId && <div style={{ fontSize: 11, color: 'hsl(217,60%,50%)' }}>Dept: {a.departmentId}</div>}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, flex: 1, minWidth: 140 }}>
+                            {a.year && <Chip label={`Y${a.year}`} color="hsl(217,91%,60%)" />}
+                            {a.sectionId && <Chip label={`Sec ${a.sectionId}`} color="hsl(270,60%,65%)" />}
+                            {a.batch && <Chip label={a.batch} color="hsl(30,80%,55%)" />}
+                            {a.cgpa > 0 && <Chip label={`CGPA ${a.cgpa}`} color="hsl(145,60%,45%)" />}
+                          </div>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="btn-row-action"
+                              onClick={() => { setEditingAssignment(a); setEditMentorId(a.mentorUserId || ''); setEditStudentRollNo(''); }}
+                              title="Edit this assignment">
+                              ✏️ Edit
+                            </button>
                             <button
-                              className="btn-action secondary"
-                              onClick={() => fetchUserDetailForHOD({ id: s.user?.id, fullName: s.user?.fullName, email: s.user?.email, role: 'Student' })}
-                              style={{ padding: '4px 10px', fontSize: '11.5px', cursor: 'pointer', color: 'var(--accent)' }}
+                              className="btn-row-action"
+                              style={{ color: 'var(--danger)' }}
+                              onClick={() => handleUnassign(a.id)}
+                              title="Unassign student"
                             >
-                              Check Profile
+                              🗑️ Unassign
                             </button>
                           </div>
-                        ))}
-                        {(!detailUserData.assignedStudents || detailUserData.assignedStudents.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No student mentees assigned yet.</p>}
-                      </div>
+                        </div>
+                      ))}
                     </div>
                   )}
-
-                  {selectedDetailUser.role === 'Faculty' && (
-                    <div>
-                      <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Teaching Course Workload</h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {detailUserData.courses && detailUserData.courses.map((c: any) => (
-                          <div key={c.id} style={{ padding: '12px 16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '10px' }}>
-                            <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)' }}>{c.courseName} ({c.courseCode})</strong>
-                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>Target: {c.targetYear} Year Sec-{c.targetSection} | Credits: {c.credits || 3}</div>
-                          </div>
-                        ))}
-                        {(!detailUserData.courses || detailUserData.courses.length === 0) && <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>No courses assigned to teach.</p>}
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div style={{ padding: '24px', textAlign: 'center' }}>
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 12px' }}>Failed to resolve profile dataset.</p>
-                  <button
-                    className="btn-action primary"
-                    onClick={() => fetchUserDetailForHOD(selectedDetailUser)}
-                    style={{ padding: '6px 14px', fontSize: '12px', cursor: 'pointer' }}
-                  >
-                    Retry Connection
-                  </button>
                 </div>
-              )}
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Edit Mentor Assignment Modal */}
+      {editingAssignment && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setEditingAssignment(null); }}>
+          <div className="modal-box" style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <span className="modal-title">Edit Mentor Assignment</span>
+              <button className="modal-close" onClick={() => setEditingAssignment(null)}>✕</button>
             </div>
-            {/* Modal Footer */}
-            <div style={{ padding: '14px 20px', borderTop: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'flex-end', background: 'var(--surface-overlay)' }}>
-              <button
-                className="btn-action secondary"
-                onClick={() => setSelectedDetailUser(null)}
-                style={{ padding: '8px 18px', cursor: 'pointer', border: '1px solid var(--surface-border)', background: 'transparent', borderRadius: '8px', color: 'var(--text-secondary)' }}
-              >
-                Close
-              </button>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+              {/* Change Student */}
+              <div>
+                <label className="modal-label">Change Student</label>
+                <select className="modal-form-input" value={editStudentRollNo || editingAssignment.rollNo}
+                  onChange={e => setEditStudentRollNo(e.target.value)}>
+                  {/* Current student always shown */}
+                  <option value={editingAssignment.rollNo}>
+                    {editingAssignment.studentName || editingAssignment.rollNo} — {editingAssignment.rollNo} (current)
+                  </option>
+                  {/* All other unassigned students */}
+                  {students
+                    .filter((s: any) => (s.rollNo || s.id) !== editingAssignment.rollNo)
+                    .map((s: any) => {
+                      const roll = s.rollNo || s.id;
+                      return (
+                        <option key={roll} value={roll}>
+                          {s.fullName || s.email} — {roll}
+                        </option>
+                      );
+                    })}
+                </select>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                  Only unassigned students are listed. Select to swap the student in this assignment.
+                </p>
+              </div>
+
+              {/* Current Mentor info */}
+              <div>
+                <label className="modal-label">Current Mentor</label>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  {editingAssignment.mentorName || 'Unassigned'}
+                </div>
+              </div>
+
+              {/* Change Mentor */}
+              <div>
+                <label className="modal-label">Change Mentor</label>
+                <select className="modal-form-input" value={editMentorId} onChange={e => setEditMentorId(e.target.value)}>
+                  <option value="">— keep current mentor —</option>
+                  {mentors.map(m => (
+                    <option key={m.id} value={m.id}>{m.fullName || m.email}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-action secondary" onClick={() => setEditingAssignment(null)}>Cancel</button>
+              <button className="btn-action primary"
+                disabled={!editMentorId && (!editStudentRollNo || editStudentRollNo === editingAssignment.rollNo)}
+                onClick={handleUpdateMentor}>Save Changes</button>
             </div>
           </div>
         </div>
       )}
+    </>
+  );
+};
 
-      
-      {/* ── INJECTED MODALS ── */}
-      {dirActiveModal === 'view' && dirSelectedUser && (
-        <div className="admin-modal-overlay" onClick={() => setDirActiveModal(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="admin-modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-            <div className="admin-modal-header" style={{ padding: '20px', borderBottom: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '18px' }}>User Details</h2>
-              <button onClick={() => setDirActiveModal(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '24px', cursor: 'pointer', padding: 0 }}>&times;</button>
+
+// ═══════════════════════════════════════════════════════════
+// Shared Document View Modal
+// ═══════════════════════════════════════════════════════════
+interface DocViewModalProps {
+  doc: { title: string; fileUrl: string; docType?: string; createdAt?: string } | null;
+  onClose: () => void;
+  token?: string;
+}
+
+const DocViewModal: React.FC<DocViewModalProps> = ({ doc, onClose, token }) => {
+  if (!doc) return null;
+
+  const ext = (doc.fileUrl || '').split('?')[0].split('.').pop()?.toLowerCase() || '';
+  const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext);
+  const isPdf   = ext === 'pdf';
+  const isWord  = ['doc', 'docx'].includes(ext);
+  const isExcel = ['xls', 'xlsx'].includes(ext);
+
+  const handleDownload = async () => {
+    try {
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(doc.fileUrl, { headers });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.title + (ext ? '.' + ext : '');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch {
+      // Fallback: direct link
+      const a = document.createElement('a');
+      a.href = doc.fileUrl;
+      a.download = doc.title;
+      a.target = '_blank';
+      a.rel = 'noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.72)',
+        backdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '20px',
+        animation: 'fadeIn .18s ease'
+      }}
+    >
+      <div style={{
+        background: 'var(--surface-raised, #1e1e2e)',
+        border: '1px solid var(--surface-border, rgba(255,255,255,.1))',
+        borderRadius: '16px',
+        width: '100%', maxWidth: '880px',
+        maxHeight: '90vh',
+        display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
+        boxShadow: '0 32px 80px rgba(0,0,0,.55)'
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '16px 20px',
+          borderBottom: '1px solid var(--surface-border, rgba(255,255,255,.1))',
+          background: 'var(--surface-overlay, rgba(255,255,255,.04))',
+          flexShrink: 0
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-primary)' }}>{doc.title}</span>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              {doc.docType && (
+                <span style={{
+                  fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+                  background: 'var(--accent-subtle, rgba(99,102,241,.15))',
+                  color: 'var(--accent, #6366f1)', textTransform: 'uppercase', letterSpacing: '.5px'
+                }}>{doc.docType.replace(/_/g, ' ')}</span>
+              )}
+              {doc.createdAt && (
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {new Date(doc.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              )}
             </div>
-            <div className="admin-modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', borderBottom: '1px solid var(--surface-border)', paddingBottom: '16px' }}>
-                <div style={{ width: '64px', height: '64px', borderRadius: '32px', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: '800', color: 'var(--accent)' }}>
-                  {dirSelectedUser.fullName?.[0]?.toUpperCase()}
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button
+              onClick={handleDownload}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '8px 16px', borderRadius: 8,
+                background: 'var(--accent, #6366f1)', color: '#fff',
+                border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Download
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                width: 34, height: 34, borderRadius: 8,
+                background: 'transparent',
+                border: '1px solid var(--surface-border, rgba(255,255,255,.1))',
+                cursor: 'pointer', color: 'var(--text-muted)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 18, fontWeight: 300
+              }}
+              aria-label="Close"
+            >✕</button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflow: 'auto', position: 'relative', minHeight: '300px' }}>
+          {isPdf && (
+            <iframe
+              src={doc.fileUrl}
+              title={doc.title}
+              style={{ width: '100%', height: '68vh', border: 'none', display: 'block' }}
+            />
+          )}
+          {isImage && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 24, minHeight: 300, background: 'rgba(0,0,0,.25)' }}>
+              <img
+                src={doc.fileUrl}
+                alt={doc.title}
+                style={{ maxWidth: '100%', maxHeight: '65vh', borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,.4)', objectFit: 'contain' }}
+              />
+            </div>
+          )}
+          {(isWord || isExcel) && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 30px', gap: 18 }}>
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--accent, #6366f1)" strokeWidth="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>
+                  {isWord ? 'Word Document' : 'Excel Spreadsheet'}
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>
+                  This file type cannot be previewed in the browser.<br />
+                  Click <strong>Download</strong> above to open it in the original format.
+                </p>
+              </div>
+            </div>
+          )}
+          {!isPdf && !isImage && !isWord && !isExcel && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 30px', gap: 18 }}>
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--accent, #6366f1)" strokeWidth="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>
+                  File Preview
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>
+                  Preview not available for this file type.<br />
+                  Use <strong>Download</strong> to open the file.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════
+// Documents Tab
+// ═══════════════════════════════════════════════════════════
+const DocumentsTab: React.FC<{ token: string }> = ({ token }) => {
+  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const [docs, setDocs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [title, setTitle] = useState('');
+  const [docType, setDocType] = useState('CURRICULUM');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
+
+  useEffect(() => { fetchDocs(); }, []);
+
+  const fetchDocs = async () => {
+    try {
+      setLoading(true);
+      const r = await axios.get(`${API}/hod/documents`, h);
+      setDocs(r.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
+
+  const upload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedFile) {
+      alert('Please select a file to upload');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      
+      // 1. Upload file to backend storage
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      
+      // Note: DO NOT set Content-Type manually — axios sets it automatically with the correct multipart boundary
+      const uploadRes = await axios.post(`${API}/portal/student/upload`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      const uploadedFileUrl = uploadRes.data.url;
+
+      // 2. Save document record
+      await axios.post(`${API}/hod/document`, { 
+        title, 
+        docType: docType, // Align with backend entity naming (docType)
+        fileUrl: uploadedFileUrl 
+      }, h);
+
+      setTitle(''); 
+      setSelectedFile(null);
+      // Reset input element
+      const fileInput = document.getElementById('doc-file-input') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+      
+      fetchDocs();
+      alert('Document uploaded successfully!');
+    } catch (e) { 
+      console.error(e);
+      alert('Upload failed'); 
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this document?')) return;
+    try {
+      await axios.delete(`${API}/hod/document/${id}`, h);
+      fetchDocs();
+    } catch (e) {
+      alert('Failed to delete document');
+    }
+  };
+
+  return (
+    <>
+      {previewDoc && (
+        <DocViewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} token={token} />
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+        <div className="chart-card" style={{ height: 'fit-content' }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, marginBottom: 16 }}>Upload Document</h3>
+          <form onSubmit={upload} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label className="modal-label">Title</label>
+              <input className="modal-form-input" required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. CSE 3rd Year Timetable" />
+            </div>
+            <div>
+              <label className="modal-label">Type</label>
+              <select className="modal-form-input" value={docType} onChange={e => setDocType(e.target.value)}>
+                <option value="CURRICULUM">Curriculum</option>
+                <option value="POLICY">Policy</option>
+                <option value="GUIDELINE">Guideline</option>
+                <option value="CLASS_TIMETABLE">Class Timetable</option>
+                <option value="ACADEMIC_CALENDAR">Academic Calendar</option>
+              </select>
+            </div>
+            <div>
+              <label className="modal-label">File (PDF, Word, Excel, etc.)</label>
+              <input 
+                id="doc-file-input"
+                className="modal-form-input" 
+                required 
+                type="file" 
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" 
+                onChange={handleFileChange} 
+              />
+            </div>
+            <button type="submit" className="btn-action primary" disabled={uploading}>
+              {uploading ? 'Uploading...' : 'Upload File'}
+            </button>
+          </form>
+        </div>
+
+        <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Uploaded Date</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading
+                ? <tr><td colSpan={4} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>Loading…</td></tr>
+                : docs.length === 0
+                  ? <tr><td colSpan={4} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>No documents yet.</td></tr>
+                  : docs.map((d: any) => (
+                    <tr key={d.id}>
+                      <td style={{ fontWeight: 600 }}>{d.title}</td>
+                      <td>
+                        <span className="status-badge active" style={{ fontSize: '10px' }}>
+                          {d.docType || d.type || 'DOCUMENT'}
+                        </span>
+                      </td>
+                      <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                        {d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                          <button
+                            onClick={() => setPreviewDoc(d)}
+                            className="btn-row-action"
+                          >
+                            View
+                          </button>
+                          <button onClick={() => handleDelete(d.id)} className="btn-row-action" style={{ color: 'var(--danger)' }}>
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+};
+
+
+
+// ═══════════════════════════════════════════════════════════
+// Broadcasts Tab
+// ═══════════════════════════════════════════════════════════
+const BroadcastsTab: React.FC<{ token: string }> = ({ token }) => {
+  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const [bType, setBType] = useState('Student');
+  const [title, setTitle] = useState('');
+  const [message, setMessage] = useState('');
+  const [year, setYear] = useState('ALL');
+  const [section, setSection] = useState('ALL');
+  const [adminMsg, setAdminMsg] = useState('');
+  const [sections, setSections] = useState<string[]>(getSavedSections());
+  const [sentNotifs, setSentNotifs] = useState<any[]>([]);
+  const [loadingNotifs, setLoadingNotifs] = useState(true);
+
+  useEffect(() => {
+    const handleUpdate = () => setSections(getSavedSections());
+    window.addEventListener('sections_updated', handleUpdate);
+    return () => window.removeEventListener('sections_updated', handleUpdate);
+  }, []);
+
+  useEffect(() => { fetchSentNotifs(); }, []);
+
+  const fetchSentNotifs = async () => {
+    try {
+      setLoadingNotifs(true);
+      const r = await axios.get(`${API}/hod/notifications/sent`, h);
+      // Deduplicate by title+message (since one broadcast creates one notif per recipient)
+      const seen = new Set<string>();
+      const unique: any[] = [];
+      for (const n of r.data) {
+        const key = `${n.title}||${n.message}||${n.createdAt}`;
+        if (!seen.has(key)) { seen.add(key); unique.push(n); }
+      }
+      setSentNotifs(unique);
+    } catch (e) { console.error(e); }
+    finally { setLoadingNotifs(false); }
+  };
+
+  const sendBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await axios.post(`${API}/hod/notification`, {
+        title, message, type: 'ACADEMIC',
+        targetRoles: [bType], year, sectionId: section
+      }, h);
+      alert(`Sent to ${res.data.recipientCount ?? '?'} recipients`);
+      setTitle(''); setMessage('');
+      fetchSentNotifs();
+    } catch (e) { alert('Failed to send broadcast'); }
+  };
+
+  const sendAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await axios.post(`${API}/hod/messages/admin`, { messageText: adminMsg }, h);
+      alert('Message sent to Director/Admin');
+      setAdminMsg('');
+    } catch (e) { alert('Failed to send message'); }
+  };
+
+  const typeColors: Record<string, string> = {
+    ACADEMIC: '#6366f1', SYSTEM: '#10b981', ALERT: '#ef4444', GENERAL: '#f59e0b'
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      {/* Forms row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px' }}>
+        <div className="chart-card">
+          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, marginBottom: 16 }}>Targeted Broadcast</h3>
+          <form onSubmit={sendBroadcast} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label className="modal-label">Target</label>
+              <select className="modal-form-input" value={bType} onChange={e => setBType(e.target.value)}>
+                <option value="Student">Students</option>
+                <option value="Faculty">Faculty</option>
+                <option value="Mentor">Mentors</option>
+              </select>
+            </div>
+            {bType === 'Student' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label className="modal-label">Year</label>
+                  <select className="modal-form-input" value={year} onChange={e => setYear(e.target.value)}>
+                    <option value="ALL">All</option>
+                    {['1','2','3','4'].map(y => <option key={y} value={y}>Year {y}</option>)}
+                  </select>
                 </div>
                 <div>
-                  <h3 style={{ margin: '0 0 4px', fontSize: '20px', color: 'var(--text-primary)' }}>{dirSelectedUser.fullName}</h3>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span className="badge-pill outline">{dirSelectedUser.role}</span>
-                    <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{dirSelectedUser.email}</span>
+                  <label className="modal-label">Section</label>
+                  <select className="modal-form-input" value={section} onChange={e => setSection(e.target.value)}>
+                    <option value="ALL">All</option>
+                    {sections.map(s => <option key={s} value={s}>Sec {s}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+            <div>
+              <label className="modal-label">Subject</label>
+              <input className="modal-form-input" required value={title} onChange={e => setTitle(e.target.value)} placeholder="Broadcast subject" />
+            </div>
+            <div>
+              <label className="modal-label">Message</label>
+              <textarea className="modal-form-input" required rows={4} value={message} onChange={e => setMessage(e.target.value)} placeholder="Type your message…" style={{ resize: 'vertical' }} />
+            </div>
+            <button type="submit" className="btn-action primary">Send Broadcast</button>
+          </form>
+        </div>
+
+        <div className="chart-card" style={{ height: 'fit-content' }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, marginBottom: 8 }}>Message Admin / Director</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>Send a direct message to the system administrator.</p>
+          <form onSubmit={sendAdmin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label className="modal-label">Message</label>
+              <textarea className="modal-form-input" required rows={5} value={adminMsg} onChange={e => setAdminMsg(e.target.value)} placeholder="Describe your request…" style={{ resize: 'vertical' }} />
+            </div>
+            <button type="submit" className="btn-action primary">Send to Admin</button>
+          </form>
+        </div>
+      </div>
+
+      {/* Sent Broadcasts History */}
+      <div className="chart-card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, margin: 0 }}>
+            Sent Broadcasts History
+          </h3>
+          <button
+            onClick={fetchSentNotifs}
+            style={{
+              background: 'transparent', border: '1px solid var(--surface-border)',
+              borderRadius: 8, padding: '5px 12px', cursor: 'pointer',
+              color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            Refresh
+          </button>
+        </div>
+
+        {loadingNotifs ? (
+          <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>Loading history…</div>
+        ) : sentNotifs.length === 0 ? (
+          <div style={{ padding: '32px', textAlign: 'center' }}>
+            <div style={{ fontSize: 36, marginBottom: 10 }}>📭</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No broadcasts sent yet. Use the form above to send your first broadcast.</div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {sentNotifs.map((n: any, i: number) => (
+              <div
+                key={i}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr auto',
+                  gap: 16,
+                  padding: '14px 16px',
+                  background: 'var(--surface-base, rgba(255,255,255,.03))',
+                  border: '1px solid var(--surface-border)',
+                  borderRadius: 10,
+                  alignItems: 'flex-start'
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{n.title}</span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99,
+                      background: `color-mix(in srgb, ${typeColors[n.type] || '#6366f1'} 15%, transparent)`,
+                      color: typeColors[n.type] || '#6366f1',
+                      textTransform: 'uppercase', letterSpacing: '.4px'
+                    }}>{n.type || 'ACADEMIC'}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {n.message}
+                  </p>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                    {n.createdAt ? new Date(n.createdAt).toLocaleString('en-IN', {
+                      day: 'numeric', month: 'short', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit'
+                    }) : '—'}
                   </div>
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Phone Number</strong><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>{dirSelectedUser.phone || 'N/A'}</div></div>
-                <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Departments</strong><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>{dirSelectedUser.departmentIds?.join(', ') || dirSelectedUser.departmentId || 'N/A'}</div></div>
-                {dirSelectedUser.role === 'Student' && (
-                  <>
-                    <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Roll Number</strong><div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--accent)' }}>{dirSelectedUser.rollNo}</div></div>
-                    <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Academic Year</strong><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>Year {dirSelectedUser.year}</div></div>
-                    <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Section</strong><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>{dirSelectedUser.sectionId}</div></div>
-                    <div><strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Batch</strong><div style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-primary)' }}>{dirSelectedUser.batch}</div></div>
-                  </>
-                )}
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+
+// ═══════════════════════════════════════════════════════════
+// Escalations Tab
+// ═══════════════════════════════════════════════════════════
+const EscalationsTab: React.FC<{ token: string }> = ({ token }) => {
+  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const [threads, setThreads] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [active, setActive] = useState<any>(null);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => { fetchEscalations(); }, []);
+
+  const fetchEscalations = async () => {
+    try {
+      setLoading(true);
+      const r = await axios.get(`${API}/hod/escalations`, h);
+      setThreads(r.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  const sendMsg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!msg || !active) return;
+    try {
+      await axios.post(`${API}/hod/escalations/${active.thread.id}/message`, { content: msg }, h);
+      setMsg(''); fetchEscalations();
+    } catch (e) { alert('Failed to send'); }
+  };
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading escalations…</div>;
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', minHeight: '480px' }}>
+      <div style={{ background: 'var(--surface-raised)', borderRadius: 'var(--r3)', border: '1px solid var(--surface-border)', overflowY: 'auto', maxHeight: '480px' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--surface-border)', fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>
+          Escalated Threads
+        </div>
+        {threads.length === 0
+          ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No active escalations.</div>
+          : threads.map((t: any) => (
+            <button key={t.thread.id} onClick={() => setActive(t)} style={{
+              width: '100%', textAlign: 'left', padding: '14px 18px', border: 'none',
+              borderBottom: '1px solid var(--surface-border)', cursor: 'pointer',
+              background: active?.thread?.id === t.thread.id ? 'var(--accent-subtle)' : 'transparent',
+              borderLeft: active?.thread?.id === t.thread.id ? '3px solid var(--accent)' : '3px solid transparent',
+              transition: 'all .15s ease'
+            }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{t.studentUser?.fullName || t.profile?.rollNo || '—'}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Subject: {t.thread?.subjectCode}</div>
+            </button>
+          ))
+        }
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', border: '1px solid var(--surface-border)', borderRadius: 'var(--r3)', background: 'var(--surface-base)', minHeight: '380px' }}>
+        {active ? (<>
+          <div style={{ padding: '14px 18px', background: 'var(--surface-raised)', borderBottom: '1px solid var(--surface-border)', borderRadius: 'var(--r3) var(--r3) 0 0' }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>{active.studentUser?.fullName || '—'}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Mentor: {active.mentors?.[0]?.fullName || 'Unassigned'}</div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '340px' }}>
+            {active.messages?.map((m: any, i: number) => (
+              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.senderRole === 'HOD' ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth: '75%', padding: '10px 14px', borderRadius: 'var(--r3)',
+                  background: m.senderRole === 'HOD' ? 'var(--accent)' : 'var(--surface-raised)',
+                  color: m.senderRole === 'HOD' ? '#fff' : 'var(--text-primary)',
+                  border: m.senderRole === 'HOD' ? 'none' : '1px solid var(--surface-border)',
+                  fontSize: 13
+                }}>
+                  <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 4 }}>{m.senderName} ({m.senderRole})</div>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+          </div>
+          <form onSubmit={sendMsg} style={{ padding: '14px 18px', background: 'var(--surface-raised)', borderTop: '1px solid var(--surface-border)', borderRadius: '0 0 var(--r3) var(--r3)', display: 'flex', gap: 10 }}>
+            <input className="search-input" style={{ flex: 1, paddingLeft: 14 }} value={msg} onChange={e => setMsg(e.target.value)} placeholder="Type a message…" />
+            <button type="submit" className="btn-action primary" disabled={!msg}>Send</button>
+          </form>
+        </>) : (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 15, padding: '40px' }}>
+            Select a thread to view
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════
+// Analytics Tab
+// ═══════════════════════════════════════════════════════════
+const AnalyticsTab: React.FC<{ token: string }> = ({ token }) => {
+  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    axios.get(`${API}/hod/analytics`, h)
+      .then(r => setData(r.data))
+      .catch(e => console.error(e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading analytics…</div>;
+  if (!data) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Failed to load data.</div>;
+
+  const coverage = data.totalStudents > 0 ? Math.round((data.assignedCount / data.totalStudents) * 100) : 0;
+
+  return (
+    <div>
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-label">Total Students</div>
+          <div className="stat-value">{data.totalStudents}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Mentorship Coverage</div>
+          <div className="stat-value">{coverage}%</div>
+          <div className="stat-sub">{data.assignedCount} assigned · {data.unassignedCount} pending</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Syllabus Completion</div>
+          <div className="stat-value">{data.syllabusPct}%</div>
+          <div className="stat-sub">{data.coveredTopics} / {data.totalTopics} topics</div>
+        </div>
+      </div>
+
+      <div className="charts-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginTop: '20px' }}>
+        <div className="chart-card">
+          <div className="chart-title">Batch Average CGPA</div>
+          {Object.entries(data.batchAverages || {}).map(([batch, avg]: [string, any]) => (
+            <div key={batch} className="bar-row">
+              <div className="bar-label">{batch}</div>
+              <div className="bar-track">
+                <div className="bar-fill" style={{ width: `${(avg / 10) * 100}%` }}></div>
+              </div>
+              <div className="bar-count">{Number(avg).toFixed(2)}</div>
+            </div>
+          ))}
+          {Object.keys(data.batchAverages || {}).length === 0 && (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No batch data available.</div>
+          )}
+        </div>
+
+        <div className="chart-card">
+          <div className="chart-title">Syllabus Coverage by Subject</div>
+          {(data.subjects || []).map((s: any) => {
+            const pct = s.totalTopics > 0 ? Math.round((s.coveredTopics / s.totalTopics) * 100) : 0;
+            return (
+              <div key={s.id || s.subjectCode} className="bar-row">
+                <div className="bar-label" style={{ width: 80, fontSize: 11 }}>{s.subjectCode}</div>
+                <div className="bar-track">
+                  <div className="bar-fill tier-b" style={{ width: `${pct}%` }}></div>
+                </div>
+                <div className="bar-count">{pct}%</div>
+              </div>
+            );
+          })}
+          {(data.subjects || []).length === 0 && (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No subject data available.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════
+// At-Risk Tab
+// ═══════════════════════════════════════════════════════════
+const AtRiskTab: React.FC<{ token: string }> = ({ token }) => {
+  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const [atRisk, setAtRisk] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    axios.get(`${API}/hod/at-risk`, h)
+      .then(r => setAtRisk(r.data))
+      .catch(e => console.error(e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading at-risk data…</div>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+        <div>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)' }}>At-Risk Students</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Flagged by CGPA, attendance, backlog, or missing mentor criteria.</p>
+        </div>
+        <span style={{ padding: '6px 16px', borderRadius: 99, background: 'hsla(0,80%,55%,.12)', color: 'hsl(0,80%,60%)', fontWeight: 800, fontSize: 13 }}>
+          🚨 {atRisk.length} Flagged
+        </span>
+      </div>
+
+      {atRisk.length === 0 ? (
+        <div className="chart-card" style={{ textAlign: 'center', padding: 60 }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>Check</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18, color: 'var(--text-primary)' }}>No at-risk students!</div>
+          <div style={{ color: 'var(--text-muted)', marginTop: 8 }}>All students are currently on track.</div>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          {atRisk.map((item: any, idx: number) => {
+            const attPct = item.profile?.totalClasses > 0
+              ? Math.round((item.profile.attendedClasses / item.profile.totalClasses) * 100) : 100;
+            return (
+              <div key={idx} className="stat-card" style={{ borderLeft: '3px solid var(--danger)', padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>
+                      {item.user?.fullName || item.profile?.rollNo || '—'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {item.profile?.rollNo} · Batch {item.profile?.batch}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>CGPA: {item.profile?.cgpa}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Att: {attPct}%</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                  {item.riskFactors?.map((f: string, i: number) => (
+                    <span key={i} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700, background: 'hsla(0,80%,55%,.12)', color: 'hsl(0,80%,60%)' }}>{f}</span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn-row-action" style={{ flex: 1 }}>View Profile</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════
+// Attainment Tab
+// ═══════════════════════════════════════════════════════════
+const AttainmentTab: React.FC<{ token: string }> = ({ token }) => {
+  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    axios.get(`${API}/hod/accreditation`, h)
+      .then(r => setData(r.data))
+      .catch(e => console.error(e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+        <div>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)' }}>Course Outcome Attainment</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>NBA / NAAC accreditation checklist and evidence tracking.</p>
+        </div>
+        <span style={{ padding: '6px 16px', borderRadius: 99, background: 'hsla(217,91%,50%,.12)', color: 'hsl(217,91%,65%)', fontWeight: 800, fontSize: 13 }}>
+          Accreditation
+        </span>
+      </div>
+      <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
+        <table className="data-table">
+          <thead><tr><th>Criteria</th><th>Evidence</th><th>Status</th><th>Updated</th></tr></thead>
+          <tbody>
+            {loading
+              ? <tr><td colSpan={4} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>Loading…</td></tr>
+              : data.length === 0
+                ? <tr><td colSpan={4} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>No criteria logged yet.</td></tr>
+                : data.map((item: any) => (
+                  <tr key={item.id}>
+                    <td style={{ fontWeight: 600 }}>{item.criteriaTitle}</td>
+                    <td>
+                      {item.evidenceUrl
+                        ? <a href={item.evidenceUrl} target="_blank" rel="noreferrer" className="btn-row-action">View</a>
+                        : <span style={{ color: 'var(--text-muted)' }}>—</span>
+                      }
+                    </td>
+                    <td>
+                      <span className={`status-pill ${item.isMet ? 'active' : 'inactive'}`}>
+                        <span className="status-dot"></span>
+                        {item.isMet ? 'Met' : 'Not Met'}
+                      </span>
+                    </td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{new Date(item.updatedAt).toLocaleDateString()}</td>
+                  </tr>
+                ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════
+// Trainings Tab
+// ═══════════════════════════════════════════════════════════
+const TrainingsTab: React.FC<{ token: string }> = ({ token }) => {
+  const h = { headers: { Authorization: `Bearer ${token}` } };
+  const [trainings, setTrainings] = useState<TrainingProgram[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(false);
+  const [edit, setEdit] = useState<Partial<TrainingProgram>>({ targetYears: [] });
+
+  useEffect(() => { fetchTrainings(); }, []);
+
+  const fetchTrainings = async () => {
+    try {
+      setLoading(true);
+      const r = await axios.get(`${API}/hod/trainings`, h);
+      setTrainings(r.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  const save = async () => {
+    try {
+      if (edit.id) {
+        await axios.put(`${API}/hod/training/${edit.id}`, edit, h);
+      } else {
+        await axios.post(`${API}/hod/training`, edit, h);
+      }
+      setModal(false); fetchTrainings();
+    } catch (e) { alert('Save failed'); }
+  };
+
+  const del = async (id: string) => {
+    if (!confirm('Delete this training?')) return;
+    await axios.delete(`${API}/hod/training/${id}`, h);
+    fetchTrainings();
+  };
+
+  const toggleYear = (y: string) => {
+    const curr = edit.targetYears || [];
+    setEdit({ ...edit, targetYears: curr.includes(y) ? curr.filter(x => x !== y) : [...curr, y] });
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+        <div>
+          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)' }}>Skill Development & Training</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Manage department training programs</p>
+        </div>
+        <button className="btn-action primary" onClick={() => { setEdit({ targetYears: [] }); setModal(true); }}>+ New Training</button>
+      </div>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
+          {trainings.map(t => (
+            <div key={t.id} className="stat-card" style={{ padding: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>{t.title}</div>
+                <span className={`status-pill ${t.isActive ? 'active' : 'inactive'}`}>
+                  <span className="status-dot"></span>
+                  {t.isActive ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12, lineHeight: 1.5 }}>{t.description}</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, marginBottom: 14 }}>
+                <div><span style={{ color: 'var(--text-muted)' }}>Category:</span> <strong>{t.category}</strong></div>
+                <div><span style={{ color: 'var(--text-muted)' }}>Venue:</span> <strong>{t.venue}</strong></div>
+                <div><span style={{ color: 'var(--text-muted)' }}>Start:</span> <strong>{t.startDate}</strong></div>
+                <div><span style={{ color: 'var(--text-muted)' }}>End:</span> <strong>{t.endDate}</strong></div>
+                <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--text-muted)' }}>Years:</span> <strong>{t.targetYears?.join(', ') || 'All'}</strong></div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-row-action" style={{ flex: 1 }} onClick={() => { setEdit(t); setModal(true); }}>Edit</button>
+                <button className="btn-row-action" style={{ flex: 1, color: 'var(--danger)' }} onClick={() => del(t.id)}>Delete</button>
               </div>
             </div>
-            <div className="admin-modal-footer" style={{ padding: '20px', borderTop: '1px solid var(--surface-border)', display: 'flex', justifySelf: 'flex-end', justifyContent: 'flex-end' }}>
-              <button className="btn-action secondary" onClick={() => setDirActiveModal(null)}>Close</button>
+          ))}
+          {trainings.length === 0 && (
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>No training programs yet. Create one!</div>
+          )}
+        </div>
+      )}
+
+      {modal && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setModal(false); }}>
+          <div className="modal-box" style={{ maxWidth: 600 }}>
+            <div className="modal-header">
+              <span className="modal-title">{edit.id ? 'Edit' : 'Create'} Training Program</span>
+              <button className="modal-close" onClick={() => setModal(false)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label className="modal-label">Title</label>
+                <input className="modal-form-input" value={edit.title || ''} onChange={e => setEdit({ ...edit, title: e.target.value })} />
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label className="modal-label">Description</label>
+                <textarea className="modal-form-input" rows={3} value={edit.description || ''} onChange={e => setEdit({ ...edit, description: e.target.value })} style={{ resize: 'vertical' }} />
+              </div>
+              <div>
+                <label className="modal-label">Category</label>
+                <input className="modal-form-input" value={edit.category || ''} onChange={e => setEdit({ ...edit, category: e.target.value })} />
+              </div>
+              <div>
+                <label className="modal-label">Venue</label>
+                <input className="modal-form-input" value={edit.venue || ''} onChange={e => setEdit({ ...edit, venue: e.target.value })} />
+              </div>
+              <div>
+                <label className="modal-label">Start Date</label>
+                <input type="date" className="modal-form-input" value={edit.startDate || ''} onChange={e => setEdit({ ...edit, startDate: e.target.value })} />
+              </div>
+              <div>
+                <label className="modal-label">End Date</label>
+                <input type="date" className="modal-form-input" value={edit.endDate || ''} onChange={e => setEdit({ ...edit, endDate: e.target.value })} />
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label className="modal-label">Registration URL</label>
+                <input type="url" className="modal-form-input" value={edit.registrationUrl || ''} onChange={e => setEdit({ ...edit, registrationUrl: e.target.value })} />
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label className="modal-label">Target Years</label>
+                <div style={{ display: 'flex', gap: 16, marginTop: 4, flexWrap: 'wrap' }}>
+                  {['1','2','3','4'].map(y => (
+                    <label key={y} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+                      <input type="checkbox" checked={(edit.targetYears || []).includes(y)} onChange={() => toggleYear(y)} />
+                      Year {y}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={edit.isActive || false} onChange={e => setEdit({ ...edit, isActive: e.target.checked })} />
+                  <span style={{ fontWeight: 600 }}>Mark as Active</span>
+                </label>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-action secondary" onClick={() => setModal(false)}>Cancel</button>
+              <button className="btn-action primary" onClick={save}>Save Program</button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+};
 
-      {dirActiveModal === 'edit' && dirSelectedUser && (
-        <div className="admin-modal-overlay" onClick={() => setDirActiveModal(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="admin-modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-            <div className="admin-modal-header" style={{ padding: '20px', borderBottom: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '18px' }}>Edit User</h2>
-              <button onClick={() => setDirActiveModal(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '24px', cursor: 'pointer', padding: 0 }}>&times;</button>
-            </div>
-            <form onSubmit={handleEditDirUserSubmit}>
-              <div className="admin-modal-body" style={{ padding: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Full Name</label>
-                  <input type="text" className="filter-select" value={dirFormFullName} onChange={e => setDirFormFullName(e.target.value)} required style={{ width: '100%', padding: '10px' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Email Address</label>
-                  <input type="email" className="filter-select" value={dirFormEmail} onChange={e => setDirFormEmail(e.target.value)} required style={{ width: '100%', padding: '10px' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Phone Number</label>
-                  <input type="tel" className="filter-select" value={dirFormPhone} onChange={e => setDirFormPhone(e.target.value)} style={{ width: '100%', padding: '10px' }} />
-                </div>
-                {dirSelectedUser.role === 'Student' && (
-                  <>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Roll Number</label>
-                      <input type="text" className="filter-select" value={dirFormRollNo} onChange={e => setDirFormRollNo(e.target.value)} style={{ width: '100%', padding: '10px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Academic Year</label>
-                      <select className="filter-select" value={dirFormYear} onChange={e => setDirFormYear(e.target.value)} style={{ width: '100%', padding: '10px' }}>
-                        <option value="1">1st Year</option><option value="2">2nd Year</option><option value="3">3rd Year</option><option value="4">4th Year</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Section</label>
-                      <input type="text" className="filter-select" value={dirFormSectionId} onChange={e => setDirFormSectionId(e.target.value)} placeholder="e.g. A" style={{ width: '100%', padding: '10px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Batch</label>
-                      <input type="text" className="filter-select" value={dirFormBatch} onChange={e => setDirFormBatch(e.target.value)} placeholder="e.g. 2023-2027" style={{ width: '100%', padding: '10px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>CGPA</label>
-                      <input type="number" step="0.01" className="filter-select" value={dirFormCgpa} onChange={e => setDirFormCgpa(e.target.value)} style={{ width: '100%', padding: '10px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Academic Status</label>
-                      <select className="filter-select" value={dirFormAcademicStatus} onChange={e => setDirFormAcademicStatus(e.target.value)} style={{ width: '100%', padding: '10px' }}>
-                        <option value="ACTIVE">Active</option><option value="GRADUATED">Graduated</option><option value="DROPOUT">Drop-out</option><option value="SUSPENDED">Suspended</option>
-                      </select>
-                    </div>
-                  </>
-                )}
-              </div>
-              <div className="admin-modal-footer" style={{ padding: '20px', borderTop: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                <button type="button" className="btn-action secondary" onClick={() => setDirActiveModal(null)}>Cancel</button>
-                <button type="submit" className="btn-action primary">Save Changes</button>
-              </div>
-            </form>
-          </div>
+// ═══════════════════════════════════════════════════════════
+// Root HOD Dashboard
+// ═══════════════════════════════════════════════════════════
+const HODDashboard: React.FC<HODDashboardProps> = ({ userSession, handleLogout }) => {
+  const [activeTab, setActiveTab] = useState('directory');
+  const token = userSession.accessToken;
+
+  const renderTab = () => {
+    switch (activeTab) {
+      case 'directory':    return <DirectoryTab token={token} />;
+      case 'mentorship':   return <MentorshipTab token={token} />;
+      case 'documents':   return <DocumentsTab token={token} />;
+      case 'broadcasts':  return <BroadcastsTab token={token} />;
+      case 'escalations': return <EscalationsTab token={token} />;
+      case 'analytics':   return <AnalyticsTab token={token} />;
+      case 'at-risk':     return <AtRiskTab token={token} />;
+      case 'attainment':  return <AttainmentTab token={token} />;
+      case 'trainings':   return <TrainingsTab token={token} />;
+      default:            return null;
+    }
+  };
+
+  const current = TABS.find(t => t.id === activeTab);
+
+  return (
+    <div className="admin-root" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--surface-base)' }}>
+      {/* Responsive Layout Styles */}
+      <style>{`
+        .hod-desktop-sidebar {
+          width: 240px;
+          flex-shrink: 0;
+          background: var(--surface-raised);
+          border-right: 1px solid var(--surface-border);
+          padding: 20px 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .hod-mobile-bottom-nav {
+          display: none;
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          height: 64px;
+          background: var(--surface-raised);
+          border-top: 1px solid var(--surface-border);
+          box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
+          align-items: center;
+          padding: 0 16px;
+          gap: 8px;
+          overflow-x: auto;
+          z-index: 1000;
+          scrollbar-width: none;
+        }
+        .hod-mobile-bottom-nav::-webkit-scrollbar {
+          display: none;
+        }
+        @media (max-width: 768px) {
+          .hod-desktop-sidebar {
+            display: none !important;
+          }
+          .hod-mobile-bottom-nav {
+            display: flex !important;
+          }
+          .hod-main-area {
+            padding-bottom: 90px !important;
+          }
+        }
+      `}</style>
+
+      {/* Topbar with Official CIET LogoHeader */}
+      <header className="admin-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', background: 'var(--surface-raised)', borderBottom: '1px solid var(--surface-border)', flexWrap: 'wrap', gap: '12px' }}>
+        <div className="admin-topbar-left" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <LogoHeader imageStyle={{ height: '36px' }} />
+          <div className="topbar-divider" style={{ height: '24px', width: '1px', background: 'var(--surface-border)' }}></div>
+          <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
+            HOD Portal — {current?.label}
+          </span>
         </div>
-      )}
-
-      {showBroadcastModal && selectedBroadcast && (
-        <div className="admin-modal-overlay" onClick={() => setShowBroadcastModal(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="admin-modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '90%', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-            <div className="admin-modal-header" style={{ padding: '20px', borderBottom: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ color: 'var(--text-primary)', margin: 0, fontSize: '18px' }}>Broadcast Message Details</h2>
-              <button onClick={() => setShowBroadcastModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '24px', cursor: 'pointer', padding: 0 }}>&times;</button>
-            </div>
-            <div className="admin-modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
-              <div>
-                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Title</strong>
-                <div style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>{selectedBroadcast.title}</div>
-              </div>
-              <div style={{ display: 'flex', gap: '24px' }}>
-                <div>
-                  <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Sent By</strong>
-                  <div style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{selectedBroadcast.senderName} ({selectedBroadcast.senderRole})</div>
-                </div>
-                <div>
-                  <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Date</strong>
-                  <div style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{new Date(selectedBroadcast.createdAt).toLocaleString()}</div>
-                </div>
-              </div>
-              <div>
-                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Target Scope</strong>
-                <div style={{ fontSize: '13px', background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid var(--surface-border)', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {selectedBroadcast.specificTarget ? (
-                    <span>Specific Target: <strong>{selectedBroadcast.specificTarget}</strong></span>
-                  ) : (
-                    <>
-                      <span>Roles: <strong>{selectedBroadcast.targetRoles?.join(', ') || 'ALL'}</strong></span>
-                      <span>Dept: <strong>{selectedBroadcast.targetDepartment || 'ALL'}</strong></span>
-                      <span>Year: <strong>{selectedBroadcast.targetYear || 'ALL'}</strong></span>
-                      <span>Section: <strong>{selectedBroadcast.targetSection || 'ALL'}</strong></span>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div>
-                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Recipients Delivered To</strong>
-                <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--accent)' }}>{selectedBroadcast.recipientCount} users</div>
-              </div>
-              <div>
-                <strong style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Message</strong>
-                <div style={{ fontSize: '14px', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--surface-border)', whiteSpace: 'pre-wrap', lineHeight: '1.6', color: 'var(--text-primary)' }}>
-                  {selectedBroadcast.message}
-                </div>
-              </div>
-            </div>
-            <div className="admin-modal-footer" style={{ padding: '20px', borderTop: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="btn-action secondary" onClick={() => setShowBroadcastModal(false)}>Close</button>
-            </div>
+        <div className="admin-topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
+            {userSession.fullName || userSession.email}
+          </span>
+          <div className="status-chip">
+            <div className="led green"></div>
+            Live
           </div>
+          <button className="btn-topbar danger" onClick={handleLogout}>Sign Out</button>
         </div>
-      )}
+      </header>
 
-      {/* MOBILE BOTTOM NAV */}
-      <nav className="admin-bottom-nav">
-        {([
-          { key: 'overview' as Tab, label: 'Home', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
-          { key: 'faculty' as Tab, label: 'Faculty', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
-          { key: 'training' as Tab, label: 'Training', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
-          { key: 'notifications' as Tab, label: 'Alerts', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
-          { key: 'settings' as Tab, label: 'Profile', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg> },
-        ] as { key: Tab; label: string; icon: React.ReactNode }[]).map(item => (
+      {/* Main Body with Sidebar on Desktop, Content in Center */}
+      <div className="admin-body" style={{ flex: 1, display: 'flex', flexDirection: 'row', width: '100%' }}>
+        {/* Desktop Sidebar (No Icons, Text Only) */}
+        <aside className="hod-desktop-sidebar">
+          <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', paddingLeft: '8px' }}>
+            Navigation
+          </div>
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 'var(--r2)',
+                fontWeight: 700,
+                fontSize: '13px',
+                border: 'none',
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'all 0.15s ease',
+                background: activeTab === tab.id ? 'var(--accent-subtle)' : 'transparent',
+                color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-primary)',
+                borderLeft: activeTab === tab.id ? '3px solid var(--accent)' : '3px solid transparent'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+          
+          {/* Section Manager Configurator */}
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed var(--surface-border)' }}>
+            <button
+              onClick={() => {
+                const currentSecs = getSavedSections();
+                const input = prompt("Manage Sections (comma-separated list):", currentSecs.join(", "));
+                if (input !== null) {
+                  const cleaned = input.split(",")
+                    .map(s => s.trim().toUpperCase())
+                    .filter(s => s.length > 0);
+                  if (cleaned.length > 0) {
+                    saveSectionsList(cleaned);
+                    alert("Sections updated to: " + cleaned.join(", "));
+                  }
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '8px 14px',
+                borderRadius: 'var(--r2)',
+                fontWeight: 600,
+                fontSize: '12px',
+                border: '1px dashed var(--surface-border)',
+                background: 'transparent',
+                cursor: 'pointer',
+                color: 'var(--text-secondary)',
+                textAlign: 'left',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              ⚙️ Manage Sections
+            </button>
+          </div>
+
+          <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid var(--surface-border)' }}>
+            <button
+              onClick={handleLogout}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: 'var(--r2)',
+                fontWeight: 700,
+                fontSize: '13px',
+                border: 'none',
+                cursor: 'pointer',
+                textAlign: 'left',
+                background: 'transparent',
+                color: 'var(--danger)'
+              }}
+            >
+              Sign Out
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="admin-main hod-main-area" style={{ flex: 1, padding: '24px', maxWidth: '1400px', width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+          <div className="admin-main-content">
+            {renderTab()}
+          </div>
+
+          {/* CIET Footer like Admin / Student / Faculty dashboards */}
+          <footer className="admin-footer" style={{
+            padding: '36px 24px 28px',
+            background: 'var(--surface-raised)',
+            borderTop: '1px solid var(--surface-border)',
+            borderRadius: 'var(--r3)',
+            width: '100%',
+            boxSizing: 'border-box',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '24px',
+            marginTop: '40px',
+            flexShrink: 0
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '32px'
+            }}>
+              <div style={{ maxWidth: '380px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                  <LogoHeader imageStyle={{ height: '36px', background: '#fff', borderRadius: '4px', padding: '2px' }} />
+                </div>
+                <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                  Approved by AICTE, Affiliated to Acharya Nagarjuna University. Accredited by NAAC with 'A' Grade & NBA.
+                </p>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '48px', flexWrap: 'wrap' }}>
+                <div>
+                  <h5 style={{ margin: '0 0 12px 0', fontSize: '11px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Quick Contacts</h5>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>📞 0863 - 2524112 / 113</span>
+                    </li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <a href="mailto:principal@chalapathiengg.ac.in" style={{ color: 'inherit', textDecoration: 'none' }}>✉️ principal@chalapathiengg.ac.in</a>
+                    </li>
+                  </ul>
+                </div>
+                
+                <div>
+                  <h5 style={{ margin: '0 0 12px 0', fontSize: '11px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Address</h5>
+                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.6', maxWidth: '240px' }}>
+                    Chalapathi Nagar, Lam,<br />
+                    Guntur District, Andhra Pradesh<br />
+                    PIN – 522 034, India
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div style={{
+              borderTop: '1px solid var(--surface-border)',
+              paddingTop: '16px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '12px',
+              fontSize: '11px',
+              color: 'var(--text-muted)',
+              fontWeight: 500
+            }}>
+              <span>© {new Date().getFullYear()} CIET. All Rights Reserved.</span>
+              <a href="http://chalapathiengg.ac.in" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Official Portal →</a>
+            </div>
+          </footer>
+        </main>
+      </div>
+
+      {/* Mobile & Tablet Bottom Navigation (<768px only) */}
+      <nav className="hod-mobile-bottom-nav">
+        {TABS.map(tab => (
           <button
-            key={item.key}
-            className={`admin-bottom-nav-item ${activeTab === item.key ? 'active' : ''}`}
-            onClick={() => setActiveTab(item.key)}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '20px',
+              fontWeight: 700,
+              fontSize: '13px',
+              border: 'none',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.2s ease',
+              background: activeTab === tab.id ? 'var(--accent)' : 'transparent',
+              color: activeTab === tab.id ? '#ffffff' : 'var(--text-secondary)',
+              boxShadow: activeTab === tab.id ? '0 2px 8px var(--accent-glow)' : 'none'
+            }}
           >
-            {item.icon}
-            <span>{item.label}</span>
-            {item.key === 'notifications' && hodNotifications.filter((n: any) => !n.read).length > 0 && (
-              <span className="admin-bottom-badge">{hodNotifications.filter((n: any) => !n.read).length}</span>
-            )}
+            {tab.label}
           </button>
         ))}
       </nav>
     </div>
   );
-}
+};
+
+export default HODDashboard;
+

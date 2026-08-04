@@ -6,6 +6,12 @@ spring:
     mongodb:
       uri: ${MONGODB_URI:mongodb://ciet_db:Ram9182%40@ac-kb7tcsk-shard-00-00.t4fchpc.mongodb.net:27017,ac-kb7tcsk-shard-00-01.t4fchpc.mongodb.net:27017,ac-kb7tcsk-shard-00-02.t4fchpc.mongodb.net:27017/erp_portal?replicaSet=atlas-nq168l-shard-0&ssl=true&authSource=admin&tlsAllowInvalidCertificates=true}
       database: ${MONGODB_NAME:erp_portal}
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+    time-zone: UTC
   mail:
     host: ${EMAIL_HOST:localhost}
     port: ${EMAIL_PORT:587}
@@ -17,6 +23,12 @@ spring:
           auth: true
           starttls:
             enable: ${EMAIL_USE_TLS:true}
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 55MB
+
 
 app:
   jwt:

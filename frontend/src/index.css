@@ -26,14 +26,14 @@
   --text-muted:     hsl(0, 0%, 45%);
   --text-inverse:   hsl(0, 0%, 100%);       /* white */
 
-  /* ── Sleek AI Tech Accent (Red) ── */
-  --accent:         hsl(0, 80%, 55%);
-  --accent-light:   hsl(0, 80%, 65%);
-  --accent-dark:    hsl(0, 80%, 45%);
-  --accent-subtle:  hsl(0, 80%, 95%);
-  --accent-muted:   hsl(0, 80%, 90%);
-  --accent-glow:    hsla(0, 80%, 55%, 0.15);
-  --accent-border:  hsl(0, 80%, 55%);
+  /* ── Sleek AI Tech Accent (Premium Grey/Slate) ── */
+  --accent:         hsl(215, 15%, 45%);
+  --accent-light:   hsl(215, 15%, 55%);
+  --accent-dark:    hsl(215, 15%, 35%);
+  --accent-subtle:  hsl(215, 15%, 95%);
+  --accent-muted:   hsl(215, 15%, 90%);
+  --accent-glow:    hsla(215, 15%, 45%, 0.15);
+  --accent-border:  hsl(215, 15%, 45%);
 
   /* ── Light card surfaces (For light mode if ever used) ── */
   --card-bg:        hsl(0, 0%, 100%);

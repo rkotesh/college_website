@@ -25,6 +25,10 @@ public class SyllabusCoverage {
     @Indexed
     private String departmentId;
 
+    private String facultyUserId;
+    private String sectionId;
+    private String academicYear;
+
     private int totalTopics;
     private int coveredTopics;
 
