@@ -287,17 +287,19 @@ const MentorshipTab: React.FC<{ token: string }> = ({ token }) => {
     // 1. Fetch mentors/faculty — independent block
     try {
       const facRes = await axios.get(`${API}/hod/all-faculty`, h);
-      console.log('[HOD] Faculty/Mentors:', facRes.data?.length);
-      setMentors(facRes.data || []);
+      const facultyList = asArray(facRes.data);
+      console.log('[HOD] Faculty/Mentors:', facultyList.length);
+      setMentors(facultyList);
     } catch (e: any) {
       console.error('[HOD] faculty error:', e?.response?.status, e?.message);
+      setMentors([]);
     }
 
     // 2. Fetch assignments — independent block, 500 won't crash students
     let activeAssignments: any[] = [];
     try {
       const assignRes = await axios.get(`${API}/hod/mentor/assignments`, h);
-      activeAssignments = assignRes.data || [];
+      activeAssignments = asArray(assignRes.data);
       console.log('[HOD] Assignments:', activeAssignments.length);
       setAssignments(activeAssignments);
     } catch (e: any) {
@@ -311,9 +313,8 @@ const MentorshipTab: React.FC<{ token: string }> = ({ token }) => {
       if (yearFilter !== 'ALL') params.append('year', yearFilter);
       if (sectionFilter !== 'ALL') params.append('sectionId', sectionFilter);
       const stuRes = await axios.get(`${API}/hod/all-students?${params}`, h);
-      console.log('[HOD] Students:', stuRes.data?.length);
-
-      const allStudents: any[] = stuRes.data || [];
+      const allStudents: any[] = asArray(stuRes.data);
+      console.log('[HOD] Students:', allStudents.length);
       setTotalStudentCount(allStudents.length);
 
       const assignedRolls = new Set(activeAssignments.map((a: any) => (a.rollNo || '').toLowerCase()));
@@ -325,6 +326,8 @@ const MentorshipTab: React.FC<{ token: string }> = ({ token }) => {
       setStudents(unassigned);
     } catch (e: any) {
       console.error('[HOD] students error:', e?.response?.status, e?.message);
+      setStudents([]);
+      setTotalStudentCount(0);
     }
 
     setLoading(false);
