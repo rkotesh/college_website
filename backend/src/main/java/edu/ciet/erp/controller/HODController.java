@@ -1183,7 +1183,7 @@ public class HODController {
             for (User u : all) {
                 if (u == null || u.getRole() == null) continue;
                 // Skip system/admin roles
-                if (u.getRole() == Role.Admin || u.getRole() == Role.Parent) continue;
+                if (u.getRole() == Role.Director || u.getRole() == Role.Parent) continue;
                 Map<String, Object> m = new HashMap<>();
                 m.put("id",       u.getId() != null ? u.getId() : "");
                 m.put("fullName", u.getFullName() != null ? u.getFullName() : (u.getEmail() != null ? u.getEmail() : "User"));
