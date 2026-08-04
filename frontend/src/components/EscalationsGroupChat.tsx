@@ -3,6 +3,16 @@ import axios from 'axios';
 
 const API = '/api/v1';
 
+const normalizeList = (value: any): any[] => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.users)) return value.users;
+  if (Array.isArray(value?.students)) return value.students;
+  if (Array.isArray(value?.faculty)) return value.faculty;
+  if (Array.isArray(value?.facultyMembers)) return value.facultyMembers;
+  return [];
+};
+
 interface EscalationsGroupChatProps {
   token: string;
   userEmail: string;
@@ -147,7 +157,7 @@ export const EscalationsGroupChat: React.FC<EscalationsGroupChatProps> = ({
     try {
       setLoading(true);
       const r = await axios.get(fetchEndpoint, h);
-      const deduped = dedupe(Array.isArray(r.data) ? r.data : []);
+      const deduped = dedupe(normalizeList(r.data));
       setThreads(deduped);
       if (keepActive && active) {
         const updated = deduped.find((t: any) => t.thread?.id === active.thread?.id);
@@ -191,17 +201,19 @@ export const EscalationsGroupChat: React.FC<EscalationsGroupChatProps> = ({
       let data: any[] = [];
       try {
         const r = await axios.get(`${API}/hod/escalations/users`, h);
-        data = Array.isArray(r.data) ? r.data : [];
+        data = normalizeList(r.data);
       } catch {
         try {
           const [stuRes, facRes] = await Promise.allSettled([
             axios.get(`${API}/hod/all-students`, h),
             axios.get(`${API}/hod/all-faculty`, h),
           ]);
-          if (stuRes.status === 'fulfilled' && Array.isArray(stuRes.value.data))
-            data.push(...stuRes.value.data.map((s: any) => ({ ...s, role: 'Student' })));
-          if (facRes.status === 'fulfilled' && Array.isArray(facRes.value.data))
-            data.push(...facRes.value.data.map((f: any) => ({ ...f, role: f.role || 'Faculty' })));
+          if (stuRes.status === 'fulfilled') {
+            data.push(...normalizeList(stuRes.value.data).map((s: any) => ({ ...s, role: 'Student' })));
+          }
+          if (facRes.status === 'fulfilled') {
+            data.push(...normalizeList(facRes.value.data).map((f: any) => ({ ...f, role: f.role || 'Faculty' })));
+          }
         } catch { /* ignore */ }
       }
       setAllUsers(data);

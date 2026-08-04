@@ -29,6 +29,15 @@ interface TrainingProgram {
   isActive: boolean; category: string; targetYears: string[];
 }
 
+const asArray = (value: any): any[] => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.results)) return value.results;
+  if (Array.isArray(value?.records)) return value.records;
+  return [];
+};
+
 const TABS = [
   { id: 'directory',    label: 'Directory' },
   { id: 'mentorship',   label: 'Mentorship' },
@@ -46,7 +55,10 @@ const DEFAULT_SECTIONS = ['A', 'B', 'C', 'D'];
 const getSavedSections = (): string[] => {
   try {
     const saved = localStorage.getItem('ciet_erp_sections');
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : DEFAULT_SECTIONS;
+    }
   } catch (e) {
     console.error('Failed to parse sections', e);
   }
@@ -99,7 +111,8 @@ const DirectoryTab: React.FC<{ token: string }> = ({ token }) => {
       if (yearFilter !== 'ALL') params.append('year', yearFilter);
       if (sectionFilter !== 'ALL') params.append('sectionId', sectionFilter);
       const res = await axios.get(`${API}/portal/directory?${params}`, h);
-      setUsers(Array.isArray(res.data) ? res.data : []);
+      const payload = asArray(res.data);
+      setUsers(payload);
     } catch (e: any) {
       console.error('[Directory] fetch error:', e?.response?.status, e?.message);
       setError(e?.response?.status === 500 ? 'Server error. Please restart the backend.' : 'Could not load directory. Is the backend running?');
@@ -913,7 +926,7 @@ const DocumentsTab: React.FC<{ token: string }> = ({ token }) => {
     try {
       setLoading(true);
       const r = await axios.get(`${API}/hod/documents`, h);
-      setDocs(r.data);
+      setDocs(asArray(r.data));
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -1291,7 +1304,7 @@ const AnalyticsTab: React.FC<{ token: string }> = ({ token }) => {
 
   useEffect(() => {
     axios.get(`${API}/hod/analytics`, h)
-      .then(r => setData(r.data))
+      .then(r => setData(r.data || {}))
       .catch(e => console.error(e))
       .finally(() => setLoading(false));
   }, []);
@@ -1370,7 +1383,7 @@ const AtRiskTab: React.FC<{ token: string }> = ({ token }) => {
 
   useEffect(() => {
     axios.get(`${API}/hod/at-risk`, h)
-      .then(r => setAtRisk(r.data))
+      .then(r => setAtRisk(asArray(r.data)))
       .catch(e => console.error(e))
       .finally(() => setLoading(false));
   }, []);
@@ -1443,7 +1456,7 @@ const AttainmentTab: React.FC<{ token: string }> = ({ token }) => {
 
   useEffect(() => {
     axios.get(`${API}/hod/accreditation`, h)
-      .then(r => setData(r.data))
+      .then(r => setData(asArray(r.data)))
       .catch(e => console.error(e))
       .finally(() => setLoading(false));
   }, []);
@@ -1509,7 +1522,7 @@ const TrainingsTab: React.FC<{ token: string }> = ({ token }) => {
     try {
       setLoading(true);
       const r = await axios.get(`${API}/hod/trainings`, h);
-      setTrainings(r.data);
+      setTrainings(asArray(r.data));
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
