@@ -4,8 +4,8 @@ import LogoHeader from '../components/LogoHeader';
 import { EscalationsGroupChat } from '../components/EscalationsGroupChat';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-// Use relative path — Vite proxy forwards /api → http://localhost:8080
-const API = '/api/v1';
+const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || (import.meta.env.DEV ? '' : 'https://ciet-erp.onrender.com');
+const API = import.meta.env.DEV ? '/api/v1' : `${API_BASE_URL}/api/v1`;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface UserSession {

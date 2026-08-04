@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 
-const API = '/api/v1';
+const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || (import.meta.env.DEV ? '' : 'https://ciet-erp.onrender.com');
+const API = import.meta.env.DEV ? '/api/v1' : `${API_BASE_URL}/api/v1`;
 
 const normalizeList = (value: any): any[] => {
   if (Array.isArray(value)) return value;
