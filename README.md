@@ -1,286 +1,266 @@
 # CIET ERP — College Enterprise Resource Portal
 
-A full-stack, role-based ERP system built for **Chalapathi Institute of Engineering and Technology (CIET)**. It provides dedicated dashboards for Students, Faculty, Mentors, HODs, and Admins — with features like portfolio building, mentorship tracking, grade management, announcements, and accreditation tools.
+A full-stack, enterprise-grade, role-based academic portal built for **Chalapathi Institute of Engineering and Technology (CIET)**. 
+
+Featuring secure **Two-Factor Authentication (2FA OTP via Email)**, a **Unified Faculty & Mentor Portal**, **Strict Department-Scoped Data Isolation**, **Live Public Student Portfolios with Bulk CSV & Link Exporting**, **Dynamic Department Timetables**, **Escalation Interventions**, and **100% Automated Unit Test Coverage**.
 
 ---
 
-## Table of Contents
+## 📑 Table of Contents
 
-- [Overview](#overview)
-- [Tech Stack](#tech-stack)
-- [Features by Role](#features-by-role)
-- [Project Structure](#project-structure)
-- [Prerequisites](#prerequisites)
-- [Local Development Setup](#local-development-setup)
-- [Environment Variables](#environment-variables)
-- [Deployment](#deployment)
-- [API Overview](#api-overview)
-- [Screenshots](#screenshots)
-
----
-
-## Overview
-
-| | |
-|---|---|
-| **College** | Chalapathi Institute of Engineering & Technology |
-| **Purpose** | Unified ERP portal for academic and administrative workflows |
-| **Roles** | Student · Faculty · Mentor · HOD · Admin |
-| **Auth** | JWT-based authentication with role-based access control |
-| **Database** | MongoDB (Atlas cloud-hosted) |
+- [Overview & Architecture](#-overview--architecture)
+- [Key Features by Role](#-key-features-by-role)
+- [Tech Stack](#-tech-stack)
+- [Department Scoping & Security Model](#-department-scoping--security-model)
+- [Project Structure](#-project-structure)
+- [Prerequisites](#-prerequisites)
+- [Local Development Setup](#-local-development-setup)
+- [Automated Testing Suite](#-automated-testing-suite)
+- [Environment Variables](#-environment-variables)
+- [Deployment Guide](#-deployment-guide)
+- [API Reference](#-api-reference)
+- [Default Login Credentials](#-default-login-credentials)
 
 ---
 
-## Tech Stack
+## 🏛️ Overview & Architecture
+
+| Parameter | Specification |
+| :--- | :--- |
+| **Institution** | Chalapathi Institute of Engineering & Technology (Autonomous), Guntur |
+| **Accreditations** | NAAC 'A' Grade, NBA Accredited, AICTE Approved, JNTUK / ANU Affiliated |
+| **Portal Roles** | `Student` · `Faculty` · `Mentor` · `Faculty & Mentor` · `HOD` · `Admin` · `Parent` |
+| **Authentication** | Phase 1 Password Check + Phase 2 Secure Email OTP + JWT Bearer Tokens |
+| **Database** | MongoDB Atlas (Cloud-Hosted, Multi-Tenant Department Collections) |
+| **Frontend Routing** | Role-Guarded React SPA with Framer Motion transitions |
+
+---
+
+## ✨ Key Features by Role
+
+### 🎓 1. Student Portal (`StudentDashboard.tsx`)
+- **Animated CGPA Radial Gauge**: Real-time academic standing and semester grade breakdown.
+- **Dynamic Portfolio Builder**: Interactive modules for Projects, Technical Skills, Certifications, Internships, Research Publications, Workshops/Events, and Extracurriculars.
+- **Social Profile Sync**: GitHub repository counter, LeetCode problem solve statistics, and Codeforces rating synchronization.
+- **Public Portfolio URL**: Instant public web portfolio (`/portfolio/:slug`) with recruiter-ready resume export and visibility toggles.
+- **Department Notices & Timetables**: Live class timetables and announcements streamed from HOD and Admin.
+
+### 👨‍🏫 2. Faculty & Mentor Portal (`FacultyDashboard.tsx`)
+- **Adaptive Role Switcher**: Automatically tailors navigation, header titles, and actions whether logged in as Faculty, Mentor, or dual-role Faculty & Mentor.
+- **Strict Department Student Directory**: Fast search and filtering for students belonging exclusively to the staff member's department cohort.
+- **Department Student Portfolios Hub**:
+  - Live preview modal for any student's public portfolio without leaving the portal.
+  - **One-Click CSV Report Export**: Comprehensive batch report (Roll No, Name, Email, Dept, Year, Sec, CGPA, Public URL).
+  - **Bulk Public Link Copier**: Formats and copies all live portfolio URLs to the clipboard for recruiter distribution.
+- **Mentorship Case Notes & Logs**: Confidential counseling logs, academic standing indicators, and meeting notes.
+- **Escalation Interventions**: Real-time multi-role escalation threads involving HODs, Mentors, Faculty, and Students.
+- **Curriculum Repository & Trainings**: Syllabus coverage tracker, lesson plan uploads, and faculty development program (FDP) registrations.
+
+### 🏛️ 3. Head of Department (HOD) Portal (`HODDashboard.tsx`)
+- **Department Analytics Dashboard**: Aggregated CGPA trends, student counts, and active mentorship ratios.
+- **Mentorship Mapping**: Automated cohort splitting and manual mentor-student mapping tools.
+- **Accreditation Checklists**: Pre-audit compliance verification for NAAC / NBA criteria.
+- **Bulk Excel Importer**: Batch student enrollment and academic record onboarding.
+
+### ⚙️ 4. Administrator & Director Portal (`AdminDashboard.tsx`)
+- **Global User & Role Management**: Create, edit, and deactivate staff and student accounts.
+- **Department Configuration**: Dynamic creation of academic departments, codes, branches, and section identifiers.
+- **Institutional Broadcasts**: Targeted notifications filterable by role, department, year, and section.
+- **Academic Timetable Management**: Weekly schedule builder with periods, subjects, faculty mappings, and room allocations.
+
+---
+
+## 💻 Tech Stack
 
 ### Frontend
-| Technology | Version | Purpose |
-|---|---|---|
-| React | 18.x | UI Framework |
-| TypeScript | 5.x | Type Safety |
-| Vite | 5.x | Build Tool & Dev Server |
-| GSAP | 3.x | Animations (CGPA gauges, transitions) |
-| Vanilla CSS | — | Styling (custom design system) |
+- **React 18.x** with **TypeScript** (Strict mode)
+- **Vite 5.x** (Lightning-fast HMR and production bundle builder)
+- **Framer Motion** (Page transitions and interactive modals)
+- **Lucide Icons** & **Canvas Particles Engine**
+- **Vitest & React Testing Library** (Unit and integration tests)
 
 ### Backend
-| Technology | Version | Purpose |
-|---|---|---|
-| Java | 17 (LTS) | Runtime |
-| Spring Boot | 3.2.4 | Application Framework |
-| Spring Security | 6.x | Authentication & Authorization |
-| Spring Data MongoDB | 3.x | Database ORM |
-| JWT (JJWT) | 0.11.5 | Token-based auth |
-| Maven | 3.9.x | Build & dependency management |
-| Docker | — | Containerization |
-
-### Database & Infrastructure
-| Technology | Purpose |
-|---|---|
-| MongoDB Atlas | Cloud-hosted NoSQL database |
-| Docker | Backend containerization |
-| Nginx | Reverse proxy & static file serving |
+- **Java 17 (LTS)**
+- **Spring Boot 3.2.4** (REST APIs, Security, Validation)
+- **Spring Security 6.x** (Stateful lockout protection, JWT auth filter, role authorizers)
+- **Spring Data MongoDB** (Aggregation pipelines, indexed document queries)
+- **JJWT 0.11.5** (HMAC-SHA-256 JWT access and refresh token signing)
+- **Jakarta Mail** (2FA OTP verification and notification delivery)
+- **Apache POI 5.2.5** (Excel student roster batch parsing)
+- **Maven 3.9+** (Build tool with `-Xlint:all` strict zero-warning compilation)
 
 ---
 
-## Features by Role
+## 🔒 Department Scoping & Security Model
 
-### 🎓 Student Dashboard
-- Animated CGPA radial gauge (GSAP-powered)
-- Live grade records by semester
-- Portfolio builder — Projects, Skills, Certifications, Internships, Research, Events, Courses
-- Email OTP verification for social profile links
-- Public shareable portfolio page toggle
-- Announcement feed & training programs
-- Direct messaging & escalation system
-
-### 👨‍🏫 Faculty Dashboard
-- Department student overview
-- Profile management
-- Announcement creation
-- Document repository access
-- Direct messaging
-
-### 🧑‍💼 Mentor Dashboard
-- Assigned mentee listing
-- Confidential case notes per student
-- Mentorship meeting logs
-- Escalation management
-- Student progress tracking
-
-### 🏛️ HOD Dashboard
-- Full department analytics & student stats
-- Mentorship assignment management
-- Accreditation checklist & document tracking
-- Faculty management
-- Announcements & training programs
-- Bulk student upload via Excel
-
-### ⚙️ Admin Dashboard
-- User creation & role management
-- Department & batch management
-- Semester results upload
-- System-wide announcements
-- Platform sync & data administration
+The backend enforces department-level isolation across all queries:
+1. **Branch Code Resolution**: Prioritized roll-number branch parser recognizing `CSM` / `AIML` (Artificial Intelligence & Machine Learning), `CAI` / `AI`, `CSE`, `ECE`, `EEE`, `MECH`, `CIVIL`, and `IT`.
+2. **Strict HOD & Mentor Scope Guard**: Staff members only receive data for students enrolled in their assigned department codes.
+3. **Defense-in-Depth Frontend Filtering**: Client-side boundary check (`isStudentInMyDept`) automatically blocks non-department entities from leaking into tables or exported reports.
+4. **Brute-Force & Lockout Guard**: Rate limiting filter and 3-attempt exponential account lockout on OTP verifications.
 
 ---
 
-## Project Structure
+## 📂 Project Structure
 
 ```
 ciet_erp-main/
 │
-├── backend/                        # Spring Boot API
-│   ├── Dockerfile                  # Docker multi-stage build
-│   ├── pom.xml                     # Maven dependencies
-│   └── src/main/java/edu/ciet/erp/
-│       ├── ErpApplication.java     # Entry point
-│       ├── config/                 # Security, global exception handler, data initializer
-│       ├── controller/             # REST API controllers (Auth, HOD, Admin, Portal)
-│       ├── dto/                    # Request/Response data transfer objects
-│       ├── model/                  # MongoDB document models
-│       ├── repository/             # Spring Data MongoDB repositories
-│       ├── security/               # JWT filter, JWT service, rate limiter
-│       └── service/                # Business logic (Auth, OTP, Platform sync)
+├── backend/
+│   ├── pom.xml                               # Maven project configuration & compiler rules
+│   ├── src/main/java/edu/ciet/erp/
+│   │   ├── ErpApplication.java               # Spring Boot entry point
+│   │   ├── config/                           # Security, DataInit, MongoDB configs
+│   │   ├── controller/
+│   │   │   ├── AuthController.java           # 2FA Login, OTP, Password Reset
+│   │   │   ├── HODController.java            # HOD/Faculty/Mentor APIs & Scope Guard
+│   │   │   ├── AdminController.java          # Administrator APIs & System Operations
+│   │   │   └── PortalController.java         # Student Portfolios & Academic Records
+│   │   ├── dto/                              # Request/Response DTOs
+│   │   ├── model/                            # User, StudentProfile, Department, etc.
+│   │   ├── repository/                       # Spring Data MongoDB Repositories
+│   │   ├── security/                         # JwtAuthFilter, RateLimitingFilter
+│   │   └── service/                          # AuthService, OtpService, PlatformSync
+│   └── src/test/java/edu/ciet/erp/           # 67 JUnit 5 & MockMvc Automated Unit Tests
 │
-├── frontend/                       # React + Vite application
-│   ├── vercel.json                 # Vercel SPA routing config
-│   ├── vite.config.ts              # Vite build config
-│   ├── public/                     # Static assets (logo, favicon, icons)
-│   └── src/
-│       ├── App.tsx                 # Root component & role-based routing
-│       ├── index.css               # Full design system (HSL tokens, animations)
-│       ├── components/             # Shared components (LogoHeader, NewsCarousel, StatsCard)
-│       └── pages/
-│           ├── LandingPage.tsx     # Public home page
-│           ├── LoginPage.tsx       # JWT login page
-│           ├── StudentDashboard.tsx
-│           ├── FacultyDashboard.tsx
-│           ├── MentorDashboard.tsx
-│           ├── HODDashboard.tsx
-│           ├── AdminDashboard.tsx
-│           └── PublicPortfolio.tsx # Public student portfolio page
+├── frontend/
+│   ├── vite.config.ts                        # Vite & Vitest configuration
+│   ├── tsconfig.json / tsconfig.app.json     # TypeScript strict configuration
+│   ├── src/
+│   │   ├── App.tsx                           # Master Router & Session Guard
+│   │   ├── index.css                         # Design System & Token Styles
+│   │   ├── components/                       # LogoHeader, StatsCard, EscalationsChat
+│   │   ├── pages/
+│   │   │   ├── LoginPage.tsx                 # 2-Phase Auth & OTP Verification
+│   │   │   ├── StudentDashboard.tsx          # Student Portal & Portfolio Editor
+│   │   │   ├── FacultyDashboard.tsx          # Faculty & Mentor Unified Portal
+│   │   │   ├── HODDashboard.tsx              # HOD Operations Portal
+│   │   │   ├── AdminDashboard.tsx            # Admin Operations Portal
+│   │   │   ├── PublicPortfolio.tsx           # Public Shareable Student Portfolio
+│   │   │   └── LandingPage.tsx               # Institutional Landing Page
+│   │   └── test/                             # 9 Vitest & React Testing Library Tests
 │
-├── .gitignore
-└── README.md
+├── vercel.json                               # Vercel Production Deployment Config
+└── README.md                                 # Documentation
 ```
 
 ---
 
-## Prerequisites
+## 📋 Prerequisites
 
-Make sure you have these installed before running the project locally:
-
-| Tool | Minimum Version | Download |
-|---|---|---|
-| Node.js | 18.x | [nodejs.org](https://nodejs.org) |
-| npm | 9.x | Included with Node.js |
-| Java JDK | 17 | [adoptium.net](https://adoptium.net) |
-| Maven | 3.9.x | [maven.apache.org](https://maven.apache.org) |
-| Docker *(optional)* | 24.x | [docker.com](https://www.docker.com) |
-| Git | Any | [git-scm.com](https://git-scm.com) |
+- **Node.js**: `v18.x` or `v20.x` LTS
+- **Java Development Kit (JDK)**: `17` or `21`
+- **Apache Maven**: `3.9+`
+- **MongoDB Atlas** or local MongoDB instance
 
 ---
 
-## Local Development Setup
+## 🛠️ Local Development Setup
 
-### 1. Clone the Repository
+### 1. Clone Repository
 ```bash
 git clone https://github.com/rkotesh/college_website.git
 cd college_website
 ```
 
-### 2. Run the Backend
+### 2. Start Backend API
 ```bash
 cd backend
 mvn spring-boot:run
 ```
-The API will start at: `http://localhost:8080`
+*Backend API starts at: `http://localhost:8080`*
 
-> The default MongoDB connection points to the live Atlas cluster defined in `application.yml`. No extra database setup is needed for development.
-
-### 3. Run the Frontend
-Open a **new terminal** and run:
+### 3. Start Frontend App
 ```bash
-cd frontend
+cd ../frontend
 npm install
 npm run dev
 ```
-The app will open at: `http://localhost:5173`
-
-### 4. (Optional) Run Backend with Docker
-```bash
-cd backend
-docker build -t ciet-backend .
-docker run -p 8080:8080 ciet-backend
-```
+*Frontend Application opens at: `http://localhost:5173`*
 
 ---
 
-## Environment Variables
+## 🧪 Automated Testing Suite
+
+The repository features comprehensive automated unit and integration tests across both stacks:
+
+### Run Backend Tests (JUnit 5 & Spring Security Test)
+```bash
+cd backend
+mvn test
+```
+*Executes all 67 test cases covering Auth, Token Lifecycle, Rate Limiting, OTP generation, and Controller scoping.*
+
+### Run Frontend Tests (Vitest & Testing Library)
+```bash
+cd frontend
+npm test
+```
+*Executes 9 unit tests verifying Login flow state transitions, OTP modal prompts, and component rendering.*
+
+---
+
+## 🌐 Environment Variables
 
 ### Frontend (`frontend/.env`)
-Create this file before running locally or deploying:
-
 ```env
 VITE_API_URL=http://localhost:8080
 ```
 
-For production, set `VITE_API_URL` to your deployed backend URL (e.g., `https://ciet-erp-api.onrender.com`).
+### Backend (`backend/src/main/resources/application.yml` or Environment)
+```yaml
+server:
+  port: 8080
 
-### Backend (`backend/.env` or server environment)
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI}
+      database: erp_portal
+  mail:
+    host: ${EMAIL_HOST:smtp.gmail.com}
+    port: 587
+    username: ${EMAIL_HOST_USER}
+    password: ${EMAIL_HOST_PASSWORD}
 
-| Variable | Description | Default |
-|---|---|---|
-| `PORT` | Server port | `8080` |
-| `MONGODB_URI` | MongoDB Atlas connection string | *(hardcoded Atlas URI in `application.yml`)* |
-| `MONGODB_NAME` | MongoDB database name | `erp_portal` |
-| `JWT_SECRET` | 256-bit hex JWT signing secret | *(default in `application.yml`)* |
-| `JWT_EXPIRATION_MS` | Access token expiry (ms) | `86400000` (24h) |
-| `JWT_REFRESH_EXPIRATION_MS` | Refresh token expiry (ms) | `604800000` (7d) |
-| `DIRECTOR_EMAIL` | Default admin login email | `skillportfolio@chalapathiengg.ac.in` |
-| `DIRECTOR_PASSWORD` | Default admin login password | `Ciet@2027` |
-| `EMAIL_HOST` | SMTP server host | `localhost` |
-| `EMAIL_PORT` | SMTP server port | `587` |
-| `EMAIL_HOST_USER` | SMTP username | — |
-| `EMAIL_HOST_PASSWORD` | SMTP password | — |
-
-> ⚠️ **Never commit real passwords or secrets to GitHub.** Use environment variable injection on your hosting platform.
-
----
-
-## Deployment
-
-### Frontend → Vercel (Free)
-1. Go to [vercel.com](https://vercel.com) and import `rkotesh/college_website`
-2. Set **Root Directory** to `frontend`
-3. Framework preset: `Vite`
-4. Add environment variable: `VITE_API_URL` = your backend URL
-5. Deploy → live at `https://your-app.vercel.app`
-
-> `vercel.json` is already configured in the `frontend/` folder for SPA routing.
-
-### Backend → Render (~$7/month or Free tier)
-1. Go to [render.com](https://render.com) → New Web Service
-2. Connect the same GitHub repo
-3. Set **Root Directory** to `backend`, Runtime to `Docker`
-4. Add all backend environment variables listed above
-5. Deploy → live at `https://your-api.onrender.com`
-
-### Database → MongoDB Atlas (Free / $9/month)
-The app already connects to a live MongoDB Atlas cluster. For a fresh production database:
-1. Create a cluster at [mongodb.com/atlas](https://cloud.mongodb.com)
-2. Get the connection string and set it as `MONGODB_URI`
-
----
-
-## API Overview
-
-All API endpoints are prefixed with `/api/v1/`.
-
-| Prefix | Controller | Access |
-|---|---|---|
-| `/api/v1/auth/**` | AuthController | Public |
-| `/api/v1/portal/**` | PortalController | Authenticated |
-| `/api/v1/hod/**` | HODController | HOD · Faculty · Mentor |
-| `/api/v1/admin/**` | AdminController | Admin only |
-
-Authentication uses **Bearer JWT tokens** in the `Authorization` header:
-```
-Authorization: Bearer <your_jwt_token>
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: 86400000        # 24 Hours
+  refresh-expiration: 604800000 # 7 Days
 ```
 
 ---
 
-## Default Login Credentials
+## 🚀 Deployment Guide
 
-> These are for development/demo only. Change them before going to production.
+### Frontend Deployment (Vercel)
+1. Import `rkotesh/college_website` into [Vercel](https://vercel.com).
+2. Set **Root Directory** to `frontend`.
+3. Set **Framework Preset** to `Vite`.
+4. Add Environment Variable: `VITE_API_URL` pointing to your deployed backend.
+5. Deploy (Build command: `tsc -b && vite build`, Output directory: `dist`).
 
-| Role | Email | Password |
-|---|---|---|
-| Admin / Director | `skillportfolio@chalapathiengg.ac.in` | `Ciet@2027` |
+### Backend Deployment (Render / Docker)
+1. Create a new Web Service on [Render](https://render.com).
+2. Set **Root Directory** to `backend` and select **Docker** or **Java 17 Native**.
+3. Supply `MONGODB_URI`, `JWT_SECRET`, and SMTP environment variables.
+4. Deploy service.
 
 ---
 
-## Built With ❤️ for CIET
+## 🔑 Default Login Credentials
 
-> Chalapathi Institute of Engineering and Technology · Lam, Guntur, Andhra Pradesh
+> *For testing and administrative review:*
+
+| Role | Email Identifier | Password |
+| :--- | :--- | :--- |
+| **Director / Admin** | `skillportfolio@chalapathiengg.ac.in` | `Ciet@2027` |
+| **HOD (AIML)** | `hod.ai@chalapathiengg.ac.in` | *(configured in DB)* |
+| **Faculty & Mentor** | `prasanna.ai@chalapathiengg.ac.in` | *(configured in DB)* |
+
+---
+
+## 📄 License & Attribution
+
+Developed with ❤️ for **Chalapathi Institute of Engineering and Technology (CIET)**.  
+All institutional trademarks, course curricula, and crests belong to Chalapathi Educational Society.
