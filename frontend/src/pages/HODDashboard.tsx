@@ -13,6 +13,9 @@ interface UserSession {
   email: string;
   fullName?: string;
   accessToken: string;
+  departmentId?: string;
+  departmentIds?: string[];
+  isMentor?: boolean;
 }
 
 interface HODDashboardProps {

@@ -4,7 +4,6 @@ import AdminDashboard from './pages/AdminDashboard';
 import StudentDashboard from './pages/StudentDashboard';
 import PublicPortfolio from './pages/PublicPortfolio';
 import HODDashboard from './pages/HODDashboard';
-import MentorDashboard from './pages/MentorDashboard';
 import FacultyDashboard from './pages/FacultyDashboard';
 import LandingPage from './pages/LandingPage';
 import LogoHeader from './components/LogoHeader';

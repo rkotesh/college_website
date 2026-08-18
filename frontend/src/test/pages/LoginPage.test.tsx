@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import LoginPage from '../../pages/LoginPage';
@@ -45,7 +44,7 @@ describe('LoginPage Component', () => {
 
   it('switches to OTP verification phase when login phase 1 succeeds', async () => {
     // Mock global fetch for Phase 1 login
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       text: async () => JSON.stringify({
         status: 'OTP_SENT',
