@@ -17,4 +17,5 @@ public class LoginResponse {
     private String role;
     private String email;
     private String fullName;
+    private Boolean isMentor;
 }

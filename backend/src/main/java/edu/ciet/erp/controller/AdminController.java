@@ -108,6 +108,7 @@ public class AdminController {
             map.put("lastLogin", u.getLastLogin() != null ? u.getLastLogin().toString() : null);
             map.put("createdAt", u.getCreatedAt().toString());
             map.put("departmentIds", u.getDepartmentIds());
+            map.put("isMentor", Boolean.TRUE.equals(u.getIsMentor()) || u.getRole() == Role.Mentor);
             
             if (u.getRole() == Role.Student) {
                 Optional<StudentProfile> pOpt = studentProfileRepository.findByUserId(u.getId());
@@ -269,6 +270,7 @@ public class AdminController {
         String batch = role == Role.Student ? body.getOrDefault("batch", "2024-2028") : null;
         String sectionId = body.get("sectionId");
         String yearVal = body.get("year");
+        boolean isMentor = "true".equalsIgnoreCase(body.get("isMentor")) || "1".equals(body.get("isMentor")) || role == Role.Mentor;
 
         User user = User.builder()
                 .email(email.toLowerCase())
@@ -282,6 +284,7 @@ public class AdminController {
                 .sectionId(sectionId)
                 .rollNo(role == Role.Student ? rollNo : null)
                 .batch(batch)
+                .isMentor(isMentor)
                 .isActive(true)
                 .build();
         User savedUser = userRepository.save(user);
@@ -363,6 +366,9 @@ public class AdminController {
         if (body.containsKey("year")) user.setYear(body.get("year"));
         if (body.containsKey("sectionId")) user.setSectionId(body.get("sectionId"));
         if (body.containsKey("batch")) user.setBatch(body.get("batch"));
+        if (body.containsKey("isMentor")) {
+            user.setIsMentor("true".equalsIgnoreCase(body.get("isMentor")) || "1".equals(body.get("isMentor")));
+        }
         if (user.getRole() == Role.Student && body.containsKey("roll_no")) {
             user.setRollNo(body.get("roll_no").toUpperCase());
         }
@@ -582,6 +588,7 @@ public class AdminController {
                         .phone(phone)
                         .role(role)
                         .departmentIds(departmentIds)
+                        .departmentId(deptCode.isEmpty() ? null : deptCode.toUpperCase())
                         .isActive(true)
                         .build();
                 userRepository.save(user);
@@ -685,12 +692,27 @@ public class AdminController {
                     continue;
                 }
                 
+                List<String> studentDeptIds = new ArrayList<>();
+                if (!deptCode.isEmpty()) {
+                    if (deptCode.equalsIgnoreCase("AI") || deptCode.equalsIgnoreCase("AIML")) {
+                        studentDeptIds.add("AI");
+                        studentDeptIds.add("AIML");
+                    } else {
+                        studentDeptIds.add(deptCode.toUpperCase());
+                    }
+                }
+
                 User user = User.builder()
                         .email(email)
                         .passwordHash(passwordEncoder.encode(password))
                         .fullName(fullName)
                         .phone(phone)
                         .role(Role.Student)
+                        .departmentId(deptCode.isEmpty() ? null : deptCode.toUpperCase())
+                        .departmentIds(studentDeptIds)
+                        .batch(batch)
+                        .sectionId(section)
+                        .rollNo(rollNo)
                         .isActive(true)
                         .build();
                 User savedUser = userRepository.save(user);
@@ -699,7 +721,7 @@ public class AdminController {
                         .userId(savedUser.getId())
                         .rollNo(rollNo)
                         .batch(batch)
-                        .departmentId(deptCode)
+                        .departmentId(deptCode.toUpperCase())
                         .sectionId(section)
                         .cgpa(cgpa)
                         .slug(rollNo.toLowerCase())
@@ -1521,8 +1543,11 @@ public class AdminController {
             return ResponseEntity.badRequest().body(Map.of("error", "Title and message are required"));
         }
 
-        @SuppressWarnings("unchecked")
-        List<String> targetRoles = (List<String>) body.get("targetRoles");
+        Object rawRoles = body.get("targetRoles");
+        List<String> targetRoles = new ArrayList<>();
+        if (rawRoles instanceof List<?> list) {
+            for (Object item : list) if (item != null) targetRoles.add(item.toString());
+        }
         String yearFilter = (String) body.get("year");
         String deptFilter = (String) body.get("departmentId");
         String sectionFilter = (String) body.get("sectionId");

@@ -318,8 +318,11 @@ public class PortalController {
             return ResponseEntity.badRequest().body(Map.of("error", "Title and message are required"));
         }
 
-        @SuppressWarnings("unchecked")
-        List<String> targetRoles = (List<String>) body.get("targetRoles");
+        Object rawRoles = body.get("targetRoles");
+        List<String> targetRoles = new ArrayList<>();
+        if (rawRoles instanceof List<?> list) {
+            for (Object item : list) if (item != null) targetRoles.add(item.toString());
+        }
         String yearFilter = (String) body.get("year");
         String deptFilter = (String) body.get("departmentId");
         String sectionFilter = (String) body.get("sectionId");
@@ -1861,8 +1864,11 @@ public class PortalController {
             return ResponseEntity.badRequest().body(Map.of("error", "Title and message are required"));
         }
 
-        @SuppressWarnings("unchecked")
-        List<String> targetRoles = (List<String>) body.get("targetRoles");
+        Object rawRoles = body.get("targetRoles");
+        List<String> targetRoles = new ArrayList<>();
+        if (rawRoles instanceof List<?> list) {
+            for (Object item : list) if (item != null) targetRoles.add(item.toString());
+        }
         String yearFilter = (String) body.get("year");
         String deptFilter = (String) body.get("departmentId");
         String sectionFilter = (String) body.get("sectionId");

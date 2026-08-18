@@ -182,6 +182,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
   const [formSectionId, setFormSectionId] = useState('');
   const [formYear, setFormYear] = useState('');
   const [formAcademicStatus, setFormAcademicStatus] = useState('ACTIVE');
+  const [formIsMentor, setFormIsMentor] = useState<boolean>(true);
 
   // Results CRUD Modal States
   // const [activeResultModal, setActiveResultModal] = useState<'create' | 'edit' | null>(null);
@@ -700,6 +701,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     setFormSectionId('');
     setFormYear('');
     setFormAcademicStatus('ACTIVE');
+    setFormIsMentor(true);
     setActiveModal('create');
   };
 
@@ -717,6 +719,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     setFormSectionId(u.sectionId || '');
     setFormYear(u.year || '');
     setFormAcademicStatus(u.academicStatus || 'ACTIVE');
+    setFormIsMentor(Boolean(u.isMentor || u.role === 'Mentor'));
     setActiveModal('edit');
   };
 
@@ -771,7 +774,8 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
           cgpa: formCgpa,
           sectionId: formSectionId,
           year: formYear || undefined,
-          academicStatus: formAcademicStatus || 'ACTIVE'
+          academicStatus: formAcademicStatus || 'ACTIVE',
+          isMentor: (formRole === 'Faculty' || formRole === 'Mentor') ? (formIsMentor ? 'true' : 'false') : undefined
         })
       });
       const data = await response.json();
@@ -811,7 +815,8 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
           batch: formBatch,
           sectionId: formSectionId,
           year: formYear || undefined,
-          academicStatus: formAcademicStatus || undefined
+          academicStatus: formAcademicStatus || undefined,
+          isMentor: (formRole === 'Faculty' || formRole === 'Mentor') ? (formIsMentor ? 'true' : 'false') : undefined
         })
       });
       const data = await response.json();
@@ -2973,6 +2978,24 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                     </select>
                   </div>
                 </div>
+
+                {(formRole === 'Faculty' || formRole === 'Mentor') && (
+                  <div style={{ background: 'var(--surface-raised)', border: '1px solid var(--surface-border)', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>Assign as Mentor (Mentorship Privileges)</div>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>Enables "My Mentees" hub, meeting logs, confidential case notes, and mentee allocation for this faculty.</div>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px', fontWeight: 600, fontSize: '13px', flexShrink: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={formIsMentor}
+                        onChange={e => setFormIsMentor(e.target.checked)}
+                        style={{ width: '18px', height: '18px', accentColor: 'var(--accent)', cursor: 'pointer' }}
+                      />
+                      <span style={{ color: formIsMentor ? 'var(--accent)' : 'var(--text-secondary)' }}>{formIsMentor ? 'Mentor Active' : 'Faculty Only'}</span>
+                    </label>
+                  </div>
+                )}
 
                 {formRole === 'Student' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', borderTop: '1px solid var(--surface-raised)', paddingTop: '15px' }}>

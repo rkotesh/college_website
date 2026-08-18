@@ -45,31 +45,8 @@ const TABS = [
   { id: 'broadcasts',  label: 'Broadcasts' },
   { id: 'escalations', label: 'Escalations' },
   { id: 'analytics',   label: 'Analytics' },
-  { id: 'at-risk',     label: 'At-Risk' },
-  { id: 'attainment',  label: 'Attainment' },
   { id: 'trainings',   label: 'Trainings' },
 ];
-
-// ── Sections Configuration (Dynamic Loader/Saver) ─────────────────────────────
-const DEFAULT_SECTIONS = ['A', 'B', 'C', 'D'];
-const getSavedSections = (): string[] => {
-  try {
-    const saved = localStorage.getItem('ciet_erp_sections');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed : DEFAULT_SECTIONS;
-    }
-  } catch (e) {
-    console.error('Failed to parse sections', e);
-  }
-  return DEFAULT_SECTIONS;
-};
-
-const saveSectionsList = (sections: string[]) => {
-  localStorage.setItem('ciet_erp_sections', JSON.stringify(sections));
-  // Dispatch custom event to notify other components to refresh
-  window.dispatchEvent(new Event('sections_updated'));
-};
 
 // ── Small reusable label chip ─────────────────────────────────────────────────
 const Chip: React.FC<{ label: string; color?: string }> = ({ label, color = 'var(--accent)' }) => (
@@ -84,7 +61,7 @@ const Chip: React.FC<{ label: string; color?: string }> = ({ label, color = 'var
 // ═══════════════════════════════════════════════════════════
 // Directory Tab
 // ═══════════════════════════════════════════════════════════
-const DirectoryTab: React.FC<{ token: string }> = ({ token }) => {
+const DirectoryTab: React.FC<{ token: string; sections: string[] }> = ({ token, sections }) => {
   const h = { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 };
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,13 +70,6 @@ const DirectoryTab: React.FC<{ token: string }> = ({ token }) => {
   const [yearFilter, setYearFilter] = useState('ALL');
   const [sectionFilter, setSectionFilter] = useState('ALL');
   const [search, setSearch] = useState('');
-  const [sections, setSections] = useState<string[]>(getSavedSections());
-
-  useEffect(() => {
-    const handleUpdate = () => setSections(getSavedSections());
-    window.addEventListener('sections_updated', handleUpdate);
-    return () => window.removeEventListener('sections_updated', handleUpdate);
-  }, []);
 
   useEffect(() => { fetchDirectory(); }, [yearFilter, sectionFilter]);
 
@@ -253,7 +223,7 @@ const DirectoryTab: React.FC<{ token: string }> = ({ token }) => {
 // ═══════════════════════════════════════════════════════════
 // Mentorship Tab
 // ═══════════════════════════════════════════════════════════
-const MentorshipTab: React.FC<{ token: string }> = ({ token }) => {
+const MentorshipTab: React.FC<{ token: string; sections: string[]; departmentCode?: string }> = ({ token, sections, departmentCode }) => {
   const h = { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 };
   const [mentors, setMentors] = useState<User[]>([]);
   const [students, setStudents] = useState<any[]>([]);
@@ -265,21 +235,14 @@ const MentorshipTab: React.FC<{ token: string }> = ({ token }) => {
   const [sectionFilter, setSectionFilter] = useState('ALL');
   const [assignmentSearch, setAssignmentSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [sections, setSections] = useState<string[]>(getSavedSections());
 
   // Modal state for editing/changing mentor
   const [editingAssignment, setEditingAssignment] = useState<any>(null);
-
-  useEffect(() => {
-    const handleUpdate = () => setSections(getSavedSections());
-    window.addEventListener('sections_updated', handleUpdate);
-    return () => window.removeEventListener('sections_updated', handleUpdate);
-  }, []);
   const [editMentorId, setEditMentorId] = useState('');
   const [editStudentRollNo, setEditStudentRollNo] = useState('');
   const [expandedMentors, setExpandedMentors] = useState<Set<string>>(new Set());
 
-  useEffect(() => { fetchData(); }, [yearFilter, sectionFilter]);
+  useEffect(() => { fetchData(); }, [yearFilter, sectionFilter, departmentCode]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -313,7 +276,29 @@ const MentorshipTab: React.FC<{ token: string }> = ({ token }) => {
       if (yearFilter !== 'ALL') params.append('year', yearFilter);
       if (sectionFilter !== 'ALL') params.append('sectionId', sectionFilter);
       const stuRes = await axios.get(`${API}/hod/all-students?${params}`, h);
-      const allStudents: any[] = asArray(stuRes.data);
+      let allStudents: any[] = asArray(stuRes.data);
+
+      // Strict department check: filter out cross-department students
+      if (departmentCode) {
+        const norm = departmentCode.toUpperCase();
+        allStudents = allStudents.filter((s: any) => {
+          const sDept = (s.departmentId || '').toUpperCase();
+          const sRoll = (s.rollNo || '').toUpperCase();
+          if (norm === 'AIML' || norm === 'AI') {
+            if (sDept === 'CSE' || sRoll.includes('CSE') || sRoll.includes('ECE') || sRoll.includes('EEE') || sRoll.includes('MECH') || sRoll.includes('CIVIL') || sRoll.includes('IT')) {
+              return false;
+            }
+          }
+          if (norm === 'CSE') {
+            if (sDept && sDept !== 'CSE' && !sRoll.includes('CSE')) return false;
+          }
+          if (norm === 'ECE') {
+            if (sDept && sDept !== 'ECE' && !sRoll.includes('ECE') && !sRoll.includes('EC')) return false;
+          }
+          return true;
+        });
+      }
+
       console.log('[HOD] Students:', allStudents.length);
       setTotalStudentCount(allStudents.length);
 
@@ -1091,7 +1076,7 @@ const DocumentsTab: React.FC<{ token: string }> = ({ token }) => {
 // ═══════════════════════════════════════════════════════════
 // Broadcasts Tab
 // ═══════════════════════════════════════════════════════════
-const BroadcastsTab: React.FC<{ token: string }> = ({ token }) => {
+const BroadcastsTab: React.FC<{ token: string; sections: string[] }> = ({ token, sections }) => {
   const h = { headers: { Authorization: `Bearer ${token}` } };
   const [bType, setBType] = useState('Student');
   const [title, setTitle] = useState('');
@@ -1099,15 +1084,8 @@ const BroadcastsTab: React.FC<{ token: string }> = ({ token }) => {
   const [year, setYear] = useState('ALL');
   const [section, setSection] = useState('ALL');
   const [adminMsg, setAdminMsg] = useState('');
-  const [sections, setSections] = useState<string[]>(getSavedSections());
   const [sentNotifs, setSentNotifs] = useState<any[]>([]);
   const [loadingNotifs, setLoadingNotifs] = useState(true);
-
-  useEffect(() => {
-    const handleUpdate = () => setSections(getSavedSections());
-    window.addEventListener('sections_updated', handleUpdate);
-    return () => window.removeEventListener('sections_updated', handleUpdate);
-  }, []);
 
   useEffect(() => { fetchSentNotifs(); }, []);
 
@@ -1377,139 +1355,6 @@ const AnalyticsTab: React.FC<{ token: string }> = ({ token }) => {
 };
 
 // ═══════════════════════════════════════════════════════════
-// At-Risk Tab
-// ═══════════════════════════════════════════════════════════
-const AtRiskTab: React.FC<{ token: string }> = ({ token }) => {
-  const h = { headers: { Authorization: `Bearer ${token}` } };
-  const [atRisk, setAtRisk] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    axios.get(`${API}/hod/at-risk`, h)
-      .then(r => setAtRisk(asArray(r.data)))
-      .catch(e => console.error(e))
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading at-risk data…</div>;
-
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
-        <div>
-          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)' }}>At-Risk Students</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Flagged by CGPA, attendance, backlog, or missing mentor criteria.</p>
-        </div>
-        <span style={{ padding: '6px 16px', borderRadius: 99, background: 'hsla(0,80%,55%,.12)', color: 'hsl(0,80%,60%)', fontWeight: 800, fontSize: 13 }}>
-          🚨 {atRisk.length} Flagged
-        </span>
-      </div>
-
-      {atRisk.length === 0 ? (
-        <div className="chart-card" style={{ textAlign: 'center', padding: 60 }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>Check</div>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18, color: 'var(--text-primary)' }}>No at-risk students!</div>
-          <div style={{ color: 'var(--text-muted)', marginTop: 8 }}>All students are currently on track.</div>
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-          {atRisk.map((item: any, idx: number) => {
-            const attPct = item.profile?.totalClasses > 0
-              ? Math.round((item.profile.attendedClasses / item.profile.totalClasses) * 100) : 100;
-            return (
-              <div key={idx} className="stat-card" style={{ borderLeft: '3px solid var(--danger)', padding: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>
-                      {item.user?.fullName || item.profile?.rollNo || '—'}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                      {item.profile?.rollNo} · Batch {item.profile?.batch}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>CGPA: {item.profile?.cgpa}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Att: {attPct}%</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                  {item.riskFactors?.map((f: string, i: number) => (
-                    <span key={i} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700, background: 'hsla(0,80%,55%,.12)', color: 'hsl(0,80%,60%)' }}>{f}</span>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn-row-action" style={{ flex: 1 }}>View Profile</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ═══════════════════════════════════════════════════════════
-// Attainment Tab
-// ═══════════════════════════════════════════════════════════
-const AttainmentTab: React.FC<{ token: string }> = ({ token }) => {
-  const h = { headers: { Authorization: `Bearer ${token}` } };
-  const [data, setData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    axios.get(`${API}/hod/accreditation`, h)
-      .then(r => setData(asArray(r.data)))
-      .catch(e => console.error(e))
-      .finally(() => setLoading(false));
-  }, []);
-
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
-        <div>
-          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)' }}>Course Outcome Attainment</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>NBA / NAAC accreditation checklist and evidence tracking.</p>
-        </div>
-        <span style={{ padding: '6px 16px', borderRadius: 99, background: 'hsla(217,91%,50%,.12)', color: 'hsl(217,91%,65%)', fontWeight: 800, fontSize: 13 }}>
-          Accreditation
-        </span>
-      </div>
-      <div className="data-table-wrapper" style={{ overflowX: 'auto' }}>
-        <table className="data-table">
-          <thead><tr><th>Criteria</th><th>Evidence</th><th>Status</th><th>Updated</th></tr></thead>
-          <tbody>
-            {loading
-              ? <tr><td colSpan={4} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>Loading…</td></tr>
-              : data.length === 0
-                ? <tr><td colSpan={4} style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>No criteria logged yet.</td></tr>
-                : data.map((item: any) => (
-                  <tr key={item.id}>
-                    <td style={{ fontWeight: 600 }}>{item.criteriaTitle}</td>
-                    <td>
-                      {item.evidenceUrl
-                        ? <a href={item.evidenceUrl} target="_blank" rel="noreferrer" className="btn-row-action">View</a>
-                        : <span style={{ color: 'var(--text-muted)' }}>—</span>
-                      }
-                    </td>
-                    <td>
-                      <span className={`status-pill ${item.isMet ? 'active' : 'inactive'}`}>
-                        <span className="status-dot"></span>
-                        {item.isMet ? 'Met' : 'Not Met'}
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{new Date(item.updatedAt).toLocaleDateString()}</td>
-                  </tr>
-                ))
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-// ═══════════════════════════════════════════════════════════
 // Trainings Tab
 // ═══════════════════════════════════════════════════════════
 const TrainingsTab: React.FC<{ token: string }> = ({ token }) => {
@@ -1542,7 +1387,7 @@ const TrainingsTab: React.FC<{ token: string }> = ({ token }) => {
   };
 
   const del = async (id: string) => {
-    if (!confirm('Delete this training?')) return;
+    if (!confirm('Delete this training program?')) return;
     await axios.delete(`${API}/hod/training/${id}`, h);
     fetchTrainings();
   };
@@ -1557,40 +1402,119 @@ const TrainingsTab: React.FC<{ token: string }> = ({ token }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
         <div>
           <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, color: 'var(--text-primary)' }}>Skill Development & Training</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Manage department training programs</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>Manage department training programs and workshops</p>
         </div>
         <button className="btn-action primary" onClick={() => { setEdit({ targetYears: [] }); setModal(true); }}>+ New Training</button>
       </div>
 
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading training programs…</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
           {trainings.map(t => (
-            <div key={t.id} className="stat-card" style={{ padding: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>{t.title}</div>
-                <span className={`status-pill ${t.isActive ? 'active' : 'inactive'}`}>
-                  <span className="status-dot"></span>
-                  {t.isActive ? 'Active' : 'Inactive'}
-                </span>
+            <div
+              key={t.id}
+              className="chart-card"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                padding: '22px 24px',
+                borderRadius: '16px',
+                border: '1px solid var(--surface-border)',
+                background: 'var(--surface-raised)',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
+                gap: 16
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+                  <h4 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text-primary)', margin: 0 }}>
+                    {t.title}
+                  </h4>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 10px',
+                    borderRadius: 99,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    background: t.isActive ? 'rgba(34, 197, 94, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                    color: t.isActive ? '#16a34a' : '#ef4444',
+                    flexShrink: 0
+                  }}>
+                    <span style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: t.isActive ? '#16a34a' : '#ef4444'
+                    }}></span>
+                    {t.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.55, margin: 0, marginBottom: 14 }}>
+                  {t.description}
+                </p>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: '10px 14px',
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: 'var(--surface-base)',
+                  fontSize: 12
+                }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11 }}>Category</span>
+                    <strong style={{ color: 'var(--text-primary)' }}>{t.category || 'General'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11 }}>Venue</span>
+                    <strong style={{ color: 'var(--text-primary)' }}>{t.venue || 'TBA'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11 }}>Start Date</span>
+                    <strong style={{ color: 'var(--text-primary)' }}>{t.startDate || '—'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11 }}>End Date</span>
+                    <strong style={{ color: 'var(--text-primary)' }}>{t.endDate || '—'}</strong>
+                  </div>
+                  <div style={{ gridColumn: '1/-1', borderTop: '1px solid var(--surface-border)', paddingTop: 6, marginTop: 2 }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Target Years: </span>
+                    <strong style={{ color: 'var(--accent)' }}>{t.targetYears && t.targetYears.length > 0 ? t.targetYears.map(y => `Year ${y}`).join(', ') : 'All Years'}</strong>
+                  </div>
+                </div>
               </div>
-              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12, lineHeight: 1.5 }}>{t.description}</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, marginBottom: 14 }}>
-                <div><span style={{ color: 'var(--text-muted)' }}>Category:</span> <strong>{t.category}</strong></div>
-                <div><span style={{ color: 'var(--text-muted)' }}>Venue:</span> <strong>{t.venue}</strong></div>
-                <div><span style={{ color: 'var(--text-muted)' }}>Start:</span> <strong>{t.startDate}</strong></div>
-                <div><span style={{ color: 'var(--text-muted)' }}>End:</span> <strong>{t.endDate}</strong></div>
-                <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--text-muted)' }}>Years:</span> <strong>{t.targetYears?.join(', ') || 'All'}</strong></div>
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-row-action" style={{ flex: 1 }} onClick={() => { setEdit(t); setModal(true); }}>Edit</button>
-                <button className="btn-row-action" style={{ flex: 1, color: 'var(--danger)' }} onClick={() => del(t.id)}>Delete</button>
+
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: 10,
+                paddingTop: 12,
+                borderTop: '1px solid var(--surface-border)'
+              }}>
+                <button
+                  className="btn-action secondary"
+                  style={{ padding: '7px 16px', fontSize: 12, fontWeight: 700, borderRadius: 8 }}
+                  onClick={() => { setEdit(t); setModal(true); }}
+                >
+                  ✏️ Edit
+                </button>
+                <button
+                  className="btn-action danger"
+                  style={{ padding: '7px 16px', fontSize: 12, fontWeight: 700, borderRadius: 8 }}
+                  onClick={() => del(t.id)}
+                >
+                  🗑️ Delete
+                </button>
               </div>
             </div>
           ))}
           {trainings.length === 0 && (
-            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>No training programs yet. Create one!</div>
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>No training programs yet. Click "+ New Training" to create one.</div>
           )}
         </div>
       )}
@@ -1665,18 +1589,51 @@ const TrainingsTab: React.FC<{ token: string }> = ({ token }) => {
 // ═══════════════════════════════════════════════════════════
 const HODDashboard: React.FC<HODDashboardProps> = ({ userSession, handleLogout }) => {
   const [activeTab, setActiveTab] = useState('directory');
+  const [departmentSections, setDepartmentSections] = useState<string[]>(['A', 'B', 'C']);
+  const [departmentCode, setDepartmentCode] = useState<string>(() => {
+    return userSession.departmentIds?.[0] || userSession.departmentId || '';
+  });
   const token = userSession.accessToken;
+
+  // Dynamically load department sections & code from Admin-configured Department data
+  useEffect(() => {
+    const fetchScopeAndSections = async () => {
+      try {
+        const res = await axios.get(`${API}/hod/scope`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.data) {
+          if (res.data.code) setDepartmentCode(res.data.code);
+          if (res.data.sections && Array.isArray(res.data.sections) && res.data.sections.length > 0) {
+            setDepartmentSections(res.data.sections);
+            return;
+          }
+        }
+      } catch (e) {}
+
+      try {
+        const res = await axios.get(`${API}/portal/public/departments`);
+        const depts = asArray(res.data);
+        const userDept = userSession.departmentIds?.[0] || userSession.departmentId;
+        const matched = userDept ? depts.find((d: any) => d.code === userDept || d.id === userDept) : null;
+        if (matched) {
+          if (matched.code) setDepartmentCode(matched.code);
+          if (matched.sections && Array.isArray(matched.sections) && matched.sections.length > 0) {
+            setDepartmentSections(matched.sections);
+          }
+        }
+      } catch (e) {}
+    };
+
+    fetchScopeAndSections();
+  }, [token, userSession]);
 
   const renderTab = () => {
     switch (activeTab) {
-      case 'directory':    return <DirectoryTab token={token} />;
-      case 'mentorship':   return <MentorshipTab token={token} />;
+      case 'directory':    return <DirectoryTab token={token} sections={departmentSections} />;
+      case 'mentorship':   return <MentorshipTab token={token} sections={departmentSections} departmentCode={departmentCode} />;
       case 'documents':   return <DocumentsTab token={token} />;
-      case 'broadcasts':  return <BroadcastsTab token={token} />;
+      case 'broadcasts':  return <BroadcastsTab token={token} sections={departmentSections} />;
       case 'escalations': return <EscalationsTab token={token} userEmail={userSession.email} />;
       case 'analytics':   return <AnalyticsTab token={token} />;
-      case 'at-risk':     return <AtRiskTab token={token} />;
-      case 'attainment':  return <AttainmentTab token={token} />;
       case 'trainings':   return <TrainingsTab token={token} />;
       default:            return null;
     }
@@ -1780,42 +1737,6 @@ const HODDashboard: React.FC<HODDashboardProps> = ({ userSession, handleLogout }
               {tab.label}
             </button>
           ))}
-          
-          {/* Section Manager Configurator */}
-          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed var(--surface-border)' }}>
-            <button
-              onClick={() => {
-                const currentSecs = getSavedSections();
-                const input = prompt("Manage Sections (comma-separated list):", currentSecs.join(", "));
-                if (input !== null) {
-                  const cleaned = input.split(",")
-                    .map(s => s.trim().toUpperCase())
-                    .filter(s => s.length > 0);
-                  if (cleaned.length > 0) {
-                    saveSectionsList(cleaned);
-                    alert("Sections updated to: " + cleaned.join(", "));
-                  }
-                }
-              }}
-              style={{
-                width: '100%',
-                padding: '8px 14px',
-                borderRadius: 'var(--r2)',
-                fontWeight: 600,
-                fontSize: '12px',
-                border: '1px dashed var(--surface-border)',
-                background: 'transparent',
-                cursor: 'pointer',
-                color: 'var(--text-secondary)',
-                textAlign: 'left',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              ⚙️ Manage Sections
-            </button>
-          </div>
 
           <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid var(--surface-border)' }}>
             <button

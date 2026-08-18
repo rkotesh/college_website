@@ -10,6 +10,9 @@ interface FacultyDashboardProps {
     email: string;
     fullName?: string;
     accessToken: string;
+    isMentor?: boolean;
+    departmentId?: string;
+    departmentIds?: string[];
   };
   handleLogout: () => void;
 }
@@ -18,12 +21,11 @@ type Tab =
   | 'overview'
   | 'faculty'
   | 'mentorship'
+  | 'portfolios'
   | 'documents'
   | 'training'
   | 'escalations'
   | 'notifications'
-  | 'settings'
-  | 'messages'
   | 'directory'
   | 'broadcasts';
 
@@ -36,9 +38,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
     const parts = window.location.pathname.split('/');
     const tabFromUrl = parts[parts.length - 1];
     const validTabs: Tab[] = [
-      'overview', 'faculty', 'mentorship', 'documents', 'training', 
-      'escalations', 'notifications', 'settings', 'messages'
-    , 'directory', 'broadcasts'];
+      'overview', 'faculty', 'mentorship', 'portfolios', 'documents', 'training', 
+      'escalations', 'notifications', 'directory', 'broadcasts'
+    ];
     if (validTabs.includes(tabFromUrl as Tab)) {
       return tabFromUrl as Tab;
     }
@@ -197,7 +199,8 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   };
 
   const filteredDirUsers = directoryUsers.filter(u => {
-    if (dirRoleFilter !== 'ALL' && u.role !== dirRoleFilter) return false;
+    // Student Directory: only show students from this department
+    if (u.role !== 'Student') return false;
     if (dirDeptFilter !== 'ALL') {
       const uDept = u.departmentIds?.[0] || u.departmentId || '';
       if (uDept !== dirDeptFilter) return false;
@@ -216,37 +219,41 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   const dirTotalPages = Math.max(1, Math.ceil(filteredDirUsers.length / dirUsersPerPage));
   const displayedDirUsers = filteredDirUsers.slice((dirCurrentPage - 1) * dirUsersPerPage, dirCurrentPage * dirUsersPerPage);
 
-
   useEffect(() => {
     if (activeTab === 'directory') fetchDirectoryUsers();
     if (activeTab === 'broadcasts') fetchBroadcastHistory();
+    if (activeTab === 'mentorship') fetchMentorMentees();
+    if (activeTab === 'portfolios') fetchPortfolioStudents();
   }, [activeTab]);
 
   useEffect(() => {
+    const isMentorUser = Boolean(userSession.isMentor || userSession.role === 'Mentor');
+    const portalLabel = isMentorUser ? 'Faculty & Mentor Portal' : 'Faculty Portal';
     let tabLabel = '';
     switch (activeTab) {
       case 'overview': tabLabel = 'Overview'; break;
       case 'faculty': tabLabel = 'Faculty Members'; break;
-      case 'mentorship': tabLabel = 'Mentorship'; break;
-      case 'documents': tabLabel = 'Documents'; break;
-      case 'training': tabLabel = 'Professional Training'; break;
-      case 'escalations': tabLabel = 'Escalation Center'; break;
+      case 'mentorship': tabLabel = 'My Mentees'; break;
+      case 'portfolios': tabLabel = 'Student Portfolios'; break;
+      case 'documents': tabLabel = 'Curriculum Files'; break;
+      case 'training': tabLabel = 'Trainings & Workshops'; break;
+      case 'escalations': tabLabel = 'Escalation Chain'; break;
       case 'notifications': tabLabel = 'Notifications'; break;
-      case 'settings': tabLabel = 'Settings'; break;
-      case 'messages': tabLabel = 'Staff Messages'; break;
+      case 'directory': tabLabel = 'Student Directory'; break;
+      case 'broadcasts': tabLabel = 'Broadcasts'; break;
       default: {
         const tabStr = activeTab as string;
         tabLabel = tabStr.charAt(0).toUpperCase() + tabStr.slice(1);
       }
     }
     
-    document.title = `${tabLabel} | Faculty Dashboard | CIET ERP`;
+    document.title = `${tabLabel} | ${portalLabel} | CIET ERP`;
     
     const newPath = activeTab === 'overview' ? '/faculty-dashboard' : `/faculty-dashboard/${activeTab}`;
     if (window.location.pathname !== newPath) {
       window.history.pushState(null, '', newPath);
     }
-  }, [activeTab]);
+  }, [activeTab, userSession.isMentor, userSession.role]);
 
   // Sync activeTab when the back/forward button is clicked
   useEffect(() => {
@@ -254,9 +261,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
       const parts = window.location.pathname.split('/');
       const tabFromUrl = parts[parts.length - 1];
       const validTabs: Tab[] = [
-        'overview', 'faculty', 'mentorship', 'documents', 'training', 
-        'escalations', 'notifications', 'settings', 'messages'
-      , 'directory', 'broadcasts'];
+        'overview', 'directory', 'mentorship', 'portfolios', 'documents', 'training',
+        'escalations', 'notifications', 'broadcasts'
+      ];
       if (validTabs.includes(tabFromUrl as Tab)) {
         setActiveTab(tabFromUrl as Tab);
       } else {
@@ -274,12 +281,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [meetingLogs, setMeetingLogs] = useState<any[]>([]);
   
-  // HOD Profile & Notifications state
-  const [hodProfile, setHodProfile] = useState<any>(null);
-  const [profileFullName, setProfileFullName] = useState('');
-  const [profilePhone, setProfilePhone] = useState('');
-  const [profilePassword, setProfilePassword] = useState('');
-  const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
   const [hodNotifications, setHodNotifications] = useState<any[]>([]);
   
   // HOD Manual Notification Form states
@@ -307,16 +308,65 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   const [newMenteeNote, setNewMenteeNote] = useState('');
   const [submittingMenteeNote, setSubmittingMenteeNote] = useState(false);
 
+  // Student Public Portfolios state
+  const [portfolioStudents, setPortfolioStudents] = useState<any[]>([]);
+  const [loadingPortfolios, setLoadingPortfolios] = useState(false);
+  const [portfolioSearch, setPortfolioSearch] = useState('');
+  const [portfolioStatusFilter, setPortfolioStatusFilter] = useState<'ALL' | 'PUBLIC' | 'PRIVATE'>('ALL');
+  const [portfolioYearFilter, setPortfolioYearFilter] = useState('ALL');
+  const [portfolioSectionFilter, setPortfolioSectionFilter] = useState('ALL');
+  const [portfolioSelectedRolls, setPortfolioSelectedRolls] = useState<string[]>([]);
+  const [copiedRoll, setCopiedRoll] = useState<string | null>(null);
+  const [previewPortfolioSlug, setPreviewPortfolioSlug] = useState<string | null>(null);
+
+  const filteredPortfolios = portfolioStudents.filter(s => {
+    if (portfolioStatusFilter === 'PUBLIC' && !s.isPublic) return false;
+    if (portfolioStatusFilter === 'PRIVATE' && s.isPublic) return false;
+    if (portfolioYearFilter !== 'ALL') {
+      const yr = (s.year || '').toString();
+      if (yr !== portfolioYearFilter) return false;
+    }
+    if (portfolioSectionFilter !== 'ALL') {
+      const sec = (s.sectionId || '').toUpperCase();
+      if (sec !== portfolioSectionFilter) return false;
+    }
+    if (portfolioSearch) {
+      const q = portfolioSearch.toLowerCase();
+      if (
+        !s.fullName?.toLowerCase().includes(q) &&
+        !s.rollNo?.toLowerCase().includes(q) &&
+        !s.email?.toLowerCase().includes(q) &&
+        !s.slug?.toLowerCase().includes(q)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // Auto-fetch mentees on mount when user is a mentor
   useEffect(() => {
-    if (hodProfile && userSession.role === 'Mentor') {
+    if (userSession.isMentor || userSession.role === 'Mentor') {
       fetchMentorMentees();
     }
-  }, [hodProfile]);
+  }, []);
 
   // Form states
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
+  // Dynamic departments & sections configured by Admin
+  const [departments, setDepartments] = useState<{ code: string; name: string; sections: string[] }[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/v1/portal/public/departments`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) setDepartments(data);
+      })
+      .catch(() => {});
+  }, []);
+
   // Mentorship forms
   const [splitForm, setSplitForm] = useState({ batch: '2022-2026', sectionId: 'A', mentorAId: '', mentorBId: '' });
   const [manualForm, setManualForm] = useState({ mentorUserId: '', studentRollNos: [] as string[] });
@@ -382,7 +432,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
         trainingsRes,
         announcementsRes,
         logsRes,
-        profileRes,
         notifRes,
         portalRes
       ] = await Promise.all([
@@ -392,7 +441,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
         fetch(`${API_BASE_URL}/api/v1/hod/trainings`, { headers }),
         fetch(`${API_BASE_URL}/api/v1/hod/announcements`, { headers }),
         fetch(`${API_BASE_URL}/api/v1/hod/meeting-logs`, { headers }),
-        fetch(`${API_BASE_URL}/api/v1/hod/profile`, { headers }),
         fetch(`${API_BASE_URL}/api/v1/hod/notifications`, { headers }),
         fetch(`${API_BASE_URL}/api/v1/portal/hod/dashboard`, { headers })
       ]);
@@ -403,15 +451,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
       if (trainingsRes.ok) setTrainings(await trainingsRes.json());
       if (announcementsRes.ok) setAnnouncements(await announcementsRes.json());
       if (logsRes.ok) setMeetingLogs(await logsRes.json());
-      
-      if (profileRes.ok) {
-        const prof = await profileRes.json();
-        setHodProfile(prof);
-        setProfileFullName(prof.fullName || '');
-        setProfilePhone(prof.phone || '');
-        setProfilePhotoUrl(prof.photoUrl || '');
-      }
-      
       if (notifRes.ok) setHodNotifications(await notifRes.json());
       
       if (portalRes.ok) {
@@ -540,56 +579,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   };
 
 
-  const handleSaveHODProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/profile`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({
-          fullName: profileFullName,
-          phone: profilePhone,
-          password: profilePassword,
-          photoUrl: profilePhotoUrl
-        })
-      });
-      if (!res.ok) throw new Error('Failed to update profile.');
-      const updatedUser = await res.json();
-      setHodProfile(updatedUser);
-      setProfilePassword('');
-      alert('Profile updated successfully!');
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
 
-  const handleHODPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5MB'); return; }
-    try {
-      const uploadFormData = new FormData();
-      uploadFormData.append('file', file);
-      const res = await fetch(`${API_BASE_URL}/api/v1/portal/student/upload`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` },
-        body: uploadFormData,
-        credentials: 'include'
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to upload photo');
-      }
-      const data = await res.json();
-      setProfilePhotoUrl(data.url);
-      alert('Photo uploaded successfully! Save settings to apply.');
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
 
   const fetchUserDetailForHOD = async (targetUser: any) => {
     setSelectedDetailUser(targetUser);
@@ -618,20 +608,91 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   };
 
   const fetchMentorMentees = async () => {
-    if (!hodProfile?.id) return;
     try {
       setLoadingMentees(true);
       const headers = { 'Authorization': `Bearer ${userSession.accessToken}` };
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/staff/${hodProfile.id}/profile`, { headers });
+      const res = await fetch(`${API_BASE_URL}/api/v1/hod/my-mentees`, { headers });
       if (res.ok) {
         const data = await res.json();
-        setMentorMentees(data.assignedStudents || []);
+        setMentorMentees(Array.isArray(data) ? data : []);
       }
     } catch (err) {
       console.error("Failed to load mentor mentees", err);
     } finally {
       setLoadingMentees(false);
     }
+  };
+
+  const fetchPortfolioStudents = async () => {
+    try {
+      setLoadingPortfolios(true);
+      const headers = { 'Authorization': `Bearer ${userSession.accessToken}` };
+      const res = await fetch(`${API_BASE_URL}/api/v1/hod/all-students`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setPortfolioStudents(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Failed to load department student portfolios", err);
+    } finally {
+      setLoadingPortfolios(false);
+    }
+  };
+
+  const handleExportPortfoliosCSV = (studentsToExport: any[]) => {
+    if (!studentsToExport || studentsToExport.length === 0) {
+      alert('No students found to export.');
+      return;
+    }
+    const origin = window.location.origin;
+    const headers = ['Roll Number', 'Full Name', 'Email', 'Department', 'Year', 'Section', 'Batch', 'CGPA', 'Portfolio Status', 'Public Portfolio Link'];
+    const rows = studentsToExport.map(s => {
+      const isPub = Boolean(s.isPublic);
+      const portUrl = isPub ? `${origin}/portfolio/${s.slug || s.rollNo}` : 'Private (Draft)';
+      return [
+        `"${s.rollNo || ''}"`,
+        `"${(s.fullName || '').replace(/"/g, '""')}"`,
+        `"${s.email || ''}"`,
+        `"${s.departmentId || ''}"`,
+        `"${s.year || ''}"`,
+        `"${s.sectionId || ''}"`,
+        `"${s.batch || ''}"`,
+        `"${s.cgpa || '0.0'}"`,
+        `"${isPub ? 'Public' : 'Private'}"`,
+        `"${portUrl}"`
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Department_Student_Portfolios_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyAllPortfolioLinks = (studentsToCopy: any[]) => {
+    const origin = window.location.origin;
+    const publicList = (studentsToCopy || []).filter(s => s.isPublic);
+    if (publicList.length === 0) {
+      alert('No active public portfolios in the current selection/filter.');
+      return;
+    }
+    const text = publicList.map(s => `${s.rollNo} | ${s.fullName} — ${origin}/portfolio/${s.slug || s.rollNo}`).join('\n');
+    navigator.clipboard.writeText(text);
+    alert(`Copied ${publicList.length} student public portfolio links to clipboard!`);
+  };
+
+  const handleCopySinglePortfolioLink = (s: any) => {
+    const origin = window.location.origin;
+    const url = `${origin}/portfolio/${s.slug || s.rollNo}`;
+    navigator.clipboard.writeText(url);
+    setCopiedRoll(s.rollNo || s.id);
+    setTimeout(() => setCopiedRoll(null), 2500);
   };
 
   const fetchMenteeNotes = async (rollNo: string) => {
@@ -906,7 +967,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   }
 
   return (
-    <div className="ds-root" style={{ background: 'var(--ds-bg)', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+    <div className="admin-root" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--surface-base)' }}>
       
       {/* Document View Modal */}
       {previewDoc && (() => {
@@ -962,117 +1023,120 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
         );
       })()}
 
-      <div className="ds-bg-layer" style={{ zIndex: 0 }}>
-        <div className="ds-grid-texture" />
-      </div>
-
-      <style dangerouslySetInnerHTML={{ __html: `
-        .ds-root {
-          --accent: hsl(0, 75%, 50%) !important;
-          --accent-light: hsl(0, 75%, 60%) !important;
-          --accent-dark: hsl(0, 75%, 40%) !important;
-          --accent-glow: hsla(0, 75%, 50%, 0.15) !important;
-          --accent-border: hsl(0, 75%, 50%) !important;
+      {/* Responsive Layout Styles */}
+      <style>{`
+        .fac-desktop-sidebar {
+          width: 240px;
+          flex-shrink: 0;
+          background: var(--surface-raised);
+          border-right: 1px solid var(--surface-border);
+          padding: 20px 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          overflow-y: auto;
         }
-        .sidebar-item.active {
-          color: var(--text-primary) !important;
-          background: var(--ds-surface3) !important;
+        .fac-mobile-bottom-nav {
+          display: none;
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          right: 0;
+          height: 64px;
+          background: var(--surface-raised);
+          border-top: 1px solid var(--surface-border);
+          box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
+          align-items: center;
+          padding: 0 16px;
+          gap: 8px;
+          overflow-x: auto;
+          z-index: 1000;
+          scrollbar-width: none;
         }
-        .sidebar-item.active svg {
-          color: hsl(0, 75%, 50%) !important;
-          stroke: hsl(0, 75%, 50%) !important;
+        .fac-mobile-bottom-nav::-webkit-scrollbar { display: none; }
+        @media (max-width: 768px) {
+          .fac-desktop-sidebar { display: none !important; }
+          .fac-mobile-bottom-nav { display: flex !important; }
+          .fac-main-area { padding-bottom: 90px !important; }
         }
-        .sidebar-item.active::before {
-          background: hsl(0, 75%, 50%) !important;
-        }
-        .btn-action-primary {
-          background: hsl(0, 75%, 50%) !important;
-          color: #ffffff !important;
-        }
-        .btn-action-primary:hover {
-          background: hsl(0, 75%, 42%) !important;
-        }
-      ` }} />
-
-      {/* HEADER TOPBAR (BLUE COMPLIANT) */}
-      
-
-      {/* LAYOUT BODY */}
-            {/* HEADER */}
-      <div className="admin-header">
-        <LogoHeader />
-        <div className="admin-header-right">
-          <div className="user-avatar-chip">
-            <div className="user-avatar-info">
-              <div className="user-avatar-name">{userSession.fullName || 'User'}</div>
-              <div className="user-avatar-role">{userSession.role}</div>
-            </div>
+      `}</style>
+      {/* Topbar with Official CIET LogoHeader */}
+      <header className="admin-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', background: 'var(--surface-raised)', borderBottom: '1px solid var(--surface-border)', flexWrap: 'wrap', gap: '12px' }}>
+        <div className="admin-topbar-left" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <LogoHeader imageStyle={{ height: '36px' }} />
+          <div className="topbar-divider" style={{ height: '24px', width: '1px', background: 'var(--surface-border)' }}></div>
+          <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>
+            {(userSession.isMentor || userSession.role === 'Mentor') ? 'Faculty & Mentor Portal' : 'Faculty Portal'}
+            {' — '}
+            {activeTab === 'overview' ? 'Overview' :
+             activeTab === 'directory' ? 'Student Directory' :
+             activeTab === 'mentorship' ? 'My Mentees' :
+             activeTab === 'documents' ? 'Curriculum Files' :
+             activeTab === 'training' ? 'Trainings & Workshops' :
+             activeTab === 'escalations' ? 'Escalation Chain' :
+             activeTab === 'broadcasts' ? 'Broadcasts' :
+             activeTab === 'notifications' ? 'Notifications' :
+             activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+          </span>
+        </div>
+        <div className="admin-topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
+            {userSession.fullName || userSession.email}
+          </span>
+          <span className="role-badge" style={{ padding: '3px 10px', borderRadius: '12px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontSize: '11.5px', fontWeight: 800 }}>
+            {(userSession.isMentor || userSession.role === 'Mentor') ? 'Faculty & Mentor' : 'Faculty'}
+          </span>
+          <div className="status-chip">
+            <div className="led green"></div>
+            Live
           </div>
           <button onClick={handleLogout} className="btn-topbar danger">Sign Out</button>
         </div>
-      </div>
+      </header>
 
-      {/* BODY */}
-      <div className="admin-body">
-        <div className="admin-sidebar">
-        
-        {/* SIDEBAR NAVIGATION (ACCENT BLUE INTEGRATED) */}
-        
-          <nav className="ds-nav" style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div className="sidebar-section-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', paddingBottom: '6px' }}>Operations</div>
-            
-            <button className={`sidebar-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'overview' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'overview' ? 700 : 500 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-              <span>Department Overview</span>
-            </button>
-            
+      {/* Main Body: sidebar + content */}
+      <div className="admin-body" style={{ flex: 1, display: 'flex', flexDirection: 'row', width: '100%' }}>
+        {/* Desktop Sidebar */}
+        <aside className="fac-desktop-sidebar">
+          <div style={{ fontSize: '11px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', paddingLeft: '8px' }}>Navigation</div>
+          <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', paddingBottom: '4px', paddingLeft: '8px', marginBottom: '2px' }}>Operations</div>
+
+          {[
+            { id: 'overview', label: 'Department Overview', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
+            { id: 'directory', label: 'Student Directory', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
+            ...(Boolean(userSession.isMentor || userSession.role === 'Mentor' || (mentorMentees && mentorMentees.length > 0)) ? [{ id: 'mentorship', label: `My Mentees${mentorMentees.length > 0 ? ` (${mentorMentees.length})` : ''}`, icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> }] : []),
+            { id: 'portfolios', label: 'Student Portfolios', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="13" y2="11"/></svg> },
+            { id: 'documents', label: 'Curriculum Files', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => { setActiveTab(tab.id as Tab); if (tab.id === 'directory') fetchDirectoryUsers(); if (tab.id === 'mentorship') fetchMentorMentees(); if (tab.id === 'portfolios') fetchPortfolioStudents(); if (tab.id === 'broadcasts') fetchBroadcastHistory(); }} style={{ padding: '10px 14px', borderRadius: 'var(--r2)', fontWeight: 700, fontSize: '13px', border: 'none', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', transition: 'all 0.15s ease', background: activeTab === tab.id ? 'var(--accent-subtle)' : 'transparent', color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-primary)', borderLeft: activeTab === tab.id ? '3px solid var(--accent)' : '3px solid transparent' }}>{tab.icon}{tab.label}</button>
+          ))}
+
+          <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 4px 8px', marginTop: '8px' }}>Development & Outreach</div>
+
+          {[
+            { id: 'training', label: 'Trainings & Workshops', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
+            { id: 'broadcasts', label: 'Broadcasts', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
+            { id: 'escalations', label: 'Escalation Chain', icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => { setActiveTab(tab.id as Tab); if (tab.id === 'broadcasts') fetchBroadcastHistory(); }} style={{ padding: '10px 14px', borderRadius: 'var(--r2)', fontWeight: 700, fontSize: '13px', border: 'none', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', transition: 'all 0.15s ease', background: activeTab === tab.id ? 'var(--accent-subtle)' : 'transparent', color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-primary)', borderLeft: activeTab === tab.id ? '3px solid var(--accent)' : '3px solid transparent' }}>{tab.icon}{tab.label}</button>
+          ))}
+
+          <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 4px 8px', marginTop: '8px' }}>Account</div>
+
+          <button onClick={() => setActiveTab('notifications')} style={{ padding: '10px 14px', borderRadius: 'var(--r2)', fontWeight: 700, fontSize: '13px', border: 'none', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', transition: 'all 0.15s ease', background: activeTab === 'notifications' ? 'var(--accent-subtle)' : 'transparent', color: activeTab === 'notifications' ? 'var(--accent)' : 'var(--text-primary)', borderLeft: activeTab === 'notifications' ? '3px solid var(--accent)' : '3px solid transparent' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            Notifications
+            {hodNotifications.filter(n => !n.read).length > 0 && <span style={{ marginLeft: 'auto', background: 'var(--accent)', color: '#fff', fontSize: '9px', fontWeight: 700, padding: '2px 6px', borderRadius: '8px' }}>{hodNotifications.filter(n => !n.read).length}</span>}
+          </button>
 
 
-            <button className={`sidebar-item ${activeTab === 'documents' ? 'active' : ''}`} onClick={() => setActiveTab('documents')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'documents' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'documents' ? 700 : 500 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-              <span>Curriculum Files</span>
-            </button>
+          <div style={{ marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid var(--surface-border)' }}>
+            <button onClick={handleLogout} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--r2)', fontWeight: 700, fontSize: '13px', border: 'none', cursor: 'pointer', textAlign: 'left', background: 'transparent', color: 'var(--danger)' }}>Sign Out</button>
+          </div>
+        </aside>
 
-            <div className="sidebar-section-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 6px' }}>Development & OBE</div>
-
-            <button className={`sidebar-item ${activeTab === 'training' ? 'active' : ''}`} onClick={() => setActiveTab('training')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'training' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'training' ? 700 : 500 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              <span>Trainings & Broadcasts</span>
-            </button>
-
-
-
-             <button className={`sidebar-item ${activeTab === 'escalations' ? 'active' : ''}`} onClick={() => setActiveTab('escalations')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'escalations' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'escalations' ? 700 : 500 }}>
-               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-               <span>Escalation Chain</span>
-             </button>
-
-             <div className="sidebar-section-label" style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '12px 0 6px' }}>Account</div>
-
-             <button className={`sidebar-item ${activeTab === 'notifications' ? 'active' : ''}`} onClick={() => setActiveTab('notifications')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'notifications' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'notifications' ? 700 : 500 }}>
-               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-               <span>Notifications</span>
-               {hodNotifications.filter(n => !n.read).length > 0 && (
-                 <span style={{ background: '#3b82f6', color: '#fff', fontSize: '9px', fontWeight: 700, padding: '2px 6px', borderRadius: '8px', marginLeft: 'auto' }}>
-                   {hodNotifications.filter(n => !n.read).length}
-                 </span>
-               )}
-             </button>
-
-             <button className={`sidebar-item ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'messages' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'messages' ? 700 : 500 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <span>Direct Messages</span>
-              </button>
-
-             <button className={`sidebar-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'settings' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'settings' ? 700 : 500 }}>
-               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
-               <span>Profile Settings</span>
-             </button>
-          </nav>
-        </div>
-
-        {/* MAIN PANEL CONTENT */}
-        <div className="admin-main">
+        {/* Main Content Area */}
+        <main className="admin-main fac-main-area" style={{ flex: 1, padding: '24px', maxWidth: '1400px', width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
           <div className="admin-main-content">
           {error && (
             <div style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#ef4444', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1088,23 +1152,20 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
               {activeTab === 'directory' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   <div className="admin-view-header">
-                    <h2>User Directory</h2>
-                    <p>View and edit users within your department(s)</p>
+                    <h2>Student Directory</h2>
+                    <p>View and manage students within your department</p>
                   </div>
 
                   {/* Filter Toolbar */}
-                  <div className="toolbar-row">
-                    <div className="toolbar-search">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                      <input type="text" placeholder="Search by name, email, or roll no..." value={dirSearchQuery} onChange={e => setDirSearchQuery(e.target.value)} />
-                    </div>
-                    <select className="filter-select" value={dirRoleFilter} onChange={e => setDirRoleFilter(e.target.value)}>
-                      <option value="ALL">All Roles</option>
-                      <option value="Student">Students</option>
-                      <option value="Faculty">Faculty</option>
-                      <option value="Mentor">Mentors</option>
-                      <option value="HOD">HODs</option>
-                    </select>
+                  <div className="toolbar-row" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
+                    <input 
+                      type="text" 
+                      className="search-input"
+                      style={{ flex: '1 1 260px', minWidth: '220px', padding: '9px 14px', borderRadius: '8px', fontSize: '13px' }}
+                      placeholder="Search student by name, email, or roll no..." 
+                      value={dirSearchQuery} 
+                      onChange={e => setDirSearchQuery(e.target.value)} 
+                    />
                     <select className="filter-select" value={dirDeptFilter} onChange={e => setDirDeptFilter(e.target.value)}>
                       <option value="ALL">All Departments</option>
                       <option value="CSE">CSE</option>
@@ -1118,7 +1179,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>User Details</th>
+                        <th>Student Details</th>
                         <th>Role</th>
                         <th>Department</th>
                         <th>Status</th>
@@ -1249,7 +1310,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                         {notifTarget !== 'ALL' && notifTarget !== 'AUDIENCE' && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Target Roll No / Staff Email</label>
-                            <input type="text" className="filter-select" placeholder="e.g. Y23CSM051" value={notifTarget} onChange={e => setNotifTarget(e.target.value)} style={{ padding: '10px', fontSize: '13px' }} required />
+                            <input type="text" className="form-input" placeholder="e.g. Y23CSM051" value={notifTarget} onChange={e => setNotifTarget(e.target.value)} required />
                           </div>
                         )}
 
@@ -1262,12 +1323,12 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Alert Title</label>
-                          <input type="text" className="filter-select" value={notifTitle} onChange={e => setNotifTitle(e.target.value)} required style={{ padding: '10px', fontSize: '13px' }} placeholder="e.g. Urgent: Placement Drive Update" />
+                          <input type="text" className="form-input" value={notifTitle} onChange={e => setNotifTitle(e.target.value)} required placeholder="e.g. Urgent: Placement Drive Update" />
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <label style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Message Body</label>
-                          <textarea className="filter-select" value={notifMessage} onChange={e => setNotifMessage(e.target.value)} required style={{ padding: '10px', fontSize: '13px', minHeight: '120px', resize: 'vertical' }} placeholder="Enter the detailed announcement..." />
+                          <textarea className="form-input" value={notifMessage} onChange={e => setNotifMessage(e.target.value)} required style={{ minHeight: '120px', resize: 'vertical' }} placeholder="Enter the detailed announcement..." />
                         </div>
 
                         <button type="submit" className="btn-action primary" disabled={sendingNotif} style={{ padding: '12px', fontSize: '14px', fontWeight: '600', marginTop: '8px' }}>
@@ -1315,7 +1376,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                       {/* Search Bar */}
                       <input
                         type="text"
-                        className="filter-select"
+                        className="form-input"
                         placeholder="Search directory..."
                         value={directorySearch}
                         onChange={e => setDirectorySearch(e.target.value)}
@@ -1335,8 +1396,8 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               padding: '8px 16px',
                               borderRadius: '8px',
                               border: 'none',
-                              background: isSelected ? '#ffffff' : 'transparent',
-                              color: isSelected ? '#000000' : 'var(--text-secondary)',
+                              background: isSelected ? 'var(--accent)' : 'transparent',
+                              color: isSelected ? '#ffffff' : 'var(--text-secondary)',
                               fontSize: '13px',
                               fontWeight: 700,
                               cursor: 'pointer',
@@ -1371,14 +1432,14 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               <div>
                                 <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{s.user?.fullName}</strong>
                                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                  Roll No: <span style={{ color: '#ffffff', fontWeight: 600 }}>{s.profile?.rollNo}</span> &nbsp;|&nbsp; Batch: {s.profile?.batch}
+                                  Roll No: <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{s.profile?.rollNo}</span> &nbsp;|&nbsp; Batch: {s.profile?.batch}
                                 </div>
                               </div>
                             </div>
                             <button
                               className="btn-action secondary"
                               onClick={() => fetchUserDetailForHOD({ id: s.user?.id, fullName: s.user?.fullName, email: s.user?.email, role: 'Student' })}
-                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--surface-border)', cursor: 'pointer' }}
+                              style={{ padding: '6px 14px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}
                             >
                               View Profile
                             </button>
@@ -1410,7 +1471,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                             <button
                               className="btn-action secondary"
                               onClick={() => fetchUserDetailForHOD({ id: f.id, fullName: f.fullName, email: f.email, role: 'Faculty' })}
-                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--surface-border)', cursor: 'pointer' }}
+                              style={{ padding: '6px 14px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}
                             >
                               View Workload
                             </button>
@@ -1442,7 +1503,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                             <button
                               className="btn-action secondary"
                               onClick={() => fetchUserDetailForHOD({ id: m.id, fullName: m.fullName, email: m.email, role: 'Mentor' })}
-                              style={{ padding: '6px 12px', fontSize: '12.5px', color: '#ffffff', borderColor: 'var(--surface-border)', cursor: 'pointer' }}
+                              style={{ padding: '6px 14px', fontSize: '12.5px', fontWeight: 600, cursor: 'pointer' }}
                             >
                               View Mentees
                             </button>
@@ -1567,9 +1628,9 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                   <option value="2023-2027">2023-2027 (III Year)</option>
                                 </select>
                                 <select className="filter-select" value={splitForm.sectionId} onChange={e => setSplitForm({ ...splitForm, sectionId: e.target.value })} style={{ width: '80px' }}>
-                                  <option value="A">A</option>
-                                  <option value="B">B</option>
-                                  <option value="C">C</option>
+                                  {departments.flatMap(d => d.sections || []).length > 0
+                                    ? Array.from(new Set(departments.flatMap(d => d.sections || []))).map(sec => <option key={sec} value={sec}>{sec}</option>)
+                                    : ['A', 'B', 'C'].map(sec => <option key={sec} value={sec}>{sec}</option>)}
                                 </select>
                               </div>
                             </div>
@@ -1594,7 +1655,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               </select>
                             </div>
 
-                            <button type="submit" className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Run Splits & Assign</button>
+                            <button type="submit" className="btn-action primary" style={{ padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Run Splits &amp; Assign</button>
                           </form>
                         </div>
 
@@ -1636,7 +1697,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               </div>
                             </div>
 
-                            <button type="submit" className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Assign Selected</button>
+                            <button type="submit" className="btn-action primary" style={{ padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Assign Selected</button>
                           </form>
                         </div>
                       </div>
@@ -1704,15 +1765,13 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                                             setSelectedMentee(m);
                                             fetchMenteeNotes(m.profile?.rollNo);
                                           }}
-                                          className="btn-action secondary" 
-                                          style={{ border: '1px solid var(--surface-border)', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', background: 'transparent', color: '#fff' }}
+                                          className="btn-action secondary"
                                         >
                                           Counsel Notes
                                         </button>
                                         <button 
                                           onClick={() => fetchUserDetailForHOD(m.user)}
-                                          className="btn-action secondary" 
-                                          style={{ border: '1px solid var(--surface-border)', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', background: 'transparent', color: '#fff' }}
+                                          className="btn-action secondary"
                                         >
                                           View Profile
                                         </button>
@@ -1739,7 +1798,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
                           <form onSubmit={handleAddMenteeNote} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             <textarea
-                              className="filter-select"
+                              className="form-input"
                               rows={3}
                               required
                               value={newMenteeNote}
@@ -1751,7 +1810,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                               type="submit" 
                               disabled={submittingMenteeNote} 
                               className="btn-action primary" 
-                              style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '12px' }}
+                              style={{ padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '12px' }}
                             >
                               {submittingMenteeNote ? 'Saving Note...' : 'Save Private Case Note'}
                             </button>
@@ -1781,6 +1840,394 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                 </div>
               )}
 
+              {/* TAB STUDENT PUBLIC PORTFOLIOS */}
+              {activeTab === 'portfolios' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {/* Header Banner */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '24px' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--accent-subtle)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="13" y2="11"/></svg>
+                        </div>
+                        <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-primary)', margin: 0, fontFamily: 'var(--font-display)' }}>
+                          Department Student Portfolios
+                        </h2>
+                      </div>
+                      <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, maxWidth: '750px', lineHeight: 1.5 }}>
+                        Browse, inspect verified credentials, and export public portfolio links for all students in your department. These public links can be shared directly with placement recruiters and industry partners.
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <button
+                        onClick={() => handleCopyAllPortfolioLinks(filteredPortfolios)}
+                        className="btn-action secondary"
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 16px', fontSize: '12.5px', fontWeight: 700 }}
+                        title="Copy all active public portfolio links to clipboard"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        Copy Public Links ({filteredPortfolios.filter(s => s.isPublic).length})
+                      </button>
+
+                      <button
+                        onClick={() => handleExportPortfoliosCSV(portfolioSelectedRolls.length > 0 
+                          ? filteredPortfolios.filter(s => portfolioSelectedRolls.includes(s.rollNo || s.id))
+                          : filteredPortfolios
+                        )}
+                        className="btn-action primary"
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', fontSize: '12.5px', fontWeight: 700 }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        {portfolioSelectedRolls.length > 0 ? `Export Selected (${portfolioSelectedRolls.length})` : 'Export CSV Report'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Summary Metric Cards */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '14px', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Department Students</span>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                        <span style={{ fontSize: '26px', fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>{portfolioStudents.length}</span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>Enrolled</span>
+                      </div>
+                    </div>
+
+                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '14px', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Live Public Portfolios</span>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                        <span style={{ fontSize: '26px', fontWeight: 900, color: '#10b981', fontFamily: 'var(--font-display)' }}>
+                          {portfolioStudents.filter(s => s.isPublic).length}
+                        </span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                          ({portfolioStudents.length > 0 ? Math.round((portfolioStudents.filter(s => s.isPublic).length / portfolioStudents.length) * 100) : 0}% Active)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '14px', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Private (Draft)</span>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                        <span style={{ fontSize: '26px', fontWeight: 900, color: 'var(--text-secondary)', fontFamily: 'var(--font-display)' }}>
+                          {portfolioStudents.filter(s => !s.isPublic).length}
+                        </span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Students</span>
+                      </div>
+                    </div>
+
+                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '14px', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cohort Avg CGPA</span>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                        <span style={{ fontSize: '26px', fontWeight: 900, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>
+                          {portfolioStudents.length > 0 
+                            ? (portfolioStudents.reduce((acc, s) => acc + (parseFloat(s.cgpa) || 0), 0) / (portfolioStudents.filter(s => parseFloat(s.cgpa) > 0).length || 1)).toFixed(2)
+                            : '0.00'}
+                        </span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>/ 10.0</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Filter Toolbar */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '14px', padding: '14px 18px' }}>
+                    <input
+                      type="text"
+                      className="search-input"
+                      placeholder="Search by student name, roll number, or slug..."
+                      value={portfolioSearch}
+                      onChange={e => setPortfolioSearch(e.target.value)}
+                      style={{ flex: '1 1 260px', minWidth: '220px', padding: '9px 14px', fontSize: '13px' }}
+                    />
+
+                    <select
+                      className="filter-select"
+                      value={portfolioStatusFilter}
+                      onChange={e => setPortfolioStatusFilter(e.target.value as any)}
+                      style={{ padding: '8px 12px', fontSize: '12.5px', minWidth: '140px' }}
+                    >
+                      <option value="ALL">All Visibility (All)</option>
+                      <option value="PUBLIC">🟢 Live Public Only</option>
+                      <option value="PRIVATE">🔒 Private (Draft)</option>
+                    </select>
+
+                    <select
+                      className="filter-select"
+                      value={portfolioYearFilter}
+                      onChange={e => setPortfolioYearFilter(e.target.value)}
+                      style={{ padding: '8px 12px', fontSize: '12.5px', minWidth: '120px' }}
+                    >
+                      <option value="ALL">All Years</option>
+                      <option value="I">1st Year (I)</option>
+                      <option value="II">2nd Year (II)</option>
+                      <option value="III">3rd Year (III)</option>
+                      <option value="IV">4th Year (IV)</option>
+                    </select>
+
+                    <select
+                      className="filter-select"
+                      value={portfolioSectionFilter}
+                      onChange={e => setPortfolioSectionFilter(e.target.value)}
+                      style={{ padding: '8px 12px', fontSize: '12.5px', minWidth: '120px' }}
+                    >
+                      <option value="ALL">All Sections</option>
+                      <option value="A">Section A</option>
+                      <option value="B">Section B</option>
+                      <option value="C">Section C</option>
+                    </select>
+
+                    {(portfolioSearch || portfolioStatusFilter !== 'ALL' || portfolioYearFilter !== 'ALL' || portfolioSectionFilter !== 'ALL') && (
+                      <button
+                        onClick={() => {
+                          setPortfolioSearch('');
+                          setPortfolioStatusFilter('ALL');
+                          setPortfolioYearFilter('ALL');
+                          setPortfolioSectionFilter('ALL');
+                        }}
+                        className="btn-action secondary"
+                        style={{ padding: '8px 12px', fontSize: '12px' }}
+                      >
+                        Reset Filters
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Table View */}
+                  <div className="admin-card data-table-wrapper" style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', overflow: 'hidden' }}>
+                    {loadingPortfolios ? (
+                      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '60px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                        Loading department student portfolios...
+                      </div>
+                    ) : filteredPortfolios.length === 0 ? (
+                      <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 12px', opacity: 0.4 }}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                        <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '4px' }}>No Student Portfolios Found</h3>
+                        <p style={{ fontSize: '13px', margin: 0 }}>No student public profiles match your current search and filters.</p>
+                      </div>
+                    ) : (
+                      <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--surface-overlay)', textAlign: 'left', borderBottom: '1px solid var(--surface-border)' }}>
+                            <th style={{ padding: '12px 16px', width: '40px' }}>
+                              <input
+                                type="checkbox"
+                                checked={filteredPortfolios.length > 0 && portfolioSelectedRolls.length === filteredPortfolios.length}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setPortfolioSelectedRolls(filteredPortfolios.map(s => s.rollNo || s.id));
+                                  } else {
+                                    setPortfolioSelectedRolls([]);
+                                  }
+                                }}
+                                style={{ cursor: 'pointer' }}
+                              />
+                            </th>
+                            <th style={{ padding: '12px 16px', fontSize: '11.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Student</th>
+                            <th style={{ padding: '12px 16px', fontSize: '11.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Roll Number</th>
+                            <th style={{ padding: '12px 16px', fontSize: '11.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Batch &amp; Section</th>
+                            <th style={{ padding: '12px 16px', fontSize: '11.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>CGPA</th>
+                            <th style={{ padding: '12px 16px', fontSize: '11.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Visibility</th>
+                            <th style={{ padding: '12px 16px', fontSize: '11.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>Public Portfolio Link &amp; Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredPortfolios.map((s: any) => {
+                            const rollKey = s.rollNo || s.id;
+                            const isSelected = portfolioSelectedRolls.includes(rollKey);
+                            const isPub = Boolean(s.isPublic);
+
+                            return (
+                              <tr
+                                key={s.id || s.rollNo}
+                                style={{
+                                  borderBottom: '1px solid var(--surface-border)',
+                                  background: isSelected ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
+                                  transition: 'background 0.15s ease'
+                                }}
+                              >
+                                <td style={{ padding: '14px 16px' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={e => {
+                                      if (e.target.checked) {
+                                        setPortfolioSelectedRolls(prev => [...prev, rollKey]);
+                                      } else {
+                                        setPortfolioSelectedRolls(prev => prev.filter(r => r !== rollKey));
+                                      }
+                                    }}
+                                    style={{ cursor: 'pointer' }}
+                                  />
+                                </td>
+
+                                <td style={{ padding: '14px 16px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'var(--surface-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 800, color: 'var(--accent)', overflow: 'hidden', flexShrink: 0 }}>
+                                      {s.photoUrl ? (
+                                        <img src={s.photoUrl} alt={s.fullName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                      ) : (
+                                        (s.fullName || 'S').charAt(0).toUpperCase()
+                                      )}
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                      <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>{s.fullName}</span>
+                                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{s.email}</span>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '14px 16px' }}>
+                                  <span style={{ padding: '3px 8px', borderRadius: '6px', background: 'var(--surface-base)', border: '1px solid var(--surface-border)', fontFamily: 'var(--font-mono, monospace)', fontSize: '12px', fontWeight: 800, color: 'var(--accent)' }}>
+                                    {s.rollNo || 'N/A'}
+                                  </span>
+                                </td>
+
+                                <td style={{ padding: '14px 16px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                                  <span>{s.year ? `Year ${s.year}` : (s.batch || 'Enrolled')}</span>
+                                  <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '4px', background: 'var(--surface-border)', fontSize: '11px', fontWeight: 700 }}>
+                                    Sec {s.sectionId || 'A'}
+                                  </span>
+                                </td>
+
+                                <td style={{ padding: '14px 16px' }}>
+                                  <span style={{ fontSize: '13.5px', fontWeight: 800, color: parseFloat(s.cgpa) >= 8.0 ? '#10b981' : parseFloat(s.cgpa) >= 6.5 ? 'var(--text-primary)' : '#f59e0b' }}>
+                                    {s.cgpa || '0.00'}
+                                  </span>
+                                </td>
+
+                                <td style={{ padding: '14px 16px' }}>
+                                  {isPub ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', fontSize: '11.5px', fontWeight: 800 }}>
+                                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }}></span>
+                                      Live Public
+                                    </span>
+                                  ) : (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: '12px', background: 'var(--surface-border)', color: 'var(--text-muted)', fontSize: '11.5px', fontWeight: 700 }}>
+                                      🔒 Private
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                    {isPub ? (
+                                      <>
+                                        <a
+                                          href={`/portfolio/${s.slug || s.rollNo}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="btn-action secondary"
+                                          style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, textDecoration: 'none' }}
+                                        >
+                                          Open Link ↗
+                                        </a>
+
+                                        <button
+                                          onClick={() => handleCopySinglePortfolioLink(s)}
+                                          className="btn-action secondary"
+                                          style={{ padding: '5px 10px', fontSize: '11.5px', fontWeight: 700 }}
+                                          title="Copy link to clipboard"
+                                        >
+                                          {copiedRoll === rollKey ? '✓ Copied' : 'Copy'}
+                                        </button>
+
+                                        <button
+                                          onClick={() => setPreviewPortfolioSlug(s.slug || s.rollNo)}
+                                          className="btn-action primary"
+                                          style={{ padding: '5px 11px', fontSize: '11.5px', fontWeight: 700 }}
+                                        >
+                                          Preview
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        onClick={() => fetchUserDetailForHOD(s)}
+                                        className="btn-action secondary"
+                                        style={{ padding: '5px 10px', fontSize: '11.5px', fontWeight: 700 }}
+                                      >
+                                        View Student Profile
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  {/* Portfolio Quick Preview Modal */}
+                  {previewPortfolioSlug && (
+                    <div
+                      style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        width: '100vw',
+                        height: '100vh',
+                        background: 'rgba(10, 10, 10, 0.8)',
+                        backdropFilter: 'blur(8px)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 1000,
+                        padding: '24px',
+                        boxSizing: 'border-box'
+                      }}
+                      onClick={() => setPreviewPortfolioSlug(null)}
+                    >
+                      <div
+                        style={{
+                          background: 'var(--surface-overlay)',
+                          border: '1px solid var(--surface-border)',
+                          borderRadius: '20px',
+                          width: '100%',
+                          maxWidth: '1000px',
+                          maxHeight: '90vh',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          overflow: 'hidden',
+                          boxShadow: '0 20px 40px rgba(0,0,0,0.4)'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--surface-border)', background: 'var(--surface-raised)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-primary)' }}>
+                              Live Portfolio Preview — {previewPortfolioSlug}
+                            </span>
+                            <a
+                              href={`/portfolio/${previewPortfolioSlug}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none', fontWeight: 700 }}
+                            >
+                              Open in Full Window ↗
+                            </a>
+                          </div>
+                          <button
+                            onClick={() => setPreviewPortfolioSlug(null)}
+                            style={{ background: 'transparent', border: 'none', fontSize: '18px', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px 8px' }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        <div style={{ flex: 1, minHeight: '560px', background: '#0a0a0c' }}>
+                          <iframe
+                            src={`/portfolio/${previewPortfolioSlug}`}
+                            title="Student Portfolio Preview"
+                            style={{ width: '100%', height: '100%', border: 'none', minHeight: '560px' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* TAB CURRICULUM FILES */}
               {activeTab === 'documents' && (
                 <div style={{ display: 'flex', gap: '16px' }}>
@@ -1801,17 +2248,17 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
 
                         <div className="admin-form-group">
                           <label className="admin-label">Title / Caption</label>
-                          <input type="text" className="filter-select" required value={docForm.title} onChange={e => setDocForm({ ...docForm, title: e.target.value })} placeholder="e.g. III B.Tech CSE-A Timetable" />
+                          <input type="text" className="form-input" required value={docForm.title} onChange={e => setDocForm({ ...docForm, title: e.target.value })} placeholder="e.g. III B.Tech CSE-A Timetable" />
                         </div>
 
                         <div className="admin-form-group">
                           <label className="admin-label">Subject Code (if Lesson Plan)</label>
-                          <input type="text" className="filter-select" value={docForm.subjectCode} onChange={e => setDocForm({ ...docForm, subjectCode: e.target.value })} placeholder="e.g. CS301" />
+                          <input type="text" className="form-input" value={docForm.subjectCode} onChange={e => setDocForm({ ...docForm, subjectCode: e.target.value })} placeholder="e.g. CS301" />
                         </div>
 
                         <div className="admin-form-group">
                           <label className="admin-label">External PDF Resource URL</label>
-                          <input type="url" className="filter-select" required value={docForm.resourceUrl} onChange={e => setDocForm({ ...docForm, resourceUrl: e.target.value })} placeholder="https://..." />
+                          <input type="url" className="form-input" required value={docForm.resourceUrl} onChange={e => setDocForm({ ...docForm, resourceUrl: e.target.value })} placeholder="https://..." />
                         </div>
 
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -1834,7 +2281,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           </div>
                         </div>
 
-                        <button type="submit" disabled={submittingDoc} className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>
+                        <button type="submit" disabled={submittingDoc} className="btn-action primary" style={{ padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>
                           {submittingDoc ? 'Recording...' : 'Record File'}
                         </button>
                       </form>
@@ -1846,18 +2293,22 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                     <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '14px' }}>Active Curriculum Library</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {documents.map(doc => (
-                        <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'var(--surface-overlay)', borderRadius: '10px', border: '1px solid var(--surface-border)' }}>
+                        <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: 'var(--surface-overlay)', borderRadius: '12px', border: '1px solid var(--surface-border)' }}>
                           <div>
-                            <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: 'rgba(255, 255, 255, 0.1)', color: '#ffffff', textTransform: 'uppercase', marginRight: '8px' }}>
+                            <span style={{ fontSize: '10.5px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', background: 'var(--accent-subtle)', color: 'var(--accent)', textTransform: 'uppercase', marginRight: '8px' }}>
                               {doc.docType.replace('_', ' ')}
                             </span>
                             <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)' }}>{doc.title}</strong>
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
                               Target: {doc.targetYear} Year Sec-{doc.targetSection} | Semester: {doc.semester}
                             </div>
                           </div>
-                          <button onClick={() => setPreviewDoc({ ...doc, fileUrl: doc.fileUrl || doc.resourceUrl })} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--surface-border)', padding: '6px 12px', borderRadius: '8px', fontSize: '12.5px', color: '#ffffff', fontWeight: 600, cursor: 'pointer' }}>
-                            View
+                          <button 
+                            className="btn-action secondary" 
+                            onClick={() => setPreviewDoc({ ...doc, fileUrl: doc.fileUrl || doc.resourceUrl })} 
+                            style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            View Document
                           </button>
                         </div>
                       ))}
@@ -1879,17 +2330,17 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                         <form onSubmit={handleAnnSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                           <div className="admin-form-group">
                             <label className="admin-label">Title</label>
-                            <input type="text" className="filter-select" required value={annForm.title} onChange={e => setAnnForm({ ...annForm, title: e.target.value })} placeholder="e.g. NBA Pre-Audit Review Scheduled" />
+                            <input type="text" className="form-input" required value={annForm.title} onChange={e => setAnnForm({ ...annForm, title: e.target.value })} placeholder="e.g. NBA Pre-Audit Review Scheduled" />
                           </div>
                           <div className="admin-form-group">
                             <label className="admin-label">Content Description</label>
-                            <textarea className="filter-select" required rows={3} value={annForm.content} onChange={e => setAnnForm({ ...annForm, content: e.target.value })} placeholder="Write announcement details..." />
+                            <textarea className="form-input" required rows={3} value={annForm.content} onChange={e => setAnnForm({ ...annForm, content: e.target.value })} placeholder="Write announcement details..." />
                           </div>
                           <div className="admin-form-group">
                             <label className="admin-label">Optional Resource Link</label>
-                            <input type="url" className="filter-select" value={annForm.resourceUrl} onChange={e => setAnnForm({ ...annForm, resourceUrl: e.target.value })} placeholder="https://..." />
+                            <input type="url" className="form-input" value={annForm.resourceUrl} onChange={e => setAnnForm({ ...annForm, resourceUrl: e.target.value })} placeholder="https://..." />
                           </div>
-                          <button type="submit" disabled={submittingAnn} className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>{submittingAnn ? 'Publishing...' : 'Publish Broadcast'}</button>
+                          <button type="submit" disabled={submittingAnn} className="btn-action primary" style={{ border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>{submittingAnn ? 'Publishing...' : 'Publish Broadcast'}</button>
                         </form>
                       </div>
 
@@ -1898,7 +2349,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                         <form onSubmit={handleTrainingSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                           <div className="admin-form-group">
                             <label className="admin-label">Course Title</label>
-                            <input type="text" className="filter-select" required value={trainingForm.title} onChange={e => setTrainingForm({ ...trainingForm, title: e.target.value })} placeholder="e.g. React & Node.js bootcamp" />
+                            <input type="text" className="form-input" required value={trainingForm.title} onChange={e => setTrainingForm({ ...trainingForm, title: e.target.value })} placeholder="e.g. React & Node.js bootcamp" />
                           </div>
                           <div style={{ display: 'flex', gap: '8px' }}>
                             <div className="admin-form-group" style={{ flex: 1 }}>
@@ -1911,14 +2362,14 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                             </div>
                             <div className="admin-form-group" style={{ flex: 1 }}>
                               <label className="admin-label">Venue</label>
-                              <input type="text" className="filter-select" required value={trainingForm.venue} onChange={e => setTrainingForm({ ...trainingForm, venue: e.target.value })} placeholder="CSE Lab 3" />
+                              <input type="text" className="form-input" required value={trainingForm.venue} onChange={e => setTrainingForm({ ...trainingForm, venue: e.target.value })} placeholder="CSE Lab 3" />
                             </div>
                           </div>
                           <div className="admin-form-group">
                             <label className="admin-label">Registration Landing Page URL</label>
-                            <input type="url" className="filter-select" required value={trainingForm.registrationUrl} onChange={e => setTrainingForm({ ...trainingForm, registrationUrl: e.target.value })} placeholder="https://..." />
+                            <input type="url" className="form-input" required value={trainingForm.registrationUrl} onChange={e => setTrainingForm({ ...trainingForm, registrationUrl: e.target.value })} placeholder="https://..." />
                           </div>
-                          <button type="submit" disabled={submittingTraining} className="btn-action primary" style={{ background: '#ffffff', color: '#000000', border: 'none', padding: '10px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>{submittingTraining ? 'Recording...' : 'Record Training Course'}</button>
+                          <button type="submit" disabled={submittingTraining} className="btn-action primary" style={{ padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>{submittingTraining ? 'Recording...' : 'Record Training Course'}</button>
                         </form>
                       </div>
                     </div>
@@ -2032,11 +2483,10 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                             <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Student Roll Number</label>
                             <input 
                               type="text" 
-                              className="filter-select" 
+                              className="form-input" 
                               placeholder="e.g. 22B01A0501" 
                               value={hodNotifTarget} 
                               onChange={e => setHodNotifTarget(e.target.value)} 
-                              style={{ padding: '10px', fontSize: '13px' }}
                               required
                             />
                           </div>
@@ -2056,11 +2506,10 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Alert Title</label>
                           <input 
                             type="text" 
-                            className="filter-select" 
+                            className="form-input" 
                             placeholder="Enter alert title..." 
                             value={hodNotifTitle} 
                             onChange={e => setHodNotifTitle(e.target.value)} 
-                            style={{ padding: '10px', fontSize: '13px' }}
                             required
                           />
                         </div>
@@ -2068,12 +2517,12 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Message Body</label>
                           <textarea 
-                            className="filter-select" 
+                            className="form-input" 
                             rows={3} 
                             placeholder="Enter warning details..." 
                             value={hodNotifMessage} 
                             onChange={e => setHodNotifMessage(e.target.value)} 
-                            style={{ padding: '10px', fontSize: '13px', resize: 'vertical' }}
+                            style={{ resize: 'vertical' }}
                             required
                           />
                         </div>
@@ -2436,17 +2885,17 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           <form onSubmit={handleSendStaffMessage} style={{ padding: '16px 20px', borderTop: '1px solid var(--surface-border)', display: 'flex', gap: '12px', background: 'var(--surface-overlay)' }}>
                             <input
                               type="text"
-                              className="filter-select"
+                              className="form-input"
                               placeholder={`Reply to ${selectedConversation.studentName}...`}
                               value={staffMsgInput}
                               onChange={e => setStaffMsgInput(e.target.value)}
-                              style={{ flex: 1, padding: '10px 14px', fontSize: '13px' }}
+                              style={{ flex: 1, fontSize: '13px' }}
                             />
                             <button
                               type="submit"
                               className="btn-action primary"
                               disabled={!staffMsgInput.trim()}
-                              style={{ padding: '10px 20px', background: '#ffffff', border: 'none', color: '#000000', fontWeight: 700 }}
+                              style={{ padding: '10px 20px', fontWeight: 700 }}
                             >
                               Send
                             </button>
@@ -2463,107 +2912,59 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                 </div>
               )}
 
-              {activeTab === 'settings' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>Faculty Profile Settings</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Review your registered account profile status and update security parameters.</p>
-                  </div>
 
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '24px' }}>
-                    <form onSubmit={handleSaveHODProfile} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {/* Profile Picture Section */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
-                        <div style={{
-                          width: '64px',
-                          height: '64px',
-                          borderRadius: '50%',
-                          background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 800,
-                          color: '#fff',
-                          fontSize: '24px',
-                          overflow: 'hidden',
-                          border: '2px solid var(--surface-border)'
-                        }}>
-                          {profilePhotoUrl ? (
-                            <img src={`${API_BASE_URL}${profilePhotoUrl}`} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            userSession.fullName?.slice(0, 1)?.toUpperCase() || 'H'
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Profile Photo</label>
-                          <input type="file" accept="image/*" onChange={handleHODPhotoUpload} style={{ fontSize: '12px', color: 'var(--text-secondary)' }} />
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Full Name</label>
-                        <input type="text" className="filter-select" value={profileFullName} onChange={e => setProfileFullName(e.target.value)} required />
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Email Address</label>
-                        <input type="email" className="filter-select" value={hodProfile?.email || userSession.email} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Contact Phone</label>
-                        <input type="text" className="filter-select" value={profilePhone} onChange={e => setProfilePhone(e.target.value)} placeholder="Enter mobile number..." />
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Account Authority Role</label>
-                        <input type="text" className="filter-select" value={hodProfile?.role || userSession.role} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Change Password</label>
-                        <input type="password" className="filter-select" value={profilePassword} onChange={e => setProfilePassword(e.target.value)} placeholder="Type new password to modify..." />
-                      </div>
-
-                      <button type="submit" className="btn-action primary" style={{ marginTop: '10px' }}>
-                        Save Settings
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              )}
 
             </motion.div>
           </AnimatePresence>
 
-          {/* FOOTER */}
-          <footer className="admin-footer">
-            <div className="admin-footer-top">
-              <div className="admin-footer-brand">
-                <LogoHeader imageStyle={{ height: '32px' }} />
+          {/* CIET Footer matching HOD Dashboard */}
+          </div>{/* end admin-main-content */}
+          <footer className="admin-footer" style={{ padding: '36px 24px 28px', background: 'var(--surface-raised)', borderTop: '1px solid var(--surface-border)', borderRadius: 'var(--r3)', width: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '24px', marginTop: '40px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '32px' }}>
+              <div style={{ maxWidth: '380px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                  <LogoHeader imageStyle={{ height: '36px', background: '#fff', borderRadius: '4px', padding: '2px' }} />
+                </div>
+                <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>Approved by AICTE, Affiliated to Acharya Nagarjuna University. Accredited by NAAC with 'A' Grade &amp; NBA.</p>
               </div>
-              <div className="admin-footer-links">
+              <div style={{ display: 'flex', gap: '48px', flexWrap: 'wrap' }}>
                 <div>
-                  <h5 className="admin-footer-col-title">Quick Contacts</h5>
-                  <ul className="admin-footer-list">
-                    <li>📞 0863 - 2524112 / 113</li>
-                    <li><a href="mailto:principal@chalapathiengg.ac.in">principal@chalapathiengg.ac.in</a></li>
+                  <h5 style={{ margin: '0 0 12px 0', fontSize: '11px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Quick Contacts</h5>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>📞 0863 - 2524112 / 113</li>
+                    <li style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><a href="mailto:principal@chalapathiengg.ac.in" style={{ color: 'inherit', textDecoration: 'none' }}>✉️ principal@chalapathiengg.ac.in</a></li>
                   </ul>
                 </div>
                 <div>
-                  <h5 className="admin-footer-col-title">Address</h5>
-                  <p className="admin-footer-addr">Chalapathi Nagar, Lam,<br />Guntur District, A.P. – 522 034</p>
+                  <h5 style={{ margin: '0 0 12px 0', fontSize: '11px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Address</h5>
+                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.6', maxWidth: '240px' }}>Chalapathi Nagar, Lam,<br />Guntur District, Andhra Pradesh<br />PIN – 522 034, India</p>
                 </div>
               </div>
             </div>
-            <div className="admin-footer-bottom">
+            <div style={{ borderTop: '1px solid var(--surface-border)', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>
               <span>© {new Date().getFullYear()} CIET. All Rights Reserved.</span>
-              <a href="http://chalapathiengg.ac.in" target="_blank" rel="noopener noreferrer">Official Portal →</a>
+              <a href="http://chalapathiengg.ac.in" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Official Portal →</a>
             </div>
           </footer>
-        </div>
-        </div>
+        </main>
       </div>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="fac-mobile-bottom-nav">
+        {[
+          { id: 'overview', label: 'Overview' },
+          { id: 'directory', label: 'Directory' },
+          ...(Boolean(userSession.isMentor || userSession.role === 'Mentor' || (mentorMentees && mentorMentees.length > 0)) ? [{ id: 'mentorship', label: 'Mentees' }] : []),
+          { id: 'portfolios', label: 'Portfolios' },
+          { id: 'documents', label: 'Curriculum' },
+          { id: 'training', label: 'Training' },
+          { id: 'broadcasts', label: 'Broadcasts' },
+          { id: 'escalations', label: 'Escalations' },
+          { id: 'notifications', label: 'Alerts' },
+        ].map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id as Tab)} style={{ padding: '8px 16px', borderRadius: '20px', fontWeight: 700, fontSize: '13px', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.2s ease', background: activeTab === tab.id ? 'var(--accent)' : 'transparent', color: activeTab === tab.id ? '#ffffff' : 'var(--text-secondary)', boxShadow: activeTab === tab.id ? '0 2px 8px var(--accent-glow)' : 'none' }}>{tab.label}</button>
+        ))}
+      </nav>
 
       {/* OVERLAY PROFILE DETAILS MODAL */}
       {selectedDetailUser && (
@@ -2850,21 +3251,21 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
               <div className="admin-modal-body" style={{ padding: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxHeight: '70vh', overflowY: 'auto' }}>
                 <div style={{ gridColumn: 'span 2' }}>
                   <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Full Name</label>
-                  <input type="text" className="filter-select" value={dirFormFullName} onChange={e => setDirFormFullName(e.target.value)} required style={{ width: '100%', padding: '10px' }} />
+                  <input type="text" className="form-input" value={dirFormFullName} onChange={e => setDirFormFullName(e.target.value)} required style={{ width: '100%' }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Email Address</label>
-                  <input type="email" className="filter-select" value={dirFormEmail} onChange={e => setDirFormEmail(e.target.value)} required style={{ width: '100%', padding: '10px' }} />
+                  <input type="email" className="form-input" value={dirFormEmail} onChange={e => setDirFormEmail(e.target.value)} required style={{ width: '100%' }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Phone Number</label>
-                  <input type="tel" className="filter-select" value={dirFormPhone} onChange={e => setDirFormPhone(e.target.value)} style={{ width: '100%', padding: '10px' }} />
+                  <input type="tel" className="form-input" value={dirFormPhone} onChange={e => setDirFormPhone(e.target.value)} style={{ width: '100%' }} />
                 </div>
                 {dirSelectedUser.role === 'Student' && (
                   <>
                     <div>
                       <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Roll Number</label>
-                      <input type="text" className="filter-select" value={dirFormRollNo} onChange={e => setDirFormRollNo(e.target.value)} style={{ width: '100%', padding: '10px' }} />
+                      <input type="text" className="form-input" value={dirFormRollNo} onChange={e => setDirFormRollNo(e.target.value)} style={{ width: '100%' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Academic Year</label>
@@ -2874,15 +3275,15 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Section</label>
-                      <input type="text" className="filter-select" value={dirFormSectionId} onChange={e => setDirFormSectionId(e.target.value)} placeholder="e.g. A" style={{ width: '100%', padding: '10px' }} />
+                      <input type="text" className="form-input" value={dirFormSectionId} onChange={e => setDirFormSectionId(e.target.value)} placeholder="e.g. A" style={{ width: '100%' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Batch</label>
-                      <input type="text" className="filter-select" value={dirFormBatch} onChange={e => setDirFormBatch(e.target.value)} placeholder="e.g. 2023-2027" style={{ width: '100%', padding: '10px' }} />
+                      <input type="text" className="form-input" value={dirFormBatch} onChange={e => setDirFormBatch(e.target.value)} placeholder="e.g. 2023-2027" style={{ width: '100%' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>CGPA</label>
-                      <input type="number" step="0.01" className="filter-select" value={dirFormCgpa} onChange={e => setDirFormCgpa(e.target.value)} style={{ width: '100%', padding: '10px' }} />
+                      <input type="number" step="0.01" className="form-input" value={dirFormCgpa} onChange={e => setDirFormCgpa(e.target.value)} style={{ width: '100%' }} />
                     </div>
                     <div>
                       <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Academic Status</label>

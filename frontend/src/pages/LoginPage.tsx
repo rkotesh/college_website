@@ -13,6 +13,7 @@ interface LoginResponse {
   role: string;
   email: string;
   fullName?: string;
+  isMentor?: boolean;
   error?: string;
 }
 
@@ -22,6 +23,7 @@ interface LoginPageProps {
     email: string;
     fullName?: string;
     accessToken: string;
+    isMentor?: boolean;
   }) => void;
 }
 
@@ -357,7 +359,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           role: data.role,
           email: data.email,
           fullName: data.fullName,
-          accessToken: data.accessToken
+          accessToken: data.accessToken,
+          isMentor: data.isMentor === true
         });
         setSuccessMsg(`Welcome, ${data.fullName || data.email}!`);
       } else {

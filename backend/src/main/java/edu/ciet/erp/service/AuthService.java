@@ -162,6 +162,7 @@ public class AuthService {
                 .role(roleStr)
                 .email(user.getEmail())
                 .fullName(user.getFullName())
+                .isMentor(Boolean.TRUE.equals(user.getIsMentor()) || user.getRole() == Role.Mentor)
                 .build();
     }
 

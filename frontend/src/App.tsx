@@ -19,6 +19,7 @@ export default function App() {
     email: string;
     fullName?: string;
     accessToken: string;
+    isMentor?: boolean;
   } | null>(null);
 
   const [initializing, setInitializing] = useState(true);
@@ -58,7 +59,8 @@ export default function App() {
               role: data.role || savedRole,
               email: data.email || savedEmail,
               fullName: data.fullName || savedName || undefined,
-              accessToken: savedToken
+              accessToken: savedToken,
+              isMentor: data.isMentor === true
             });
             return;
           }
@@ -114,12 +116,9 @@ export default function App() {
           title = "HOD Dashboard | CIET ERP";
           break;
         case 'Mentor':
-          basePath = '/mentor-dashboard';
-          title = "Mentor Dashboard | CIET ERP";
-          break;
         case 'Faculty':
           basePath = '/faculty-dashboard';
-          title = "Faculty Dashboard | CIET ERP";
+          title = userSession.role === 'Mentor' ? "Faculty & Mentor Portal | CIET ERP" : "Faculty Portal | CIET ERP";
           break;
         case 'Student':
           basePath = '/student-dashboard';
@@ -149,6 +148,7 @@ export default function App() {
     email: string;
     fullName?: string;
     accessToken: string;
+    isMentor?: boolean;
   }) => {
     setUserSession(session);
   };
@@ -202,10 +202,7 @@ export default function App() {
   if (userSession.role === 'HOD' && currentPath.startsWith('/hod-dashboard')) {
     return <HODDashboard userSession={userSession} handleLogout={handleLogout} />;
   }
-  if (userSession.role === 'Mentor' && currentPath.startsWith('/mentor-dashboard')) {
-    return <MentorDashboard userSession={userSession} handleLogout={handleLogout} />;
-  }
-  if (userSession.role === 'Faculty' && currentPath.startsWith('/faculty-dashboard')) {
+  if ((userSession.role === 'Faculty' || userSession.role === 'Mentor') && (currentPath.startsWith('/faculty-dashboard') || currentPath.startsWith('/mentor-dashboard'))) {
     return <FacultyDashboard userSession={userSession} handleLogout={handleLogout} />;
   }
 

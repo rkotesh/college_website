@@ -3,6 +3,7 @@ package edu.ciet.erp.controller;
 import edu.ciet.erp.dto.LoginRequest;
 import edu.ciet.erp.dto.LoginResponse;
 import edu.ciet.erp.dto.VerifyOtpRequest;
+import edu.ciet.erp.model.Role;
 import edu.ciet.erp.model.User;
 import edu.ciet.erp.repository.UserRepository;
 import edu.ciet.erp.service.AuthService;
@@ -93,12 +94,16 @@ public class AuthController {
                 .findFirst()
                 .orElse(user.getRole().name());
                 
-        return ResponseEntity.ok(Map.of(
-            "authenticated", true,
-            "email", user.getEmail(),
-            "role", sessionRole,
-            "fullName", user.getFullName()
-        ));
+        Map<String, Object> sessionData = new java.util.HashMap<>();
+        sessionData.put("authenticated", true);
+        sessionData.put("email", user.getEmail());
+        sessionData.put("role", sessionRole);
+        sessionData.put("fullName", user.getFullName());
+        sessionData.put("isMentor", Boolean.TRUE.equals(user.getIsMentor()) || user.getRole() == Role.Mentor);
+        sessionData.put("departmentId", user.getDepartmentId());
+        sessionData.put("departmentIds", user.getDepartmentIds());
+
+        return ResponseEntity.ok(sessionData);
     }
 
     @PostMapping("/logout")

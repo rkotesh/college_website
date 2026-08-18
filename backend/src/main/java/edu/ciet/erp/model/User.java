@@ -39,6 +39,9 @@ public class User {
     
     @Builder.Default
     private boolean isActive = true;
+
+    @Builder.Default
+    private Boolean isMentor = false;
     
     private String lastLoginIp;
     private LocalDateTime lastLogin;
