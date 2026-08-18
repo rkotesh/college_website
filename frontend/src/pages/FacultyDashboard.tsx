@@ -198,9 +198,59 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
     }
   };
 
+  const getStaffDeptKeys = (): string[] => {
+    const keys: string[] = [];
+    if (userSession.departmentIds) {
+      userSession.departmentIds.forEach(d => {
+        if (d) d.split(/[,;/]/).forEach(p => { if (p.trim()) keys.push(p.trim().toUpperCase()); });
+      });
+    }
+    if (userSession.departmentId) {
+      userSession.departmentId.split(/[,;/]/).forEach(p => { if (p.trim()) keys.push(p.trim().toUpperCase()); });
+    }
+    if (userSession.email) {
+      const emailUpper = userSession.email.toUpperCase();
+      if (emailUpper.includes('AIML') || emailUpper.includes('.AI@') || emailUpper.includes('CSM')) {
+        keys.push('AIML', 'AI', 'CSM');
+      } else if (emailUpper.includes('.CSE@') || emailUpper.includes('CSE')) {
+        keys.push('CSE');
+      } else if (emailUpper.includes('.ECE@') || emailUpper.includes('ECE')) {
+        keys.push('ECE');
+      } else if (emailUpper.includes('.IT@') || emailUpper.includes('IT')) {
+        keys.push('IT');
+      }
+    }
+    if (keys.includes('AI') || keys.includes('AIML') || keys.includes('CSM')) {
+      keys.push('AI', 'AIML', 'CSM', 'CAI');
+    }
+    return Array.from(new Set(keys));
+  };
+
+  const isStudentInMyDept = (student: any): boolean => {
+    const staffKeys = getStaffDeptKeys();
+    if (staffKeys.length === 0) return true;
+    const rollNo = (student.rollNo || student.email || '').toUpperCase();
+    let studentDept = '';
+    if (rollNo.includes('AIML') || rollNo.includes('CSM') || rollNo.includes('AI&ML')) studentDept = 'AIML';
+    else if (rollNo.includes('CAI') || rollNo.includes('AI')) studentDept = 'AI';
+    else if (rollNo.includes('CSE') || rollNo.includes('CS')) studentDept = 'CSE';
+    else if (rollNo.includes('ECE') || rollNo.includes('EC')) studentDept = 'ECE';
+    else if (rollNo.includes('EEE') || rollNo.includes('EE')) studentDept = 'EEE';
+    else if (rollNo.includes('MECH') || rollNo.includes('ME')) studentDept = 'MECH';
+    else if (rollNo.includes('CIVIL') || rollNo.includes('CE')) studentDept = 'CIVIL';
+    else if (rollNo.includes('IT')) studentDept = 'IT';
+    else if (student.departmentId) studentDept = student.departmentId.toUpperCase();
+
+    if (studentDept) {
+      return staffKeys.includes(studentDept);
+    }
+    return true;
+  };
+
   const filteredDirUsers = directoryUsers.filter(u => {
     // Student Directory: only show students from this department
     if (u.role !== 'Student') return false;
+    if (!isStudentInMyDept(u)) return false;
     if (dirDeptFilter !== 'ALL') {
       const uDept = u.departmentIds?.[0] || u.departmentId || '';
       if (uDept !== dirDeptFilter) return false;
@@ -320,6 +370,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   const [previewPortfolioSlug, setPreviewPortfolioSlug] = useState<string | null>(null);
 
   const filteredPortfolios = portfolioStudents.filter(s => {
+    if (!isStudentInMyDept(s)) return false;
     if (portfolioStatusFilter === 'PUBLIC' && !s.isPublic) return false;
     if (portfolioStatusFilter === 'PRIVATE' && s.isPublic) return false;
     if (portfolioYearFilter !== 'ALL') {
