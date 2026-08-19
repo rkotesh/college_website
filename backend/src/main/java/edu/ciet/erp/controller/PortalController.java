@@ -47,6 +47,7 @@ public class PortalController {
     private final EscalationThreadRepository escalationThreadRepository;
     private final EscalationMessageRepository escalationMessageRepository;
     private final MentorshipAssignmentRepository mentorshipAssignmentRepository;
+    private final MentorshipCaseNoteRepository mentorshipCaseNoteRepository;
     private final BroadcastLogRepository broadcastLogRepository;
 
     @org.springframework.beans.factory.annotation.Value("${app.mail.from:noreply@ciet.edu}")
@@ -660,129 +661,6 @@ public class PortalController {
             }
         }
         return ResponseEntity.ok(Map.of("success", true));
-    }
-    @GetMapping("/student/messaging-contacts")
-    @PreAuthorize("hasAnyAuthority('ROLE_Student')")
-    public ResponseEntity<?> getStudentMessagingContacts(Authentication authentication) {
-        String email = authentication.getName();
-        Optional<User> userOpt = userRepository.findByEmailIgnoreCase(email);
-        if (userOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student user not found"));
-        }
-        User student = userOpt.get();
-        Optional<StudentProfile> profileOpt = studentProfileRepository.findByUserId(student.getId());
-        if (profileOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student profile not found"));
-        }
-        StudentProfile profile = profileOpt.get();
-        String deptId = profile.getDepartmentId();
-
-        List<Map<String, Object>> contacts = new ArrayList<>();
-
-        // 1. Fetch HOD(s) for the department
-        List<User> hods = userRepository.findAllByRole(Role.HOD);
-        for (User hod : hods) {
-            if (hod.getDepartmentIds() != null && hod.getDepartmentIds().contains(deptId)) {
-                Map<String, Object> c = new HashMap<>();
-                c.put("userId", hod.getId());
-                c.put("fullName", hod.getFullName());
-                c.put("email", hod.getEmail());
-                c.put("role", "HOD");
-                contacts.add(c);
-            }
-        }
-
-        // 2. Fetch Mentor for the student
-        Optional<MentorshipAssignment> assignmentOpt = mentorshipAssignmentRepository.findByRollNoIgnoreCase(profile.getRollNo());
-        if (assignmentOpt.isPresent()) {
-            String mentorId = assignmentOpt.get().getMentorUserId();
-            userRepository.findById(mentorId).ifPresent(m -> {
-                Map<String, Object> c = new HashMap<>();
-                c.put("userId", m.getId());
-                c.put("fullName", m.getFullName());
-                c.put("email", m.getEmail());
-                c.put("role", "Mentor");
-                contacts.add(c);
-            });
-        }
-
-        // 3. Fetch Faculty members for the department
-        List<User> faculties = userRepository.findAllByRole(Role.Faculty);
-        for (User f : faculties) {
-            if (f.getDepartmentIds() != null && f.getDepartmentIds().contains(deptId)) {
-                boolean exists = contacts.stream().anyMatch(c -> c.get("userId").equals(f.getId()));
-                if (!exists) {
-                    Map<String, Object> c = new HashMap<>();
-                    c.put("userId", f.getId());
-                    c.put("fullName", f.getFullName());
-                    c.put("email", f.getEmail());
-                    c.put("role", "Faculty");
-                    contacts.add(c);
-                }
-            }
-        }
-
-        return ResponseEntity.ok(contacts);
-    }
-
-    @GetMapping("/student/messages")
-    @PreAuthorize("hasAnyAuthority('ROLE_Student')")
-    public ResponseEntity<?> getStudentMessages(Authentication authentication) {
-        String email = authentication.getName();
-        Optional<User> userOpt = userRepository.findByEmailIgnoreCase(email);
-        if (userOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student user not found"));
-        }
-        User user = userOpt.get();
-        Optional<StudentProfile> profileOpt = studentProfileRepository.findByUserId(user.getId());
-        String rollNo = profileOpt.isPresent() ? profileOpt.get().getRollNo() : email.split("@")[0].toUpperCase();
-
-        List<Message> list = messageRepository.findAllByStudentRollNoOrderByTimestampAsc(rollNo);
-        return ResponseEntity.ok(list);
-    }
-
-    @PostMapping("/student/messages")
-    @PreAuthorize("hasAnyAuthority('ROLE_Student')")
-    public ResponseEntity<?> sendStudentMessage(Authentication authentication, @RequestBody Map<String, String> payload) {
-        String email = authentication.getName();
-        Optional<User> userOpt = userRepository.findByEmailIgnoreCase(email);
-        if (userOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Student user not found"));
-        }
-        User student = userOpt.get();
-        Optional<StudentProfile> profileOpt = studentProfileRepository.findByUserId(student.getId());
-        String rollNo = profileOpt.isPresent() ? profileOpt.get().getRollNo() : email.split("@")[0].toUpperCase();
-
-        String text = payload.get("messageText");
-        if (text == null || text.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Message text cannot be empty"));
-        }
-
-        String recipientId = payload.get("recipientId");
-        if (recipientId == null || recipientId.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Recipient ID is required"));
-        }
-
-        Optional<User> recipientOpt = userRepository.findById(recipientId);
-        if (recipientOpt.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Recipient not found"));
-        }
-        User recipient = recipientOpt.get();
-
-        Message m = Message.builder()
-            .studentRollNo(rollNo)
-            .senderId(student.getId())
-            .senderName(student.getFullName() != null ? student.getFullName() : student.getEmail())
-            .senderRole("Student")
-            .recipientId(recipient.getId())
-            .recipientName(recipient.getFullName() != null ? recipient.getFullName() : recipient.getEmail())
-            .recipientRole(recipient.getRole().name())
-            .messageText(text)
-            .incoming(false)
-            .build();
-        messageRepository.save(m);
-
-        return ResponseEntity.ok(messageRepository.findAllByStudentRollNoOrderByTimestampAsc(rollNo));
     }
     @PutMapping("/student/profile")
     @PreAuthorize("hasAnyAuthority('ROLE_Student')")
@@ -2132,5 +2010,37 @@ public class PortalController {
         escalationMessageRepository.save(msg);
         escalationThreadRepository.findById(threadId).ifPresent(t -> { t.setUpdatedAt(LocalDateTime.now()); escalationThreadRepository.save(t); });
         return ResponseEntity.ok(msg);
+    }
+
+    @GetMapping("/student/counsel-notes")
+    @PreAuthorize("hasAnyAuthority('ROLE_Student')")
+    public ResponseEntity<?> getStudentCounselNotes(Authentication authentication) {
+        StudentProfile profile = getAuthenticatedStudentProfile(authentication);
+        if (profile == null || profile.getRollNo() == null) {
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+
+        List<MentorshipCaseNote> notes = mentorshipCaseNoteRepository.findAllByRollNoIgnoreCaseOrderByCreatedAtDesc(profile.getRollNo());
+        List<Map<String, Object>> enriched = new ArrayList<>();
+        for (MentorshipCaseNote note : notes) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", note.getId());
+            map.put("rollNo", note.getRollNo());
+            map.put("authorUserId", note.getAuthorUserId());
+            map.put("authorRole", note.getAuthorRole());
+            map.put("content", note.getContent());
+            map.put("createdAt", note.getCreatedAt());
+
+            String authorName = "Mentor";
+            if (note.getAuthorUserId() != null) {
+                Optional<User> authorOpt = userRepository.findById(note.getAuthorUserId());
+                if (authorOpt.isPresent()) {
+                    authorName = authorOpt.get().getFullName() != null ? authorOpt.get().getFullName() : authorOpt.get().getEmail();
+                }
+            }
+            map.put("authorName", authorName);
+            enriched.add(map);
+        }
+        return ResponseEntity.ok(enriched);
     }
 }

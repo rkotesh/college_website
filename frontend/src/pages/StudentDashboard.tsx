@@ -465,7 +465,7 @@ function EmptyState({ icon, text, action, onAction }: { icon: string; text: stri
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'academics' | 'education' | 'projects' | 'certifications' | 'internships' | 'skills' | 'research' | 'events' | 'courses' | 'notifications' | 'messages' | 'settings' | 'escalation' | 'broadcasts';
+type Tab = 'overview' | 'academics' | 'mentorship' | 'education' | 'projects' | 'certifications' | 'internships' | 'skills' | 'research' | 'events' | 'courses' | 'notifications' | 'settings' | 'escalation' | 'broadcasts';
 
 interface StudentDashboardProps {
   userSession: { role: string; email: string; fullName?: string; accessToken: string; };
@@ -484,6 +484,10 @@ const NAV_ITEMS: { key: Tab; label: string; icon: React.ReactNode; section?: str
   {
     key: 'academics', label: 'Grades',
     icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+  },
+  {
+    key: 'mentorship', label: 'Mentorship Notes',
+    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
   },
   {
     key: 'education', label: 'Education', section: 'Portfolio',
@@ -522,10 +526,6 @@ const NAV_ITEMS: { key: Tab; label: string; icon: React.ReactNode; section?: str
     icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
   },
   {
-    key: 'messages', label: 'Messages',
-    icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-  },
-  {
     key: 'escalation', label: 'Intervention Room',
     icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="18" r="3"/><path d="M12 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-8M2 14V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/></svg>
   },
@@ -551,9 +551,9 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
     const parts = window.location.pathname.split('/');
     const tabFromUrl = parts[parts.length - 1];
     const validTabs: Tab[] = [
-      'overview', 'academics', 'education', 'projects', 'certifications', 
+      'overview', 'academics', 'mentorship', 'education', 'projects', 'certifications', 
       'internships', 'skills', 'research', 'events', 'courses', 
-      'notifications', 'messages', 'settings', 'escalation', 'broadcasts'
+      'notifications', 'settings', 'escalation', 'broadcasts'
     ];
     if (validTabs.includes(tabFromUrl as Tab)) {
       return tabFromUrl as Tab;
@@ -569,6 +569,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
     switch (activeTab) {
       case 'overview': tabLabel = 'Dashboard'; break;
       case 'academics': tabLabel = 'Grades'; break;
+      case 'mentorship': tabLabel = 'Mentorship Notes'; break;
       case 'projects': tabLabel = 'Portfolio'; break;
       case 'education': tabLabel = 'Education'; break;
       case 'skills': tabLabel = 'Skills'; break;
@@ -578,7 +579,6 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
       case 'events': tabLabel = 'Events'; break;
       case 'courses': tabLabel = 'Courses'; break;
       case 'notifications': tabLabel = 'Alerts'; break;
-      case 'messages': tabLabel = 'Messages'; break;
       case 'settings': tabLabel = 'Settings'; break;
       case 'escalation': tabLabel = 'Intervention Room'; break;
       case 'broadcasts': tabLabel = 'Broadcasts'; break;
@@ -602,9 +602,9 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
       const parts = window.location.pathname.split('/');
       const tabFromUrl = parts[parts.length - 1];
       const validTabs: Tab[] = [
-        'overview', 'academics', 'education', 'projects', 'certifications', 
+        'overview', 'academics', 'mentorship', 'education', 'projects', 'certifications', 
         'internships', 'skills', 'research', 'events', 'courses', 
-        'notifications', 'messages', 'settings', 'escalation', 'broadcasts'
+        'notifications', 'settings', 'escalation', 'broadcasts'
       ];
       if (validTabs.includes(tabFromUrl as Tab)) {
         setActiveTab(tabFromUrl as Tab);
@@ -626,17 +626,13 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
-  const [messages, setMessages] = useState<any[]>([]);
-  const [msgInput, setMsgInput] = useState('');
-  const [contacts, setContacts] = useState<any[]>([]);
-  const [selectedContact, setSelectedContact] = useState<any>(null);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [trainings, setTrainings] = useState<any[]>([]);
-  const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const escalationChatContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Intervention / Escalation states
   const [studentEscalations, setStudentEscalations] = useState<any[]>([]);
+  const [counselNotes, setCounselNotes] = useState<any[]>([]);
 
   useEffect(() => {
     const mainEl = document.querySelector('.ds-main');
@@ -644,12 +640,6 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
       mainEl.scrollTop = 0;
     }
   }, [activeTab]);
-
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [messages]);
 
   useEffect(() => {
     if (escalationChatContainerRef.current) {
@@ -692,6 +682,11 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
       fetch(`${API_BASE_URL}/api/v1/portal/student/escalations`, { credentials: 'include', headers })
         .then(r => r.ok ? r.json() : [])
         .then(data => setStudentEscalations(data))
+        .catch(() => {});
+
+      fetch(`${API_BASE_URL}/api/v1/portal/student/counsel-notes`, { credentials: 'include', headers })
+        .then(r => r.ok ? r.json() : [])
+        .then(data => setCounselNotes(Array.isArray(data) ? data : []))
         .catch(() => {});
     } catch (err: any) {
       setError(err.message);
@@ -765,65 +760,8 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
   const markNotificationsAsRead = async () => {
     try { await fetch(`${API_BASE_URL}/api/v1/portal/student/notifications/read`, { credentials: 'include',  method: 'POST', headers: { 'Authorization': `Bearer ${userSession.accessToken}` } }); setNotifications(p => p.map(n => ({ ...n, read: true }))); } catch {}
   };
-  const fetchMessages = async () => {
-    try {
-      const headers = { 'Authorization': `Bearer ${userSession.accessToken}` };
-      
-      const contactsRes = await fetch(`${API_BASE_URL}/api/v1/portal/student/messaging-contacts`, { headers });
-      let loadedContacts: any[] = [];
-      if (contactsRes.ok) {
-        loadedContacts = await contactsRes.json();
-        setContacts(loadedContacts);
-      }
-
-      const res = await fetch(`${API_BASE_URL}/api/v1/portal/student/messages`, { headers });
-      if (res.ok) {
-        const msgs = await res.json();
-        setMessages(msgs);
-        
-        // Auto-select first contact if none is selected
-        if (loadedContacts.length > 0) {
-          setSelectedContact((prev: any) => {
-            if (prev) {
-              const stillExists = loadedContacts.find(c => c.userId === prev.userId);
-              return stillExists || loadedContacts[0];
-            }
-            return loadedContacts[0];
-          });
-        }
-      }
-    } catch (err) {
-      console.error("Failed to fetch messages or contacts", err);
-    }
-  };
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!msgInput.trim() || !selectedContact) return;
-    const text = msgInput;
-    setMsgInput('');
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/portal/student/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({
-          messageText: text,
-          recipientId: selectedContact.userId
-        })
-      });
-      if (res.ok) {
-        setMessages(await res.json());
-      }
-    } catch {
-      setMsgInput(text);
-    }
-  };
   useEffect(() => { fetchDashboardData(); fetchNotifications(); const iv = setInterval(fetchNotifications, 60000); return () => clearInterval(iv); }, []);
   useEffect(() => { if (activeTab === 'notifications') markNotificationsAsRead(); }, [activeTab]);
-  useEffect(() => { if (activeTab === 'messages') fetchMessages(); }, [activeTab]);
 
   const unreadCount = notifications.filter((n: any) => !n.read).length;
 
@@ -970,11 +908,10 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
           )}
 
           {/* Mobile sub-tab bar for Profile/Settings */}
-          {['settings', 'messages'].includes(activeTab) && (
+          {activeTab === 'settings' && (
             <div className="ds-mobile-subnav">
               {[
                 { key: 'settings' as Tab, label: 'Settings' },
-                { key: 'messages' as Tab, label: 'Messages' },
               ].map(sub => (
                 <button
                   key={sub.key}
@@ -1205,6 +1142,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
                         </motion.div>
                       ))}
                     </div>
+
 
                     {/* BENTO ROW (Only shows cards with active student data) */}
                     <div className="ds-bento-row">
@@ -1786,6 +1724,70 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
               })()}
 
               {/* ══════════════════════════════════════════
+                  MENTORSHIP & COUNSELING NOTES TAB
+              ══════════════════════════════════════════ */}
+              {activeTab === 'mentorship' && (
+                <div className="ds-tab-section">
+                  <div className="ds-tab-header">
+                    <div>
+                      <h2 className="ds-section-title">Faculty Mentoring & Counseling Notes</h2>
+                      <p className="ds-section-sub">Confidential guidance, performance reviews, and mentoring feedback shared by your assigned faculty mentor.</p>
+                    </div>
+                    <button className="ds-btn ds-btn-secondary" onClick={fetchDashboardData}>Refresh</button>
+                  </div>
+
+                  {counselNotes.length === 0 ? (
+                    <div style={{ background: 'var(--ds-surface)', border: '1px solid var(--ds-border)', borderRadius: '16px', padding: '48px', textAlign: 'center' }}>
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--ds-text3)" strokeWidth="1.5" style={{ marginBottom: '16px' }}><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                      <p style={{ color: 'var(--ds-text1)', fontWeight: 700, fontSize: '15px', margin: '0 0 4px' }}>No Counseling Notes Yet</p>
+                      <p style={{ color: 'var(--ds-text3)', fontSize: '13px', margin: 0 }}>When your faculty mentor records mentoring feedback or guidance notes, they will appear here.</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      {counselNotes.map((note: any, idx: number) => (
+                        <div
+                          key={note.id || idx}
+                          style={{
+                            background: 'var(--ds-surface)',
+                            border: '1px solid var(--ds-border)',
+                            borderLeft: '4px solid var(--ds-jade)',
+                            borderRadius: '14px',
+                            padding: '20px',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontWeight: 800, fontSize: '14px', color: 'var(--ds-text1)' }}>
+                                {note.authorName || 'Faculty Mentor'}
+                              </span>
+                              <span style={{
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                background: 'rgba(5, 150, 105, 0.12)',
+                                color: '#059669',
+                                textTransform: 'uppercase'
+                              }}>
+                                {note.authorRole || 'Mentor'}
+                              </span>
+                            </div>
+                            <span style={{ fontSize: '12px', color: 'var(--ds-text3)', fontFamily: 'var(--ds-font-mono)' }}>
+                              {note.createdAt ? new Date(note.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '13.5px', color: 'var(--ds-text2)', margin: '6px 0 0', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                            {note.content}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ══════════════════════════════════════════
                   EDUCATION TAB
               ══════════════════════════════════════════ */}
               {activeTab === 'education' && (() => {
@@ -2147,182 +2149,6 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
               )}
 
               {/* ══════════════════════════════════════════
-                  MESSAGES TAB
-              ══════════════════════════════════════════ */}
-              {activeTab === 'messages' && (
-                <div className="ds-tab-section" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)' }}>
-                  <div className="ds-tab-header" style={{ flexShrink: 0 }}>
-                    <div>
-                      <h2 className="ds-section-title">Direct Messages</h2>
-                      <p className="ds-section-sub">Connect directly with your HOD, Faculty, and Mentors.</p>
-                    </div>
-                    <button className="ds-btn ds-btn-secondary" onClick={fetchMessages}>Refresh</button>
-                  </div>
-
-                  <div style={{
-                    display: 'flex',
-                    flex: 1,
-                    background: 'var(--ds-surface)',
-                    border: '1px solid var(--ds-border)',
-                    borderRadius: '16px',
-                    overflow: 'hidden',
-                    height: '100%'
-                  }}>
-                    {/* Left: Contacts Sidebar */}
-                    <div style={{
-                      width: '260px',
-                      borderRight: '1px solid var(--ds-border)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      background: 'var(--ds-surface2)',
-                      flexShrink: 0
-                    }}>
-                      <div style={{ padding: '16px', borderBottom: '1px solid var(--ds-border)' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--ds-text3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                          Messaging Contacts
-                        </span>
-                      </div>
-                      <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {contacts.length === 0 ? (
-                          <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--ds-text3)' }}>
-                            No contacts available
-                          </div>
-                        ) : (
-                          contacts.map((c) => {
-                            const isSelected = selectedContact?.userId === c.userId;
-                            return (
-                              <button
-                                key={c.userId}
-                                onClick={() => setSelectedContact(c)}
-                                style={{
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '4px',
-                                  padding: '12px',
-                                  border: 'none',
-                                  borderRadius: '10px',
-                                  background: isSelected ? 'var(--ds-jade-sub)' : 'transparent',
-                                  textAlign: 'left',
-                                  cursor: 'pointer',
-                                  width: '100%',
-                                  transition: 'all 0.2s ease',
-                                  borderLeft: isSelected ? '3px solid var(--ds-jade)' : '3px solid transparent'
-                                }}
-                              >
-                                <div style={{ fontWeight: 700, fontSize: '13.5px', color: isSelected ? 'var(--ds-jade)' : 'var(--ds-text1)' }}>
-                                  {c.fullName}
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span style={{
-                                    fontSize: '9.5px',
-                                    fontWeight: 800,
-                                    padding: '2px 6px',
-                                    borderRadius: '4px',
-                                    background: c.role === 'HOD' ? 'rgba(219, 39, 119, 0.1)' : c.role === 'Mentor' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                                    color: c.role === 'HOD' ? '#db2777' : c.role === 'Mentor' ? '#3b82f6' : '#d97706',
-                                    textTransform: 'uppercase'
-                                  }}>
-                                    {c.role}
-                                  </span>
-                                  <span style={{ fontSize: '11px', color: 'var(--ds-text3)' }}>
-                                    {c.email?.split('@')[0]}
-                                  </span>
-                                </div>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Right: Active Chat View */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--ds-surface)' }}>
-                      {selectedContact ? (
-                        <>
-                          {/* Chat Header */}
-                          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--ds-border)', background: 'var(--ds-surface2)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div>
-                              <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--ds-text1)' }}>{selectedContact.fullName}</div>
-                              <div style={{ fontSize: '11.5px', color: 'var(--ds-text3)' }}>{selectedContact.role} &nbsp;|&nbsp; {selectedContact.email}</div>
-                            </div>
-                          </div>
-
-                          {/* Chat Messages Feed */}
-                          <div ref={chatContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                            {messages.filter((msg: any) =>
-                              (msg.senderId === selectedContact.userId || msg.recipientId === selectedContact.userId)
-                            ).length === 0 ? (
-                              <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--ds-text3)' }}>
-                                <div style={{ fontSize: '28px', marginBottom: '8px' }}>✉</div>
-                                <div style={{ fontWeight: 600, fontSize: '13px' }}>No messages in this chat. Start the conversation!</div>
-                              </div>
-                            ) : (
-                              messages.filter((msg: any) =>
-                                (msg.senderId === selectedContact.userId || msg.recipientId === selectedContact.userId)
-                              ).map((msg: any, idx: number) => {
-                                const isOutgoing = msg.senderId !== selectedContact.userId; // outgoing means sent by student
-                                return (
-                                  <div key={idx} style={{ display: 'flex', justifyContent: isOutgoing ? 'flex-end' : 'flex-start' }}>
-                                    <div style={{
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      alignItems: isOutgoing ? 'flex-end' : 'flex-start',
-                                      maxWidth: '70%',
-                                      gap: '3px'
-                                    }}>
-                                      <div style={{
-                                        background: isOutgoing ? 'var(--ds-jade)' : 'var(--ds-surface3)',
-                                        color: isOutgoing ? '#fff' : 'var(--ds-text1)',
-                                        borderRadius: isOutgoing ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                                        padding: '10px 14px',
-                                        fontSize: '13px',
-                                        lineHeight: '1.45',
-                                        border: isOutgoing ? 'none' : '1px solid var(--ds-border)'
-                                      }}>
-                                        {msg.messageText}
-                                      </div>
-                                      <span style={{ fontSize: '9.5px', color: 'var(--ds-text3)' }}>
-                                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-
-                          {/* Message Input Form */}
-                          <form onSubmit={handleSendMessage} style={{ padding: '16px 20px', borderTop: '1px solid var(--ds-border)', display: 'flex', gap: '12px', background: 'var(--ds-surface2)' }}>
-                            <input
-                              type="text"
-                              className="ds-input"
-                              placeholder={`Message ${selectedContact.fullName}...`}
-                              value={msgInput}
-                              onChange={e => setMsgInput(e.target.value)}
-                              style={{ flex: 1, padding: '10px 14px', fontSize: '13px' }}
-                            />
-                            <button
-                              type="submit"
-                              className="ds-btn ds-btn-primary"
-                              disabled={!msgInput.trim()}
-                              style={{ padding: '10px 20px', background: 'var(--ds-jade)', border: 'none', color: '#fff', fontWeight: 700 }}
-                            >
-                              Send
-                            </button>
-                          </form>
-                        </>
-                      ) : (
-                        <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--ds-text3)' }}>
-                          <div style={{ fontSize: '32px', marginBottom: '10px' }}>💬</div>
-                          <div style={{ fontWeight: 700 }}>Select a contact to start chatting</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ══════════════════════════════════════════
                   INTERVENTION ROOM TAB (Student View)
               {/* ══════════════════════════════════════════
                   INTERVENTION / ESCALATION GROUP CHAT TAB
@@ -2458,7 +2284,7 @@ export default function StudentDashboard({ userSession, handleLogout }: StudentD
           { key: 'academics' as Tab, label: 'Grades', active: activeTab === 'academics', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg> },
           { key: 'projects' as Tab, label: 'Portfolio', active: ['projects', 'education', 'certifications', 'internships', 'research', 'events', 'courses'].includes(activeTab), icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> },
           { key: 'notifications' as Tab, label: 'Alerts', active: activeTab === 'notifications', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
-          { key: 'settings' as Tab, label: 'Profile', active: ['settings', 'messages'].includes(activeTab), icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg> },
+          { key: 'settings' as Tab, label: 'Profile', active: activeTab === 'settings', icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg> },
         ].map(item => (
           <button key={item.key} className={`ds-bottom-nav-item ${item.active ? 'active' : ''}`} onClick={() => setActiveTab(item.key)}>
             {item.icon}

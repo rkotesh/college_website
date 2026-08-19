@@ -23,7 +23,6 @@ type Tab =
   | 'escalations'
   | 'notifications'
   | 'settings'
-  | 'messages'
   | 'directory'
   | 'broadcasts';
 
@@ -35,8 +34,8 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
     const tabFromUrl = parts[parts.length - 1];
     const validTabs: Tab[] = [
       'overview', 'faculty', 'mentorship', 'documents', 'training', 
-      'escalations', 'notifications', 'settings', 'messages'
-    , 'directory', 'broadcasts'];
+      'escalations', 'notifications', 'settings', 'directory', 'broadcasts'
+    ];
     if (validTabs.includes(tabFromUrl as Tab)) {
       return tabFromUrl as Tab;
     }
@@ -49,7 +48,6 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
   const [directoryUsers, setDirectoryUsers] = useState<any[]>([]);
   const [dirSearchQuery, setDirSearchQuery] = useState('');
   const [dirRoleFilter, setDirRoleFilter] = useState('ALL');
-  const [dirDeptFilter, setDirDeptFilter] = useState('ALL');
   const [dirCurrentPage, setDirCurrentPage] = useState(1);
   const [dirActiveModal, setDirActiveModal] = useState<'view' | 'edit' | null>(null);
   const [dirSelectedUser, setDirSelectedUser] = useState<any | null>(null);
@@ -196,10 +194,6 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
 
   const filteredDirUsers = directoryUsers.filter(u => {
     if (dirRoleFilter !== 'ALL' && u.role !== dirRoleFilter) return false;
-    if (dirDeptFilter !== 'ALL') {
-      const uDept = u.departmentIds?.[0] || u.departmentId || '';
-      if (uDept !== dirDeptFilter) return false;
-    }
     if (dirSearchQuery) {
       const sq = dirSearchQuery.toLowerCase();
       if (!u.fullName?.toLowerCase().includes(sq) && 
@@ -231,7 +225,6 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
       case 'escalations': tabLabel = 'Escalation Center'; break;
       case 'notifications': tabLabel = 'Notifications'; break;
       case 'settings': tabLabel = 'Settings'; break;
-      case 'messages': tabLabel = 'Staff Messages'; break;
       default: {
         const tabStr = activeTab as string;
         tabLabel = tabStr.charAt(0).toUpperCase() + tabStr.slice(1);
@@ -253,8 +246,8 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
       const tabFromUrl = parts[parts.length - 1];
       const validTabs: Tab[] = [
         'overview', 'faculty', 'mentorship', 'documents', 'training', 
-        'escalations', 'notifications', 'settings', 'messages'
-      , 'directory', 'broadcasts'];
+        'escalations', 'notifications', 'settings', 'directory', 'broadcasts'
+      ];
       if (validTabs.includes(tabFromUrl as Tab)) {
         setActiveTab(tabFromUrl as Tab);
       } else {
@@ -287,13 +280,6 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
   const [hodNotifMessage, setHodNotifMessage] = useState('');
   const [sendingHodNotif, setSendingHodNotif] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
-  
-  // Staff Direct Messages states
-  const [staffConversations, setStaffConversations] = useState<any[]>([]);
-  const [selectedConversation, setSelectedConversation] = useState<any>(null);
-  const [staffMsgInput, setStaffMsgInput] = useState('');
-  const [msgSidebarTab, setMsgSidebarTab] = useState<'chats' | 'students' | 'faculty' | 'mentors'>('chats');
-  const staffChatContainerRef = useRef<HTMLDivElement | null>(null);
   const escalationChatContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Active escalation thread
@@ -339,12 +325,6 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
   }, [activeTab]);
 
   useEffect(() => {
-    if (staffChatContainerRef.current) {
-      staffChatContainerRef.current.scrollTop = staffChatContainerRef.current.scrollHeight;
-    }
-  }, [selectedConversation?.messages]);
-
-  useEffect(() => {
     if (escalationChatContainerRef.current) {
       escalationChatContainerRef.current.scrollTop = escalationChatContainerRef.current.scrollHeight;
     }
@@ -364,9 +344,6 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
     fetchBaseData();
   }, []);
   useEffect(() => {
-    if (activeTab === 'messages') {
-      fetchStaffConversations();
-    }
     if (activeTab === 'notifications') {
       markNotificationsAsRead();
     }
@@ -743,72 +720,6 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
     }
   };
 
-  const fetchStaffConversations = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/messages/conversations`, {
-        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
-      });
-      if (res.ok) {
-        const convs = await res.json();
-        setStaffConversations(convs);
-        if (convs.length > 0) {
-          setSelectedConversation((prev: any) => {
-            if (prev) {
-              const updated = convs.find((c: any) => c.studentRollNo === prev.studentRollNo);
-              return updated || convs[0];
-            }
-            return convs[0];
-          });
-        }
-      }
-    } catch (err) {
-      console.error("Failed to load staff conversations", err);
-    }
-  };
-
-  const handleSendStaffMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!staffMsgInput.trim() || !selectedConversation) return;
-    const text = staffMsgInput;
-    setStaffMsgInput('');
-
-    const target = selectedConversation.userId || selectedConversation.studentRollNo || selectedConversation.studentEmail;
-    if (!target) return;
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/hod/messages/${target}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userSession.accessToken}`
-        },
-        body: JSON.stringify({ messageText: text })
-      });
-      if (res.ok) {
-        const updatedMessages = await res.json();
-        setStaffConversations(prev => {
-          const exists = prev.some(c => (c.userId && c.userId === selectedConversation.userId) || c.studentRollNo === selectedConversation.studentRollNo);
-          if (exists) {
-            return prev.map(c => {
-              if ((c.userId && c.userId === selectedConversation.userId) || c.studentRollNo === selectedConversation.studentRollNo) {
-                return { ...c, messages: updatedMessages };
-              }
-              return c;
-            });
-          } else {
-            const newConv = { ...selectedConversation, messages: updatedMessages };
-            return [newConv, ...prev];
-          }
-        });
-        setSelectedConversation((prev: any) => ({ ...prev, messages: updatedMessages }));
-        fetchStaffConversations();
-      }
-    } catch (err) {
-      console.error("Failed to send staff message", err);
-      setStaffMsgInput(text);
-    }
-  };
-
   // Particles canvas re-used and styled to premium blue/indigo
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -1068,11 +979,6 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
                )}
              </button>
 
-             <button className={`sidebar-item ${activeTab === 'messages' ? 'active' : ''}`} onClick={() => setActiveTab('messages')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'messages' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'messages' ? 700 : 500 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <span>Direct Messages</span>
-              </button>
-
              <button className={`sidebar-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')} style={{ border: 'none', background: 'transparent', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', cursor: 'pointer', color: activeTab === 'settings' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: activeTab === 'settings' ? 700 : 500 }}>
                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
                <span>Profile Settings</span>
@@ -1113,14 +1019,6 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
                       <option value="Faculty">Faculty</option>
                       <option value="Mentor">Mentors</option>
                       <option value="HOD">HODs</option>
-                    </select>
-                    <select className="filter-select" value={dirDeptFilter} onChange={e => setDirDeptFilter(e.target.value)}>
-                      <option value="ALL">All Departments</option>
-                      <option value="CSE">CSE</option>
-                      <option value="AI">AI</option>
-                      <option value="AIML">AIML</option>
-                      <option value="ECE">ECE</option>
-                      <option value="IT">IT</option>
                     </select>
                   </div>
 
@@ -2159,380 +2057,6 @@ export default function MentorDashboard({ userSession, handleLogout }: MentorDas
                 </div>
               )}
 
-              {/* ══════════════════════════════════════════
-                  DIRECT MESSAGES TAB (Red Theme)
-              ══════════════════════════════════════════ */}
-              {activeTab === 'messages' && (
-                <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)', gap: '20px' }}>
-                  <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '16px', padding: '20px', flexShrink: 0 }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px' }}>Direct Messages</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Real-time counseling and support with students in your department.</p>
-                  </div>
-
-                  <div style={{
-                    display: 'flex',
-                    flex: 1,
-                    background: 'var(--surface-overlay)',
-                    border: '1px solid var(--surface-border)',
-                    borderRadius: '16px',
-                    overflow: 'hidden',
-                    height: '100%'
-                  }}>
-                    {/* Left Sidebar: Conversations & Contacts */}
-                    <div style={{
-                      width: '260px',
-                      borderRight: '1px solid var(--surface-border)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      background: 'var(--surface-overlay)',
-                      flexShrink: 0
-                    }}>
-                      {/* Pill Tab Selector */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', padding: '12px', borderBottom: '1px solid var(--surface-border)' }}>
-                        {['chats', 'students', 'faculty', 'mentors'].map((tab) => {
-                          const isAct = msgSidebarTab === tab;
-                          return (
-                            <button
-                              key={tab}
-                              onClick={() => setMsgSidebarTab(tab as any)}
-                              style={{
-                                padding: '6px 2px',
-                                borderRadius: '6px',
-                                border: 'none',
-                                background: isAct ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
-                                color: isAct ? '#ffffff' : 'var(--text-muted)',
-                                fontSize: '10px',
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                                textAlign: 'center',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.4px'
-                              }}
-                            >
-                              {tab === 'chats' ? 'Chats' : tab === 'students' ? 'Studs' : tab === 'faculty' ? 'Fac' : 'Ment'}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Scrollable list */}
-                      <div style={{ flex: 1, overflowY: 'auto', padding: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        {msgSidebarTab === 'chats' && (
-                          staffConversations.length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                              No active chats
-                            </div>
-                          ) : (
-                            staffConversations.map((c) => {
-                              const isSelected = (selectedConversation?.userId && selectedConversation?.userId === c.userId) || 
-                                                 (selectedConversation?.studentRollNo === c.studentRollNo);
-                              const lastMsg = c.messages && c.messages.length > 0 ? c.messages[c.messages.length - 1] : null;
-                              return (
-                                <button
-                                  key={c.userId || c.studentRollNo}
-                                  onClick={() => setSelectedConversation(c)}
-                                  style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '4px',
-                                    padding: '12px',
-                                    border: 'none',
-                                    borderRadius: '10px',
-                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    width: '100%',
-                                    transition: 'all 0.2s ease',
-                                    borderLeft: isSelected ? '3px solid #ffffff' : '3px solid transparent'
-                                  }}
-                                >
-                                  <div style={{ fontWeight: 700, fontSize: '13.5px', color: isSelected ? '#ffffff' : 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span>{c.studentName}</span>
-                                      {c.role && c.role !== 'Student' && (
-                                        <span style={{ fontSize: '8.5px', padding: '1px 4px', borderRadius: '3px', background: 'rgba(255, 255, 255, 0.1)', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                                          {c.role}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {c.role === 'Student' && (
-                                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{c.studentRollNo}</span>
-                                    )}
-                                  </div>
-                                  {lastMsg && (
-                                    <div style={{
-                                      fontSize: '11.5px',
-                                      color: 'var(--text-muted)',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap',
-                                      width: '100%',
-                                      marginTop: '2px'
-                                    }}>
-                                      {lastMsg.senderRole === 'HOD' ? 'You: ' : `${lastMsg.senderRole}: `}{lastMsg.messageText}
-                                    </div>
-                                  )}
-                                </button>
-                              );
-                            })
-                          )
-                        )}
-
-                        {msgSidebarTab === 'students' && (
-                          studentsList.length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                              No students loaded
-                            </div>
-                          ) : (
-                            studentsList.map((s) => {
-                              const student = s.user;
-                              const rollNo = s.profile.rollNo;
-                              const isSelected = selectedConversation?.userId === student.id || selectedConversation?.studentRollNo === rollNo;
-                              return (
-                                <button
-                                  key={student.id}
-                                  onClick={() => {
-                                    const existing = staffConversations.find(c => c.userId === student.id || c.studentRollNo === rollNo);
-                                    if (existing) {
-                                      setSelectedConversation(existing);
-                                    } else {
-                                      setSelectedConversation({
-                                        userId: student.id,
-                                        studentRollNo: rollNo,
-                                        studentName: student.fullName,
-                                        studentEmail: s.profile.personalEmail || student.email,
-                                        role: 'Student',
-                                        messages: []
-                                      });
-                                    }
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '10px',
-                                    padding: '10px 12px',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    width: '100%',
-                                    transition: 'all 0.2s ease',
-                                  }}
-                                >
-                                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: 700, color: '#ffffff', flexShrink: 0, justifyContent: 'center' }}>
-                                    {student.fullName ? student.fullName.substring(0, 1) : '?'}
-                                  </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {student.fullName}
-                                    </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      Roll No: {rollNo}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          )
-                        )}
-
-                        {msgSidebarTab === 'faculty' && (
-                          facultyList.filter(f => f.role === 'Faculty' && f.email !== userSession.email).length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                              No faculty found
-                            </div>
-                          ) : (
-                            facultyList.filter(f => f.role === 'Faculty' && f.email !== userSession.email).map((f) => {
-                              const isSelected = selectedConversation?.userId === f.id || selectedConversation?.studentEmail === f.email;
-                              return (
-                                <button
-                                  key={f.id}
-                                  onClick={() => {
-                                    const existing = staffConversations.find(c => c.userId === f.id || c.studentEmail === f.email);
-                                    if (existing) {
-                                      setSelectedConversation(existing);
-                                    } else {
-                                      setSelectedConversation({
-                                        userId: f.id,
-                                        studentRollNo: f.email,
-                                        studentName: f.fullName,
-                                        studentEmail: f.email,
-                                        role: 'Faculty',
-                                        messages: []
-                                      });
-                                    }
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '10px',
-                                    padding: '10px 12px',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    width: '100%',
-                                    transition: 'all 0.2s ease',
-                                  }}
-                                >
-                                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: 700, color: '#ffffff', flexShrink: 0, justifyContent: 'center' }}>
-                                    {f.fullName ? f.fullName.substring(0, 1) : '?'}
-                                  </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {f.fullName}
-                                    </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {f.email}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          )
-                        )}
-
-                        {msgSidebarTab === 'mentors' && (
-                          facultyList.filter(f => f.role === 'Mentor' && f.email !== userSession.email).length === 0 ? (
-                            <div style={{ padding: '16px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                              No mentors found
-                            </div>
-                          ) : (
-                            facultyList.filter(f => f.role === 'Mentor' && f.email !== userSession.email).map((m) => {
-                              const isSelected = selectedConversation?.userId === m.id || selectedConversation?.studentEmail === m.email;
-                              return (
-                                <button
-                                  key={m.id}
-                                  onClick={() => {
-                                    const existing = staffConversations.find(c => c.userId === m.id || c.studentEmail === m.email);
-                                    if (existing) {
-                                      setSelectedConversation(existing);
-                                    } else {
-                                      setSelectedConversation({
-                                        userId: m.id,
-                                        studentRollNo: m.email,
-                                        studentName: m.fullName,
-                                        studentEmail: m.email,
-                                        role: 'Mentor',
-                                        messages: []
-                                      });
-                                    }
-                                  }}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '10px',
-                                    padding: '10px 12px',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    width: '100%',
-                                    transition: 'all 0.2s ease',
-                                  }}
-                                >
-                                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: 700, color: '#ffffff', flexShrink: 0, justifyContent: 'center' }}>
-                                    {m.fullName ? m.fullName.substring(0, 1) : '?'}
-                                  </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {m.fullName}
-                                    </span>
-                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {m.email}
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })
-                          )
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Right: Chat Feed & Action Panel */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--surface-overlay)' }}>
-                      {selectedConversation ? (
-                        <>
-                          {/* Chat Header */}
-                          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--surface-border)', background: 'var(--surface-overlay)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-primary)' }}>{selectedConversation.studentName}</span>
-                              <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', background: selectedConversation.role === 'Student' ? '#10b981' : selectedConversation.role === 'Faculty' ? '#f59e0b' : '#3b82f6', color: '#fff', fontWeight: 700, textTransform: 'uppercase' }}>
-                                {selectedConversation.role || 'Student'}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                              {selectedConversation.role === 'Student' ? `Roll No: ${selectedConversation.studentRollNo}` : `Email: ${selectedConversation.studentEmail}`}
-                            </div>
-                          </div>
-
-                          {/* Chat Feed */}
-                          <div ref={staffChatContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                            {selectedConversation.messages && selectedConversation.messages.map((msg: any, idx: number) => {
-                              const isMe = msg.senderRole === 'HOD';
-                              return (
-                                <div key={idx} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
-                                  <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: isMe ? 'flex-end' : 'flex-start',
-                                    maxWidth: '70%',
-                                    gap: '3px'
-                                  }}>
-                                    <div style={{
-                                      background: isMe ? 'var(--accent)' : 'var(--ds-surface3)',
-                                      color: isMe ? '#000000' : 'var(--text-primary)',
-                                      borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                                      padding: '10px 14px',
-                                      fontSize: '13px',
-                                      lineHeight: '1.45',
-                                      border: isMe ? 'none' : '1px solid var(--surface-border)'
-                                    }}>
-                                      {msg.messageText}
-                                    </div>
-                                    <span style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>
-                                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          {/* Chat Reply Form */}
-                          <form onSubmit={handleSendStaffMessage} style={{ padding: '16px 20px', borderTop: '1px solid var(--surface-border)', display: 'flex', gap: '12px', background: 'var(--surface-overlay)' }}>
-                            <input
-                              type="text"
-                              className="filter-select"
-                              placeholder={`Reply to ${selectedConversation.studentName}...`}
-                              value={staffMsgInput}
-                              onChange={e => setStaffMsgInput(e.target.value)}
-                              style={{ flex: 1, padding: '10px 14px', fontSize: '13px' }}
-                            />
-                            <button
-                              type="submit"
-                              className="btn-action primary"
-                              disabled={!staffMsgInput.trim()}
-                              style={{ padding: '10px 20px', background: '#ffffff', border: 'none', color: '#000000', fontWeight: 700 }}
-                            >
-                              Send
-                            </button>
-                          </form>
-                        </>
-                      ) : (
-                        <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-muted)' }}>
-                          <div style={{ fontSize: '32px', marginBottom: '10px' }}>💬</div>
-                          <div style={{ fontWeight: 700 }}>Select a student conversation to view chat history</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {activeTab === 'settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>

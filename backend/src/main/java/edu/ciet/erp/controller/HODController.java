@@ -1219,7 +1219,7 @@ public class HODController {
         User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
         if (user == null) return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
 
-        // Fetch all threads where user is a participant
+        // Fetch all threads where user is a participant or part of department
         Set<String> threadIdSet = new java.util.LinkedHashSet<>();
         List<EscalationThread> threads = new ArrayList<>();
 
@@ -1236,18 +1236,75 @@ public class HODController {
             escalationThreadRepository.findAllByIsEscalatedToHOD(true).forEach(t -> {
                 if (threadIdSet.add(t.getId())) threads.add(t);
             });
-        } else if (user.getRole() == Role.Mentor) {
-            escalationThreadRepository.findAllByMentorUserIdsIn(List.of(user.getId())).forEach(t -> {
-                if (threadIdSet.add(t.getId())) threads.add(t);
-            });
-        } else if (user.getRole() == Role.Faculty) {
-            escalationThreadRepository.findAllByFacultyUserIdsIn(List.of(user.getId())).forEach(t -> {
-                if (threadIdSet.add(t.getId())) threads.add(t);
-            });
+        }
+
+        // Check if user is in mentorUserIds or facultyUserIds (for Mentor/Faculty/HOD)
+        escalationThreadRepository.findAllByMentorUserIdsIn(List.of(user.getId())).forEach(t -> {
+            if (threadIdSet.add(t.getId())) threads.add(t);
+        });
+        escalationThreadRepository.findAllByFacultyUserIdsIn(List.of(user.getId())).forEach(t -> {
+            if (threadIdSet.add(t.getId())) threads.add(t);
+        });
+
+        // Also resolve department-scoped escalation groups created by HOD or involving mentor's mentees
+        Set<String> allowedDeptKeys = resolveAllowedDepartmentKeys(authentication);
+        List<MentorshipAssignment> myAssignments = mentorshipAssignmentRepository.findAllByMentorUserId(user.getId());
+        Set<String> menteeRollNos = new HashSet<>();
+        if (myAssignments != null) {
+            for (MentorshipAssignment ma : myAssignments) {
+                if (ma.getRollNo() != null && !ma.getRollNo().isBlank()) {
+                    menteeRollNos.add(ma.getRollNo().toUpperCase());
+                }
+            }
+        }
+
+        List<EscalationThread> allThreads = escalationThreadRepository.findAll();
+        for (EscalationThread t : allThreads) {
+            if (threadIdSet.contains(t.getId())) continue;
+
+            // Check if thread contains any assigned mentees
+            if (!menteeRollNos.isEmpty()) {
+                if (t.getRollNos() != null && t.getRollNos().stream().anyMatch(rn -> menteeRollNos.contains(rn.toUpperCase()))) {
+                    if (threadIdSet.add(t.getId())) threads.add(t);
+                    continue;
+                }
+                if (t.getRollNo() != null && menteeRollNos.contains(t.getRollNo().toUpperCase())) {
+                    if (threadIdSet.add(t.getId())) threads.add(t);
+                    continue;
+                }
+            }
+
+            // Check if thread was created by an HOD in the user's department
+            if (t.getCreatedByUserId() != null) {
+                Optional<User> creatorOpt = userRepository.findById(t.getCreatedByUserId());
+                if (creatorOpt.isPresent()) {
+                    User creator = creatorOpt.get();
+                    if (creator.getRole() == Role.HOD || creator.getRole() == Role.Director) {
+                        boolean deptMatch = false;
+                        if (creator.getDepartmentId() != null && allowedDeptKeys.contains(creator.getDepartmentId().toUpperCase())) {
+                            deptMatch = true;
+                        }
+                        if (!deptMatch && creator.getDepartmentIds() != null) {
+                            deptMatch = creator.getDepartmentIds().stream().anyMatch(d -> allowedDeptKeys.contains(d.toUpperCase()));
+                        }
+                        if (deptMatch) {
+                            if (threadIdSet.add(t.getId())) threads.add(t);
+                            continue;
+                        }
+                    }
+                }
+            }
         }
 
         // Sort by updatedAt descending
-        threads.sort((a, b) -> b.getUpdatedAt().compareTo(a.getUpdatedAt()));
+        threads.sort((a, b) -> {
+            LocalDateTime aTime = a.getUpdatedAt() != null ? a.getUpdatedAt() : a.getCreatedAt();
+            LocalDateTime bTime = b.getUpdatedAt() != null ? b.getUpdatedAt() : b.getCreatedAt();
+            if (aTime == null && bTime == null) return 0;
+            if (aTime == null) return 1;
+            if (bTime == null) return -1;
+            return bTime.compareTo(aTime);
+        });
 
         return ResponseEntity.ok(buildThreadDetails(threads));
     }
@@ -1439,9 +1496,23 @@ public class HODController {
             return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
         }
 
-        // EXPLICIT SECURITY CONSTRAINT: Block Student and Parent roles
-        if (user.getRole() == Role.Student || user.getRole() == Role.Parent) {
-            return ResponseEntity.status(403).body(Map.of("error", "Access denied: Case notes are restricted from students and parents."));
+        // Block Parent role
+        if (user.getRole() == Role.Parent) {
+            return ResponseEntity.status(403).body(Map.of("error", "Access denied: Case notes are restricted from parents."));
+        }
+
+        // If Student, verify they are only requesting their own notes
+        if (user.getRole() == Role.Student) {
+            boolean isOwn = (user.getRollNo() != null && user.getRollNo().equalsIgnoreCase(rollNo));
+            if (!isOwn) {
+                Optional<StudentProfile> sp = studentProfileRepository.findByUserId(user.getId());
+                if (sp.isPresent() && sp.get().getRollNo() != null && sp.get().getRollNo().equalsIgnoreCase(rollNo)) {
+                    isOwn = true;
+                }
+            }
+            if (!isOwn) {
+                return ResponseEntity.status(403).body(Map.of("error", "Access denied: You can only view your own counseling notes."));
+            }
         }
 
         List<MentorshipCaseNote> notes = mentorshipCaseNoteRepository.findAllByRollNoIgnoreCaseOrderByCreatedAtDesc(rollNo);
@@ -1461,9 +1532,9 @@ public class HODController {
             return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
         }
 
-        // EXPLICIT SECURITY CONSTRAINT: Block Student and Parent roles
+        // EXPLICIT SECURITY CONSTRAINT: Block Student and Parent roles from creating case notes
         if (user.getRole() == Role.Student || user.getRole() == Role.Parent) {
-            return ResponseEntity.status(403).body(Map.of("error", "Access denied: Case notes are restricted."));
+            return ResponseEntity.status(403).body(Map.of("error", "Access denied: Case notes can only be created by mentors and faculty."));
         }
 
         MentorshipCaseNote note = MentorshipCaseNote.builder()
@@ -1474,6 +1545,22 @@ public class HODController {
                 .createdAt(LocalDateTime.now())
                 .build();
         mentorshipCaseNoteRepository.save(note);
+
+        // Notify student about newly added mentoring case note
+        try {
+            Notification notif = Notification.builder()
+                    .rollNo(rollNo)
+                    .title("New Mentoring Note Added")
+                    .message((user.getFullName() != null ? user.getFullName() : "Mentor") + " added a counseling remark: " + (content.length() > 90 ? content.substring(0, 87) + "..." : content))
+                    .type("ACADEMIC")
+                    .senderEmail(user.getEmail())
+                    .read(false)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            notificationRepository.save(notif);
+        } catch (Exception ignored) {}
+
         return ResponseEntity.ok(note);
     }
 
@@ -1482,18 +1569,44 @@ public class HODController {
     @GetMapping("/notifications")
     public ResponseEntity<?> getHODNotifications(Authentication authentication) {
         String email = authentication.getName();
-        List<Notification> list = notificationRepository.findAllByRollNoIgnoreCaseOrderByCreatedAtDesc(email);
+        User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
+        Set<String> seenIds = new HashSet<>();
+        List<Notification> list = new ArrayList<>();
+
+        notificationRepository.findAllByRollNoIgnoreCaseOrderByCreatedAtDesc(email).forEach(n -> {
+            if (seenIds.add(n.getId())) list.add(n);
+        });
+
+        if (user != null && user.getId() != null) {
+            notificationRepository.findAllByRollNoIgnoreCaseOrderByCreatedAtDesc(user.getId()).forEach(n -> {
+                if (seenIds.add(n.getId())) list.add(n);
+            });
+        }
+
+        list.sort((a, b) -> {
+            LocalDateTime aTime = a.getCreatedAt() != null ? a.getCreatedAt() : LocalDateTime.MIN;
+            LocalDateTime bTime = b.getCreatedAt() != null ? b.getCreatedAt() : LocalDateTime.MIN;
+            return bTime.compareTo(aTime);
+        });
+
         return ResponseEntity.ok(list);
     }
 
     @PostMapping("/notifications/read")
     public ResponseEntity<?> markAllNotificationsAsRead(Authentication authentication) {
         String email = authentication.getName();
-        List<Notification> list = notificationRepository.findAllByRollNoIgnoreCaseOrderByCreatedAtDesc(email);
+        User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
+        Set<String> targets = new HashSet<>();
+        targets.add(email.toLowerCase());
+        if (user != null && user.getId() != null) targets.add(user.getId().toLowerCase());
+
+        List<Notification> list = notificationRepository.findAll();
         for (Notification n : list) {
-            if (!n.isRead()) {
-                n.setRead(true);
-                notificationRepository.save(n);
+            if (n.getRollNo() != null && targets.contains(n.getRollNo().toLowerCase())) {
+                if (!n.isRead()) {
+                    n.setRead(true);
+                    notificationRepository.save(n);
+                }
             }
         }
         return ResponseEntity.ok(Map.of("success", true));
@@ -1502,10 +1615,12 @@ public class HODController {
     @PostMapping("/notifications/{id}/read")
     public ResponseEntity<?> markSingleNotificationAsRead(@PathVariable("id") String id, Authentication authentication) {
         String email = authentication.getName();
+        User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
         Optional<Notification> notifOpt = notificationRepository.findById(id);
         if (notifOpt.isPresent()) {
             Notification n = notifOpt.get();
-            if (n.getRollNo().equalsIgnoreCase(email)) {
+            boolean match = n.getRollNo() != null && (n.getRollNo().equalsIgnoreCase(email) || (user != null && n.getRollNo().equalsIgnoreCase(user.getId())));
+            if (match) {
                 n.setRead(true);
                 notificationRepository.save(n);
                 return ResponseEntity.ok(Map.of("success", true));
@@ -1572,16 +1687,17 @@ public class HODController {
 
             if (includeFaculty || includeMentor || includeHOD) {
                 List<User> staffUsers = userRepository.findAll().stream()
-                        .filter(u -> (includeFaculty && u.getRole() == Role.Faculty) ||
-                                     (includeMentor && u.getRole() == Role.Mentor) ||
+                        .filter(u -> (includeFaculty && (u.getRole() == Role.Faculty || Boolean.TRUE.equals(u.getIsMentor()))) ||
+                                     (includeMentor && (u.getRole() == Role.Mentor || Boolean.TRUE.equals(u.getIsMentor()) || u.getRole() == Role.Faculty)) ||
                                      (includeHOD && u.getRole() == Role.HOD))
                         .toList();
 
                 for (User u : staffUsers) {
                     if (deptFilter != null && !deptFilter.isBlank() && !"ALL".equalsIgnoreCase(deptFilter)) {
-                        if (u.getDepartmentIds() == null || u.getDepartmentIds().stream().noneMatch(d -> d.equalsIgnoreCase(deptFilter))) {
-                            continue;
-                        }
+                        boolean deptMatch = false;
+                        if (u.getDepartmentId() != null && u.getDepartmentId().equalsIgnoreCase(deptFilter)) deptMatch = true;
+                        if (!deptMatch && u.getDepartmentIds() != null && u.getDepartmentIds().stream().anyMatch(d -> d.equalsIgnoreCase(deptFilter))) deptMatch = true;
+                        if (!deptMatch) continue;
                     }
                     recipientIds.add(u.getEmail());
                 }
@@ -1590,7 +1706,7 @@ public class HODController {
             List<StudentProfile> profiles = studentProfileRepository.findAll();
             for (StudentProfile p : profiles) recipientIds.add(p.getRollNo());
             List<User> staffUsers = userRepository.findAll().stream()
-                    .filter(u -> u.getRole() == Role.HOD || u.getRole() == Role.Faculty || u.getRole() == Role.Mentor)
+                    .filter(u -> u.getRole() == Role.HOD || u.getRole() == Role.Faculty || u.getRole() == Role.Mentor || Boolean.TRUE.equals(u.getIsMentor()))
                     .toList();
             for (User u : staffUsers) recipientIds.add(u.getEmail());
         } else {

@@ -52,7 +52,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
   // --- Injected User Directory State ---
   const [directoryUsers, setDirectoryUsers] = useState<any[]>([]);
   const [dirSearchQuery, setDirSearchQuery] = useState('');
-  const [dirDeptFilter, setDirDeptFilter] = useState('ALL');
   const [dirCurrentPage, setDirCurrentPage] = useState(1);
   const [dirActiveModal, setDirActiveModal] = useState<'view' | 'edit' | null>(null);
   const [dirSelectedUser, setDirSelectedUser] = useState<any | null>(null);
@@ -250,10 +249,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
     // Student Directory: only show students from this department
     if (u.role !== 'Student') return false;
     if (!isStudentInMyDept(u)) return false;
-    if (dirDeptFilter !== 'ALL') {
-      const uDept = u.departmentIds?.[0] || u.departmentId || '';
-      if (uDept !== dirDeptFilter) return false;
-    }
     if (dirSearchQuery) {
       const sq = dirSearchQuery.toLowerCase();
       if (!u.fullName?.toLowerCase().includes(sq) && 
@@ -1134,14 +1129,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                       value={dirSearchQuery} 
                       onChange={e => setDirSearchQuery(e.target.value)} 
                     />
-                    <select className="filter-select" value={dirDeptFilter} onChange={e => setDirDeptFilter(e.target.value)}>
-                      <option value="ALL">All Departments</option>
-                      <option value="CSE">CSE</option>
-                      <option value="AI">AI</option>
-                      <option value="AIML">AIML</option>
-                      <option value="ECE">ECE</option>
-                      <option value="IT">IT</option>
-                    </select>
                   </div>
 
                   <table className="data-table">
@@ -1853,7 +1840,7 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                   </div>
 
                   {/* Summary Metric Cards */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
                     <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '14px', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Department Students</span>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
@@ -1881,18 +1868,6 @@ export default function FacultyDashboard({ userSession, handleLogout }: FacultyD
                           {portfolioStudents.filter(s => !s.isPublic).length}
                         </span>
                         <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>Students</span>
-                      </div>
-                    </div>
-
-                    <div style={{ background: 'var(--surface-overlay)', border: '1px solid var(--surface-border)', borderRadius: '14px', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cohort Avg CGPA</span>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                        <span style={{ fontSize: '26px', fontWeight: 900, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>
-                          {portfolioStudents.length > 0 
-                            ? (portfolioStudents.reduce((acc, s) => acc + (parseFloat(s.cgpa) || 0), 0) / (portfolioStudents.filter(s => parseFloat(s.cgpa) > 0).length || 1)).toFixed(2)
-                            : '0.00'}
-                        </span>
-                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>/ 10.0</span>
                       </div>
                     </div>
                   </div>

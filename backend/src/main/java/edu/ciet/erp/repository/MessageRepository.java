@@ -7,4 +7,5 @@ import java.util.List;
 public interface MessageRepository extends MongoRepository<Message, String> {
     List<Message> findAllByStudentRollNoOrderByTimestampAsc(String studentRollNo);
     List<Message> findAllBySenderIdOrRecipientIdOrderByTimestampAsc(String senderId, String recipientId);
+    List<Message> findAllByStudentRollNoOrSenderIdOrRecipientIdOrderByTimestampAsc(String studentRollNo, String senderId, String recipientId);
 }

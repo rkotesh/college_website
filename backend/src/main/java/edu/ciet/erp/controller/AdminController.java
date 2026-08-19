@@ -1590,16 +1590,17 @@ public class AdminController {
 
             if (includeFaculty || includeMentor || includeHOD) {
                 List<User> staffUsers = userRepository.findAll().stream()
-                        .filter(u -> (includeFaculty && u.getRole() == Role.Faculty) ||
-                                     (includeMentor && u.getRole() == Role.Mentor) ||
+                        .filter(u -> (includeFaculty && (u.getRole() == Role.Faculty || Boolean.TRUE.equals(u.getIsMentor()))) ||
+                                     (includeMentor && (u.getRole() == Role.Mentor || Boolean.TRUE.equals(u.getIsMentor()) || u.getRole() == Role.Faculty)) ||
                                      (includeHOD && u.getRole() == Role.HOD))
                         .toList();
 
                 for (User u : staffUsers) {
                     if (deptFilter != null && !deptFilter.isBlank() && !"ALL".equalsIgnoreCase(deptFilter)) {
-                        if (u.getDepartmentIds() == null || u.getDepartmentIds().stream().noneMatch(d -> d.equalsIgnoreCase(deptFilter))) {
-                            continue;
-                        }
+                        boolean deptMatch = false;
+                        if (u.getDepartmentId() != null && u.getDepartmentId().equalsIgnoreCase(deptFilter)) deptMatch = true;
+                        if (!deptMatch && u.getDepartmentIds() != null && u.getDepartmentIds().stream().anyMatch(d -> d.equalsIgnoreCase(deptFilter))) deptMatch = true;
+                        if (!deptMatch) continue;
                     }
                     recipientIds.add(u.getEmail());
                 }
@@ -1608,7 +1609,7 @@ public class AdminController {
             List<StudentProfile> profiles = studentProfileRepository.findAll();
             for (StudentProfile p : profiles) recipientIds.add(p.getRollNo());
             List<User> staffUsers = userRepository.findAll().stream()
-                    .filter(u -> u.getRole() == Role.HOD || u.getRole() == Role.Faculty || u.getRole() == Role.Mentor)
+                    .filter(u -> u.getRole() == Role.HOD || u.getRole() == Role.Faculty || u.getRole() == Role.Mentor || Boolean.TRUE.equals(u.getIsMentor()))
                     .toList();
             for (User u : staffUsers) recipientIds.add(u.getEmail());
         } else {
