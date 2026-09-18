@@ -5,9 +5,11 @@ import edu.ciet.erp.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +22,7 @@ public class DataInitializer implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final DepartmentRepository departmentRepository;
     private final StudentProfileRepository studentProfileRepository;
+    private final Environment environment;
 
     @org.springframework.beans.factory.annotation.Value("${app.director.email}")
     private String directorEmail;
@@ -41,13 +44,29 @@ public class DataInitializer implements CommandLineRunner {
 
         // 2. Seed Director account (configured via environment variables or securely generated)
         String effectivePassword = directorPassword;
+        boolean isDevProfile = Arrays.asList(environment.getActiveProfiles()).contains("dev")
+                || Arrays.asList(environment.getActiveProfiles()).isEmpty(); // no profile = local dev
+
         if (effectivePassword == null || effectivePassword.isBlank()) {
-            effectivePassword = generateSecurePassword();
-            log.warn("\n===========================================================\n" +
-                     "[SECURITY NOTICE] No DIRECTOR_PASSWORD set in environment.\n" +
-                     "Auto-generated temporary Director password for {}: {}\n" +
-                     "Set DIRECTOR_PASSWORD in your .env or hosting environment.\n" +
-                     "===========================================================", directorEmail, effectivePassword);
+            if (isDevProfile) {
+                // Dev only: auto-generate and log so developer can log in
+                effectivePassword = generateSecurePassword();
+                log.warn("\n===========================================================\n" +
+                         "[DEV ONLY] No DIRECTOR_PASSWORD set — auto-generated:\n" +
+                         "  Email:    {}\n" +
+                         "  Password: {}\n" +
+                         "Set DIRECTOR_PASSWORD env var before going to production!\n" +
+                         "===========================================================", directorEmail, effectivePassword);
+            } else {
+                // Production: refuse to start — never silently use an auto-generated password
+                throw new IllegalStateException(
+                    "\n\n======================================================\n" +
+                    "  STARTUP BLOCKED — DIRECTOR_PASSWORD is not set!\n" +
+                    "  Set the DIRECTOR_PASSWORD environment variable in your\n" +
+                    "  hosting platform (Render, Railway, etc.) before deploying.\n" +
+                    "======================================================\n"
+                );
+            }
         }
         seedUser(directorEmail, effectivePassword, "System Administrator (Director)", Role.Director, List.of());
 

@@ -5,6 +5,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -25,6 +26,27 @@ public class JwtService {
 
     @Value("${app.jwt.refresh-expiration-ms}")
     private long refreshExpiration;
+
+    @PostConstruct
+    public void validateSecretKey() {
+        if (secretKey == null || secretKey.isBlank()) {
+            throw new IllegalStateException(
+                "\n\n======================================================\n" +
+                "  STARTUP BLOCKED — JWT_SECRET is not set!\n" +
+                "  Set the JWT_SECRET environment variable before starting.\n" +
+                "  Generate one with:  openssl rand -hex 32\n" +
+                "======================================================\n"
+            );
+        }
+        if (secretKey.length() < 32) {
+            throw new IllegalStateException(
+                "STARTUP BLOCKED — JWT_SECRET is too short (minimum 32 characters). " +
+                "Generate a secure key with: openssl rand -hex 32"
+            );
+        }
+    }
+
+
 
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
