@@ -4,7 +4,7 @@ server:
 spring:
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://ciet_db:Ram9182%40@ac-kb7tcsk-shard-00-00.t4fchpc.mongodb.net:27017,ac-kb7tcsk-shard-00-01.t4fchpc.mongodb.net:27017,ac-kb7tcsk-shard-00-02.t4fchpc.mongodb.net:27017/erp_portal?replicaSet=atlas-nq168l-shard-0&ssl=true&authSource=admin&tlsAllowInvalidCertificates=true}
+      uri: ${MONGODB_URI:mongodb://localhost:27017/erp_portal}
       database: ${MONGODB_NAME:erp_portal}
   jackson:
     serialization:
@@ -36,7 +36,7 @@ app:
     expiration-ms: ${JWT_EXPIRATION_MS:86400000} # 24 hours
     refresh-expiration-ms: ${JWT_REFRESH_EXPIRATION_MS:604800000} # 7 days
   director:
-    email: ${DIRECTOR_EMAIL:skillportfolio@chalapathiengg.ac.in}
-    password: ${DIRECTOR_PASSWORD:Ciet@2027}
+    email: ${DIRECTOR_EMAIL:admin@ciet.edu.in}
+    password: ${DIRECTOR_PASSWORD:}
   mail:
     from: ${DEFAULT_FROM_EMAIL:support@ciet.edu.in}

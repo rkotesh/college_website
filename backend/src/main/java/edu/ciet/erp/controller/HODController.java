@@ -820,10 +820,24 @@ public class HODController {
         return ResponseEntity.ok(academicDocumentRepository.findAllByDepartmentId(deptId));
     }
 
+    private String resolveDepartmentCode(String deptId) {
+        if (deptId == null || deptId.isBlank()) return "ALL";
+        Optional<Department> byId = departmentRepository.findById(deptId);
+        if (byId.isPresent() && byId.get().getCode() != null) {
+            return byId.get().getCode().toUpperCase();
+        }
+        Optional<Department> byCode = departmentRepository.findByCodeIgnoreCase(deptId);
+        if (byCode.isPresent() && byCode.get().getCode() != null) {
+            return byCode.get().getCode().toUpperCase();
+        }
+        return deptId.toUpperCase();
+    }
+
     @PostMapping("/training")
     public ResponseEntity<?> saveTraining(Authentication authentication, @RequestBody TrainingProgram training) {
         String deptId = resolveDepartmentId(authentication);
-        training.setDepartmentId(deptId);
+        String deptCode = resolveDepartmentCode(deptId);
+        training.setDepartmentId(deptCode);
         if (training.getCreatedAt() == null) {
             training.setCreatedAt(LocalDateTime.now());
         }
@@ -832,7 +846,7 @@ public class HODController {
         // Dispatch manual notification to all students in this department
         List<User> students = userRepository.findAllByRole(Role.Student);
         for (User u : students) {
-            if (isUserInDepartment(u, deptId)) {
+            if (isUserInDepartment(u, deptId) || isUserInDepartment(u, deptCode)) {
                 studentProfileRepository.findByUserId(u.getId()).ifPresent(p -> {
                     Notification notif = Notification.builder()
                             .rollNo(p.getRollNo())
@@ -852,15 +866,18 @@ public class HODController {
 
     @GetMapping("/trainings")
     public ResponseEntity<?> getTrainings(Authentication authentication) {
-        String deptId = resolveDepartmentId(authentication);
-        return ResponseEntity.ok(trainingProgramRepository.findAllByDepartmentId(deptId));
+        Set<String> allowedDeptKeys = resolveAllowedDepartmentKeys(authentication);
+        List<TrainingProgram> all = trainingProgramRepository.findAll().stream()
+                .filter(t -> t.getDepartmentId() != null && allowedDeptKeys.contains(t.getDepartmentId().trim().toUpperCase()))
+                .toList();
+        return ResponseEntity.ok(all);
     }
 
     @PutMapping("/training/{id}")
     public ResponseEntity<?> updateTraining(Authentication authentication, @PathVariable String id, @RequestBody TrainingProgram training) {
-        String deptId = resolveDepartmentId(authentication);
+        Set<String> allowedDeptKeys = resolveAllowedDepartmentKeys(authentication);
         Optional<TrainingProgram> existingOpt = trainingProgramRepository.findById(id);
-        if (existingOpt.isEmpty() || !existingOpt.get().getDepartmentId().equals(deptId)) {
+        if (existingOpt.isEmpty() || existingOpt.get().getDepartmentId() == null || !allowedDeptKeys.contains(existingOpt.get().getDepartmentId().trim().toUpperCase())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Training program not found or access denied"));
         }
         TrainingProgram existing = existingOpt.get();
@@ -880,9 +897,9 @@ public class HODController {
 
     @DeleteMapping("/training/{id}")
     public ResponseEntity<?> deleteTraining(Authentication authentication, @PathVariable String id) {
-        String deptId = resolveDepartmentId(authentication);
+        Set<String> allowedDeptKeys = resolveAllowedDepartmentKeys(authentication);
         Optional<TrainingProgram> existingOpt = trainingProgramRepository.findById(id);
-        if (existingOpt.isEmpty() || !existingOpt.get().getDepartmentId().equals(deptId)) {
+        if (existingOpt.isEmpty() || existingOpt.get().getDepartmentId() == null || !allowedDeptKeys.contains(existingOpt.get().getDepartmentId().trim().toUpperCase())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Training program not found or access denied"));
         }
         trainingProgramRepository.deleteById(id);

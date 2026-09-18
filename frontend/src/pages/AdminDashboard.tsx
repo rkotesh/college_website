@@ -411,6 +411,26 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
     }
   };
 
+  const handleDeleteActivity = async (actId: string) => {
+    if (!window.confirm("Are you sure you want to delete this activity?")) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/admin/ongoing-activities/${actId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${userSession.accessToken}` }
+      });
+      if (res.ok) {
+        fetchOngoingActivities();
+      } else {
+        const err = await res.json();
+        alert(err.error || "Failed to delete activity");
+      }
+    } catch (e) {
+      console.error("Failed to delete activity", e);
+      alert("Failed to delete activity");
+    }
+  };
+
   const openPortfolioModal = async (slugOrRollNo: string) => {
     setPortfolioModalSlug(slugOrRollNo);
     setLoadingPortfolioModal(true);
@@ -1255,10 +1275,12 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
   };
 
   const filteredUsers = usersList.filter(u => {
-    const matchesQuery = !userSearch || 
-      u.email?.toLowerCase().includes(userSearch.toLowerCase()) || 
-      (u.fullName && u.fullName.toLowerCase().includes(userSearch.toLowerCase())) ||
-      (u.role && u.role.toLowerCase().includes(userSearch.toLowerCase()));
+    const q = (userSearch || '').trim().toLowerCase();
+    const matchesQuery = !q || 
+      (u.email && u.email.toLowerCase().includes(q)) || 
+      (u.fullName && u.fullName.toLowerCase().includes(q)) ||
+      (u.role && u.role.toLowerCase().includes(q)) ||
+      (u.rollNo && u.rollNo.toLowerCase().includes(q));
       
     const matchesRole = roleFilter === 'ALL' || u.role === roleFilter;
     
@@ -1267,7 +1289,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
       (statusFilter === 'LOCKED' && !u.isActive);
       
     const matchesDept = deptFilter === 'ALL' || 
-      (u.departmentIds && u.departmentIds.includes(deptFilter));
+      (u.departmentIds && Array.isArray(u.departmentIds) && u.departmentIds.some((d: string) => d && d.toLowerCase() === deptFilter.toLowerCase()));
       
     return matchesQuery && matchesRole && matchesStatus && matchesDept;
   });
@@ -1409,7 +1431,7 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
         <div className="admin-sidebar">
           <div className="sidebar-section-label">Command Center</div>
           <button className={`sidebar-item ${adminTab === 'directory' ? 'active' : ''}`} onClick={() => { setAdminTab('directory'); setErrorMsg(''); setUploadStatus(''); }}>
-            User Accounts CRUD
+            User Accounts
           </button>
 
           <div className="sidebar-section-label" style={{ marginTop: '8px' }}>Management</div>
@@ -1518,6 +1540,28 @@ export default function AdminDashboard({ userSession, handleLogout }: AdminDashb
                               <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{act.venue}</span>
                             </div>
                           )}
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '4px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteActivity(act.id)}
+                            style={{
+                              padding: '5px 12px',
+                              borderRadius: '6px',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              background: 'rgba(239, 68, 68, 0.08)',
+                              color: '#ef4444',
+                              fontSize: '11.5px',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            🗑️ Delete Activity
+                          </button>
                         </div>
                       </div>
                     ))}

@@ -18,8 +18,8 @@ Featuring secure **Two-Factor Authentication (2FA OTP via Email)**, a **Unified 
 - [Automated Testing Suite](#-automated-testing-suite)
 - [Environment Variables](#-environment-variables)
 - [Deployment Guide](#-deployment-guide)
-- [API Reference](#-api-reference)
-- [Default Login Credentials](#-default-login-credentials)
+- [Administrator Account Setup](#-administrator-account-setup)
+- [Security Policy](#-security-policy)
 
 ---
 
@@ -202,61 +202,54 @@ npm test
 
 ## 🌐 Environment Variables
 
-### Frontend (`frontend/.env`)
-```env
-VITE_API_URL=http://localhost:8080
-```
+Configuration is handled via standard environment variables or a root `.env` file (see [`.env.example`](.env.example)):
 
-### Backend (`backend/src/main/resources/application.yml` or Environment)
-```yaml
-server:
-  port: 8080
+### Key Environment Variables
 
-spring:
-  data:
-    mongodb:
-      uri: ${MONGODB_URI}
-      database: erp_portal
-  mail:
-    host: ${EMAIL_HOST:smtp.gmail.com}
-    port: 587
-    username: ${EMAIL_HOST_USER}
-    password: ${EMAIL_HOST_PASSWORD}
-
-jwt:
-  secret: ${JWT_SECRET}
-  expiration: 86400000        # 24 Hours
-  refresh-expiration: 604800000 # 7 Days
-```
+| Variable | Description | Default / Example |
+| :--- | :--- | :--- |
+| `PORT` | Backend server port | `8080` |
+| `MONGODB_URI` | MongoDB Connection URI | `mongodb://localhost:27017/erp_portal` |
+| `JWT_SECRET` | 256-bit secret key for signing JWTs | *(Set a strong secret in production)* |
+| `EMAIL_HOST` | SMTP server host for 2FA OTP | `smtp.gmail.com` |
+| `EMAIL_HOST_USER` | SMTP username | *(configured via env)* |
+| `EMAIL_HOST_PASSWORD` | SMTP password / app password | *(configured via env)* |
+| `DIRECTOR_EMAIL` | Initial administrator account email | `admin@ciet.edu.in` |
+| `DIRECTOR_PASSWORD` | Initial administrator password | *(auto-generated if unset in dev)* |
+| `VITE_API_URL` | Backend URL for frontend | `http://localhost:8080` |
 
 ---
 
 ## 🚀 Deployment Guide
 
 ### Frontend Deployment (Vercel)
-1. Import `rkotesh/college_website` into [Vercel](https://vercel.com).
+1. Import repository into [Vercel](https://vercel.com).
 2. Set **Root Directory** to `frontend`.
 3. Set **Framework Preset** to `Vite`.
 4. Add Environment Variable: `VITE_API_URL` pointing to your deployed backend.
 5. Deploy (Build command: `tsc -b && vite build`, Output directory: `dist`).
 
-### Backend Deployment (Render / Docker)
-1. Create a new Web Service on [Render](https://render.com).
+### Backend Deployment (Render / Docker / VPS)
+1. Create a Web Service on your cloud provider (Render, Railway, AWS, Docker).
 2. Set **Root Directory** to `backend` and select **Docker** or **Java 17 Native**.
-3. Supply `MONGODB_URI`, `JWT_SECRET`, and SMTP environment variables.
+3. Supply `MONGODB_URI`, `JWT_SECRET`, `DIRECTOR_EMAIL`, `DIRECTOR_PASSWORD`, and SMTP environment variables.
 4. Deploy service.
 
 ---
 
-## 🔑 Default Login Credentials
+## 🔑 Administrator Account Setup
 
-> *For testing and administrative review:*
+On first application startup, the backend automatically seeds the system with the default academic departments and the root Administrator (Director) account:
 
-| Role | Email Identifier | Password |
-| :--- | :--- | :--- |
-| **Director / Admin** | `skillportfolio@chalapathiengg.ac.in` | `Ciet@2027` |
-| **HOD (AIML)** | `hod.ai@chalapathiengg.ac.in` | *(configured in DB)* |
-| **Faculty & Mentor** | `prasanna.ai@chalapathiengg.ac.in` | *(configured in DB)* |
+1. **Configured via Environment**: Set `DIRECTOR_EMAIL` and `DIRECTOR_PASSWORD` in your `.env` or deployment environment.
+2. **Auto-Generated Development Password**: If `DIRECTOR_PASSWORD` is omitted during local development, the backend automatically generates a secure random password on first run and outputs it to the startup console logs.
+3. Subsequent accounts (HODs, Faculty, Mentors, and Students) can be provisioned through the **Admin Portal** or imported via the batch Excel student onboarding module.
+
+---
+
+## 🔒 Security Policy
+
+For security vulnerability reporting, git history remediation, and secret rotation guidelines, please review our [Security Policy](SECURITY.md).
 
 ---
 

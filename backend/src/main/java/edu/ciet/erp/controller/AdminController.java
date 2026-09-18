@@ -21,7 +21,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
-@PreAuthorize("hasAuthority('ROLE_Director')")
+@PreAuthorize("hasAnyAuthority('ROLE_Director', 'ROLE_DIRECTOR', 'ROLE_Admin', 'ROLE_ADMIN')")
 public class AdminController {
 
     private final UserRepository userRepository;
@@ -84,7 +84,7 @@ public class AdminController {
         
         for (User u : users) {
             if (roleParam != null && !roleParam.isBlank() && !"ALL".equalsIgnoreCase(roleParam)) {
-                if (!u.getRole().name().equalsIgnoreCase(roleParam)) {
+                if (u.getRole() == null || !u.getRole().name().equalsIgnoreCase(roleParam)) {
                     continue;
                 }
             }
@@ -92,7 +92,8 @@ public class AdminController {
             if (!query.isBlank()) {
                 boolean emailMatch = u.getEmail() != null && u.getEmail().toLowerCase().contains(query.toLowerCase());
                 boolean nameMatch = u.getFullName() != null && u.getFullName().toLowerCase().contains(query.toLowerCase());
-                if (!emailMatch && !nameMatch) {
+                boolean rollMatch = u.getRollNo() != null && u.getRollNo().toLowerCase().contains(query.toLowerCase());
+                if (!emailMatch && !nameMatch && !rollMatch) {
                     continue;
                 }
             }
@@ -100,14 +101,14 @@ public class AdminController {
             Map<String, Object> map = new HashMap<>();
             map.put("id", u.getId());
             map.put("email", u.getEmail());
-            map.put("fullName", u.getFullName());
+            map.put("fullName", u.getFullName() != null ? u.getFullName() : "N/A");
             map.put("phone", u.getPhone());
-            map.put("role", u.getRole().name());
+            map.put("role", u.getRole() != null ? u.getRole().name() : "Student");
             map.put("isActive", u.isActive());
             map.put("lastLoginIp", u.getLastLoginIp());
             map.put("lastLogin", u.getLastLogin() != null ? u.getLastLogin().toString() : null);
-            map.put("createdAt", u.getCreatedAt().toString());
-            map.put("departmentIds", u.getDepartmentIds());
+            map.put("createdAt", u.getCreatedAt() != null ? u.getCreatedAt().toString() : java.time.LocalDateTime.now().toString());
+            map.put("departmentIds", u.getDepartmentIds() != null ? u.getDepartmentIds() : (u.getDepartmentId() != null ? List.of(u.getDepartmentId()) : List.of()));
             map.put("isMentor", Boolean.TRUE.equals(u.getIsMentor()) || u.getRole() == Role.Mentor);
             
             if (u.getRole() == Role.Student) {
@@ -1253,6 +1254,19 @@ public class AdminController {
     }
 
 
+    private String resolveDepartmentCode(String deptId) {
+        if (deptId == null || deptId.isBlank() || "ALL".equalsIgnoreCase(deptId)) return "ALL";
+        Optional<Department> byId = departmentRepository.findById(deptId);
+        if (byId.isPresent() && byId.get().getCode() != null) {
+            return byId.get().getCode().toUpperCase();
+        }
+        Optional<Department> byCode = departmentRepository.findByCodeIgnoreCase(deptId);
+        if (byCode.isPresent() && byCode.get().getCode() != null) {
+            return byCode.get().getCode().toUpperCase();
+        }
+        return deptId.toUpperCase();
+    }
+
     @GetMapping("/ongoing-activities")
     public ResponseEntity<?> getOngoingActivities(
             @RequestParam(value = "filter", defaultValue = "ONGOING") String filter) {
@@ -1283,12 +1297,12 @@ public class AdminController {
             map.put("id", tp.getId());
             map.put("title", tp.getTitle());
             map.put("description", tp.getDescription());
-            map.put("category", tp.getCategory() != null ? tp.getCategory() : "Training");
+            map.put("category", tp.getCategory() != null ? tp.getCategory() : "Technical");
             map.put("venue", tp.getVenue());
             map.put("startDate", start.toString());
             map.put("endDate", end.toString());
             map.put("durationDays", durationDays);
-            map.put("departmentId", tp.getDepartmentId() != null ? tp.getDepartmentId().toUpperCase() : "ALL");
+            map.put("departmentId", resolveDepartmentCode(tp.getDepartmentId()));
             map.put("targetYears", tp.getTargetYears() != null && !tp.getTargetYears().isEmpty() ? tp.getTargetYears() : List.of("1", "2", "3", "4"));
             map.put("status", status);
             activities.add(map);
@@ -1325,6 +1339,19 @@ public class AdminController {
         }
 
         return ResponseEntity.ok(activities);
+    }
+
+    @DeleteMapping("/ongoing-activities/{id}")
+    public ResponseEntity<?> deleteOngoingActivity(@PathVariable String id) {
+        if (trainingProgramRepository.existsById(id)) {
+            trainingProgramRepository.deleteById(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Training activity deleted successfully"));
+        }
+        if (eventRepository.existsById(id)) {
+            eventRepository.deleteById(id);
+            return ResponseEntity.ok(Map.of("success", true, "message", "Event activity deleted successfully"));
+        }
+        return ResponseEntity.badRequest().body(Map.of("error", "Activity not found with id: " + id));
     }
 
     @GetMapping("/students/{slug}/portfolio-override")
