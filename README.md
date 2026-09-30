@@ -1,23 +1,25 @@
 # CIET ERP — College Enterprise Resource Portal
 
-A full-stack, enterprise-grade, role-based academic portal built for **Chalapathi Institute of Engineering and Technology (CIET)**.  
-Designed, developed, and maintained solely by **[Sankula Koteswara Rao](https://github.com/rkotesh)**.
+A full-stack, enterprise-grade, role-based academic portal built for **Chalapathi Institute of Engineering and Technology (CIET)**.
 
-🔗 **Live Demo:** [college-website-omega-flax.vercel.app](https://college-website-omega-flax.vercel.app/)  
-📦 **Repository:** [github.com/rkotesh/college_website](https://github.com/rkotesh/college_website)
+> **Designed, developed, and maintained solely by [Sankula Koteswara Rao](https://github.com/rkotesh).**
 
-**Highlights:** Secure Two-Factor Authentication (2FA OTP via Email), a Unified Faculty & Mentor Portal, Strict Department-Scoped Data Isolation, Live Public Student Portfolios with Bulk CSV & Link Export, Dynamic Department Timetables, and Escalation Interventions, backed by an automated test suite.
+**🔗 Live Demo:** [college-website-omega-flax.vercel.app](https://college-website-omega-flax.vercel.app/)
+**📦 Repository:** [github.com/rkotesh/college_website](https://github.com/rkotesh/college_website)
+
+Highlights: secure **Two-Factor Authentication (2FA OTP via Email)**, a **Unified Faculty & Mentor Portal**, **Strict Department-Scoped Data Isolation**, **Live Public Student Portfolios with Bulk CSV & Link Export**, **Dynamic Department Timetables**, and **Escalation Interventions**, backed by an automated test suite.
 
 ---
 
 ## 📑 Table of Contents
-- [Overview & Architecture](#️-overview--architecture)
+
+- [Overview & Architecture](#-overview--architecture)
 - [Key Features by Role](#-key-features-by-role)
 - [Tech Stack](#-tech-stack)
 - [Environment Variables](#-environment-variables)
 - [Testing](#-testing)
 - [Deployment](#-deployment)
-- [Security Policy](SECURITY.md)
+- [Security Policy](#-security-policy)
 - [Author](#-author)
 - [License & Attribution](#-license--attribution)
 
@@ -29,7 +31,7 @@ Designed, developed, and maintained solely by **[Sankula Koteswara Rao](https://
 | :--- | :--- |
 | **Institution** | Chalapathi Institute of Engineering & Technology (Autonomous), Guntur |
 | **Accreditations** | NAAC 'A' Grade, NBA Accredited, AICTE Approved, JNTUK / ANU Affiliated |
-| **Portal Roles** | Student · Faculty · Mentor · Faculty & Mentor · HOD · Admin · Parent |
+| **Portal Roles** | `Student` · `Faculty` · `Mentor` · `Faculty & Mentor` · `HOD` · `Admin` · `Parent` |
 | **Authentication** | Phase 1 Password Check + Phase 2 Secure Email OTP + JWT Bearer Tokens |
 | **Database** | MongoDB Atlas (Cloud-Hosted, Multi-Tenant Department Collections) |
 | **Frontend Routing** | Role-Guarded React SPA with Framer Motion transitions |
@@ -48,9 +50,10 @@ Designed, developed, and maintained solely by **[Sankula Koteswara Rao](https://
 ### 👨‍🏫 2. Faculty & Mentor Portal (`FacultyDashboard.tsx`)
 - **Adaptive Role Switcher**: Automatically tailors navigation, header titles, and actions whether logged in as Faculty, Mentor, or dual-role Faculty & Mentor.
 - **Strict Department Student Directory**: Fast search and filtering for students belonging exclusively to the staff member's department cohort.
-- **Department Student Portfolios Hub**: Live preview modal for any student's public portfolio without leaving the portal.
-- **One-Click CSV Report Export**: Comprehensive batch report (Roll No, Name, Email, Dept, Year, Sec, CGPA, Public URL).
-- **Bulk Public Link Copier**: Formats and copies all live portfolio URLs to the clipboard for recruiter distribution.
+- **Department Student Portfolios Hub**:
+  - Live preview modal for any student's public portfolio without leaving the portal.
+  - **One-Click CSV Report Export**: Comprehensive batch report (Roll No, Name, Email, Dept, Year, Sec, CGPA, Public URL).
+  - **Bulk Public Link Copier**: Formats and copies all live portfolio URLs to the clipboard for recruiter distribution.
 - **Mentorship Case Notes & Logs**: Confidential counseling logs, academic standing indicators, and meeting notes.
 - **Escalation Interventions**: Real-time multi-role escalation threads involving HODs, Mentors, Faculty, and Students.
 - **Curriculum Repository & Trainings**: Syllabus coverage tracker, lesson plan uploads, and faculty development program (FDP) registrations.
@@ -72,10 +75,10 @@ Designed, developed, and maintained solely by **[Sankula Koteswara Rao](https://
 ## 💻 Tech Stack
 
 ### Frontend
-- **React 18.x with TypeScript** (Strict mode)
+- **React 18.x** with **TypeScript** (Strict mode)
 - **Vite 5.x** (Fast HMR and production bundler)
 - **Framer Motion** (Page transitions and interactive modals)
-- **Lucide Icons & Canvas Particles Engine**
+- **Lucide Icons** & **Canvas Particles Engine**
 - **Vitest & React Testing Library** (Unit and integration tests)
 
 ### Backend
@@ -90,8 +93,8 @@ Designed, developed, and maintained solely by **[Sankula Koteswara Rao](https://
 - **JUnit 5 & MockMvc** (67 automated backend tests)
 
 ### Hosting
-- **Frontend**: Vercel
-- **Database**: MongoDB Atlas
+- **Frontend:** Vercel
+- **Database:** MongoDB Atlas
 
 ---
 
@@ -111,19 +114,17 @@ Configuration is handled via standard environment variables or a root `.env` fil
 | `DIRECTOR_PASSWORD` | Initial administrator password | *(auto-generated if unset in dev)* |
 | `VITE_API_URL` | Backend URL used by the frontend | `http://localhost:8080` |
 
-> ⚠️ **Never commit real values for secrets.** Use a secrets manager or your hosting provider's environment settings in production.
-
 ---
 
 ## 🧪 Testing
 
-Quality is verified through automated tests on both layers of the stack:
+Quality is verified through automated tests on both layers of the stack.
 
 | Layer | Framework | Scope |
 | :--- | :--- | :--- |
-| **Backend** | JUnit 5 & MockMvc | 67 automated unit and web-layer tests for the Spring Boot REST APIs |
-| **Frontend** | Vitest & React Testing Library | Unit and integration tests for React components |
-| **Build quality** | Maven `-Xlint:all` | Strict zero-warning compilation |
+| Backend | JUnit 5 & MockMvc | 67 automated unit and web-layer tests for the Spring Boot REST APIs |
+| Frontend | Vitest & React Testing Library | Unit and integration tests for React components |
+| Build quality | Maven `-Xlint:all` | Strict zero-warning compilation |
 
 ---
 
@@ -131,9 +132,9 @@ Quality is verified through automated tests on both layers of the stack:
 
 | Component | Platform | Notes |
 | :--- | :--- | :--- |
-| **Frontend** | Vercel | Set `VITE_API_URL` to the deployed backend URL. Build command `npm run build`, output directory `dist`. |
-| **Backend** | Any Java 17+ host | Build with `mvn clean package`, run with `java -jar target/*.jar`. Provide all environment variables above. |
-| **Database** | MongoDB Atlas | Allow the backend host's IP in Atlas Network Access. |
+| Frontend | Vercel | Set `VITE_API_URL` to the deployed backend URL. Build command `npm run build`, output directory `dist`. |
+| Backend | Any Java 17+ host | Build with `mvn clean package`, run with `java -jar target/*.jar`. Provide all environment variables above. |
+| Database | MongoDB Atlas | Allow the backend host's IP in Atlas Network Access. |
 
 ---
 
@@ -145,13 +146,16 @@ For security vulnerability reporting, git history remediation, and secret rotati
 
 ## 👤 Author
 
-**Sankula Koteswara Rao**  
-Sole developer: concept, architecture, frontend, backend, testing, and deployment.  
-GitHub: [@rkotesh](https://github.com/rkotesh)
+**Sankula Koteswara Rao**
+Sole developer: concept, architecture, frontend, backend, testing, and deployment.
+
+- GitHub: [@rkotesh](https://github.com/rkotesh)
 
 ---
 
 ## 📄 License & Attribution
 
-Copyright © 2026 Sankula Koteswara Rao. All rights reserved.  
-Built by Sankula Koteswara Rao for Chalapathi Institute of Engineering and Technology (CIET). All institutional trademarks, course curricula, and crests belong to Chalapathi Educational Society.
+Copyright © 2026 **Sankula Koteswara Rao**. All rights reserved.
+
+Built by Sankula Koteswara Rao for **Chalapathi Institute of Engineering and Technology (CIET)**.
+All institutional trademarks, course curricula, and crests belong to Chalapathi Educational Society.
