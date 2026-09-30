@@ -25,5 +25,3 @@ logs/
 .env.*
 !.env.example
 
-# Gemini Agent artifacts (local only)
-.gemini/
